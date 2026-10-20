@@ -172,12 +172,18 @@ pub const Model = struct {
     tax_slabs_list: []const domain.TaxSlab = &.{},
     modifier_groups_list: []const domain.ModifierGroup = &.{},
     discounts_list: []const domain.Discount = &.{},
+    reservations_list: []const domain.Reservation = &.{},
+    suppliers_list: []const domain.Supplier = &.{},
+    purchase_orders_list: []const domain.PurchaseOrder = &.{},
 
     /// Storage for the settings rows the screens show.
     printers_buf: bump.Bump(8192) = .{},
     tax_slabs_buf: bump.Bump(4096) = .{},
     modifier_groups_buf: bump.Bump(4096) = .{},
     discounts_buf: bump.Bump(4096) = .{},
+    reservations_buf: bump.Bump(8192) = .{},
+    suppliers_buf: bump.Bump(8192) = .{},
+    purchase_orders_buf: bump.Bump(8192) = .{},
 
     // ------------------------------------------------- the company form
 
@@ -577,6 +583,21 @@ pub const Model = struct {
         return order.total_minor;
     }
 
+    /// The reservations.
+    pub fn reservations(model: *const Model) []const domain.Reservation {
+        return model.reservations_list;
+    }
+
+    /// The suppliers.
+    pub fn suppliers(model: *const Model) []const domain.Supplier {
+        return model.suppliers_list;
+    }
+
+    /// The purchase orders.
+    pub fn purchase_orders(model: *const Model) []const domain.PurchaseOrder {
+        return model.purchase_orders_list;
+    }
+
     /// The printers the restaurant has.
     pub fn printers(model: *const Model) []const domain.Printer {
         return model.printers_list;
@@ -595,6 +616,11 @@ pub const Model = struct {
     /// The discounts the cashier can apply.
     pub fn discounts(model: *const Model) []const domain.Discount {
         return model.discounts_list;
+    }
+
+    /// The tiles on the overview.
+    pub fn overview_links(_: *const Model) []const LinkItem {
+        return &dashboard_links;
     }
 
     /// The order number of the order just placed.
@@ -987,6 +1013,22 @@ const employee_role_options = [_]RoleOption{
     .{ .id = @intFromEnum(domain.EmployeeRole.waiter), .label = domain.EmployeeRole.waiter.label() },
     .{ .id = @intFromEnum(domain.EmployeeRole.kitchen), .label = domain.EmployeeRole.kitchen.label() },
     .{ .id = @intFromEnum(domain.EmployeeRole.display), .label = domain.EmployeeRole.display.label() },
+};
+
+/// One tile on the overview: a screen the owner can reach from the
+/// front page.
+pub const LinkItem = struct {
+    id: usize,
+    title: []const u8,
+    detail: []const u8,
+};
+
+const dashboard_links = [_]LinkItem{
+    .{ .id = @intFromEnum(Screen.customers), .title = "Customers", .detail = "Who came back" },
+    .{ .id = @intFromEnum(Screen.reservations), .title = "Reservations", .detail = "Who is coming" },
+    .{ .id = @intFromEnum(Screen.suppliers), .title = "Suppliers", .detail = "Who you buy from" },
+    .{ .id = @intFromEnum(Screen.purchase_orders), .title = "Purchase orders", .detail = "What is on its way" },
+    .{ .id = @intFromEnum(Screen.settings), .title = "Settings", .detail = "The restaurant's setup" },
 };
 
 /// One row of the settings menu.
