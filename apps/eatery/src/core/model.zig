@@ -161,6 +161,11 @@ pub const Model = struct {
     /// The employee being edited; zero means a new one.
     form_employee_id: i64 = 0,
 
+    // ------------------------------------------------------ the order
+
+    /// The order the order-detail screen is showing.
+    selected_order_id: i64 = 0,
+
     // ------------------------------------------------- the settings data
 
     printers_list: []const domain.Printer = &.{},
@@ -516,6 +521,60 @@ pub const Model = struct {
     /// How many categories there are.
     pub fn category_count(model: *const Model) usize {
         return model.categories.len;
+    }
+
+    /// The order the detail screen is showing, if any.
+    pub fn selected_order(model: *const Model) ?domain.Order {
+        for (model.orders) |order| {
+            if (order.id == model.selected_order_id) return order;
+        }
+        return null;
+    }
+
+    /// The lines of the order the detail screen is showing.
+    pub fn selected_order_lines(model: *const Model, arena: std.mem.Allocator) []const domain.OrderLine {
+        var count: usize = 0;
+        for (model.order_lines) |line| {
+            if (line.order_id == model.selected_order_id) count += 1;
+        }
+        const out = arena.alloc(domain.OrderLine, count) catch return &.{};
+        var index: usize = 0;
+        for (model.order_lines) |line| {
+            if (line.order_id != model.selected_order_id) continue;
+            out[index] = line;
+            index += 1;
+        }
+        return out[0..index];
+    }
+
+    /// The order number of the order being shown.
+    pub fn selected_order_no(model: *const Model) []const u8 {
+        const order = model.selected_order() orelse return "";
+        return order.order_no;
+    }
+
+    /// The status of the order being shown.
+    pub fn selected_order_status(model: *const Model) []const u8 {
+        const order = model.selected_order() orelse return "";
+        return order.status_label;
+    }
+
+    /// The kind of sale the order being shown is.
+    pub fn selected_order_type(model: *const Model) []const u8 {
+        const order = model.selected_order() orelse return "";
+        return order.type_label;
+    }
+
+    /// When the order being shown was taken, in epoch seconds.
+    pub fn selected_order_when(model: *const Model) i64 {
+        const order = model.selected_order() orelse return 0;
+        return @divTrunc(order.placed_at, 1000);
+    }
+
+    /// The total of the order being shown.
+    pub fn selected_order_total(model: *const Model) i64 {
+        const order = model.selected_order() orelse return 0;
+        return order.total_minor;
     }
 
     /// The printers the restaurant has.

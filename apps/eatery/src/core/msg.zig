@@ -107,6 +107,15 @@ pub const Msg = union(enum) {
     /// The payment write came back.
     payment_taken: native_sdk.EffectDbResult,
 
+    // ------------------------------------------------------ the order
+
+    /// Open the order with this id.
+    open_order: i64,
+    /// Take the payment for the order with this id.
+    pay_order: i64,
+    /// Take the payment for the order being shown.
+    pay_selected_order,
+
     // ------------------------------------------------------ shortcuts
 
     /// Jump to the point of sale.

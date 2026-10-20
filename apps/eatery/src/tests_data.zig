@@ -817,3 +817,38 @@ fn findEmployeeNamed(model: *const Model, name: []const u8) ?domain.Employee {
     }
     return null;
 }
+
+test "an order can be opened, and paid from the order list" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // An order is placed, so there is something to open.
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    repos.loadOrderLines(harness.fx);
+    harness.drain();
+
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+    const order_id = harness.model.orders[0].id;
+
+    // The order opens, and the detail screen knows what is on it.
+    harness.send(.{ .open_order = order_id });
+    try testing.expectEqual(nav.Screen.order_detail, harness.model.screen());
+    try testing.expectEqualStrings(harness.model.orders[0].order_no, harness.model.selected_order_no());
+    try testing.expectEqual(@as(i64, 24500), harness.model.selected_order_total());
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    try testing.expectEqual(@as(usize, 1), harness.model.selected_order_lines(arena_state.allocator()).len);
+
+    // Paying it goes to the confirmation screen, carrying the order.
+    harness.send(Msg{ .pay_selected_order = {} });
+    try testing.expectEqual(nav.Screen.order_confirmation, harness.model.screen());
+    try testing.expectEqual(order_id, harness.model.last_order_id);
+    try testing.expectEqual(@as(i64, 24500), harness.model.last_order_total());
+}

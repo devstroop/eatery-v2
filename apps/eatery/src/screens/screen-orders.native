@@ -21,11 +21,12 @@
         <for each="orders" key="id" as="order">
           <card padding="12">
             <row gap="12" cross="center">
-              <text grow="1">{order.order_no}</text>
+              <text grow="1" on-press="open_order:{order.id}">{order.order_no}</text>
               <badge>{order.status_label}</badge>
               <text foreground="text_muted">{order.type_label}</text>
               <text>{currency_symbol}{fixed(order.total_minor / 100, 2)}</text>
               <button size="sm" variant="secondary" on-press="advance_order:{order.id}">Advance</button>
+              <button size="sm" variant="primary" on-press="pay_order:{order.id}">Pay</button>
             </row>
           </card>
         </for>

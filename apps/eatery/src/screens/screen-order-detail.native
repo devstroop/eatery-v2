@@ -1,0 +1,41 @@
+<!-- One order: what was on it, what it came to, and where it is. The
+     payment is taken from here - the confirmation screen is where the
+     money is taken, and this screen is where the order is found. -->
+
+<template name="screen-order-detail">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Order {selected_order_no}</text>
+      <badge>{selected_order_status}</badge>
+      <button size="sm" variant="ghost" on-press="open_orders">Back</button>
+    </row>
+
+    <card padding="16" width="520">
+      <column gap="8">
+        <row cross="center">
+          <text grow="1" foreground="text_muted">{selected_order_type}</text>
+          <text>{selected_order_when}</text>
+        </row>
+        <separator/>
+        <column gap="4">
+          <for each="selected_order_lines" key="id" as="line">
+            <row cross="center">
+              <text grow="1">{line.product_name}</text>
+              <text>{line.qty}</text>
+              <text>{currency_symbol}{fixed(line.unit_price_minor * line.qty / 100, 2)}</text>
+            </row>
+          </for>
+        </column>
+        <separator/>
+        <row cross="center">
+          <text grow="1" size="lg">Total</text>
+          <text size="lg">{currency_symbol}{fixed(selected_order_total / 100, 2)}</text>
+        </row>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="pay_selected_order">Take the payment</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>

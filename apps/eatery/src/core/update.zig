@@ -552,6 +552,49 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .open_tables => go(model, .dining_tables),
 
         // ---------------------------------------------------------- the POS
+        .open_order => |id| {
+            model.selected_order_id = id;
+            go(model, .order_detail);
+            repos.loadOrderLines(fx);
+        },
+
+        .pay_selected_order => {
+            const id = model.selected_order_id;
+            if (id == 0) return;
+            const order = findOrder(model, id) orelse return;
+            model.sale_buf.reset();
+            model.last_order_id = order.id;
+            model.last_order_no_field = model.sale_buf.dupe(order.order_no) orelse "";
+            model.last_order_type_field = model.sale_buf.dupe(order.type_label) orelse "";
+            model.last_order_total_minor = order.total_minor;
+            model.last_order_items_count = 0;
+            for (model.order_lines) |line| {
+                if (line.order_id != order.id) continue;
+                model.last_order_items_count += line.qty;
+            }
+            model.last_order_at = order.placed_at;
+            model.payment_error = "";
+            go(model, .order_confirmation);
+        },
+
+        .pay_order => |id| {
+            // The confirmation screen takes the money, so the sale state
+            // is filled in from the order that is being paid.
+            const order = findOrder(model, id) orelse return;
+            model.sale_buf.reset();
+            model.last_order_id = order.id;
+            model.last_order_no_field = model.sale_buf.dupe(order.order_no) orelse "";
+            model.last_order_type_field = model.sale_buf.dupe(order.type_label) orelse "";
+            model.last_order_total_minor = order.total_minor;
+            model.last_order_items_count = 0;
+            for (model.order_lines) |line| {
+                if (line.order_id != order.id) continue;
+                model.last_order_items_count += line.qty;
+            }
+            model.last_order_at = order.placed_at;
+            model.payment_error = "";
+            go(model, .order_confirmation);
+        },
 
         .search_edit => |event| model.search.apply(event),
 
