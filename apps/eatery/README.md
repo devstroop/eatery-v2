@@ -114,7 +114,7 @@ Every file under `apps/eatery/`, and what it owns.
 | `data/repos.zig` | the SQL: one named statement per query, the load functions, the decoders, `saveOrder`, `setOrderStatus`, `saveConfigValue` |
 | `data/page.zig` | the reader for the engine's row format: header, column names, row values, `intOf` / `textOf` / `boolOf` |
 | `data/auth.zig` | PIN hashing: salted SHA-256, hex-encoded, `hashPin`, `makeSalt`, `equal` |
-| `tests.zig` | the 13 authored headless tests |
+| `tests.zig` | the 15 authored headless tests |
 | `schema/0001_core.sql` | `company`, `currency`, `employee`, `app_config` |
 | `schema/0002_catalog.sql` | `product_category`, `tax_slab`, `product`, `modifier_group`, `modifier`, `product_modifier`, `discount` |
 | `schema/0003_floor.sql` | `dining_table_category`, `dining_table`, `kds_station`, `product_station` |
@@ -135,6 +135,7 @@ Every file under `apps/eatery/`, and what it owns.
 | `screens/screen-orders.native` | the order list |
 | `screens/screen-tables.native` | the floor board |
 | `screens/screen-kitchen.native` | the kitchen board |
+| `screens/screen-order-confirmation.native` | the post-sale total and payment |
 
 ---
 
@@ -185,24 +186,24 @@ channel:
 | Kitchen board | the tickets, the summary, the wait time, the advance |
 | Schema | 43 `STRICT` tables across 11 migrations |
 | Data layer | 9 named read queries plus the login SQL; 3 write paths |
-| Tests | 13 headless tests + an uncommitted 11-test DB suite |
+| Tests | 15 headless tests + a 12-test DB suite |
 
 ### The numbers
 
 | Measure | Value | Where |
 |---|---|---|
 | `Screen` variants | 43 | `src/core/navigation.zig` |
-| `Msg` variants | 46 | `src/core/msg.zig` |
-| Screen templates | 8 | `src/screens/*.native` |
+| `Msg` variants | 49 | `src/core/msg.zig` |
+| Screen templates | 9 | `src/screens/*.native` |
 | Templates mounted | 5 in the shell + setup, login and role picker | the gates in `src/app.native` |
 | Database tables | 43, every one `STRICT` | `src/schema/*.sql` |
 | Migrations | 11, locked at version 11 | `src/schema/migrations.lock.json` |
 | Read queries | 9 plus the login SQL | `src/data/repos.zig`, `src/core/update.zig` |
-| Write paths | order and lines, status and history, one config value | `src/data/repos.zig` |
-| Headless tests | 13 authored (25 reported with the uncommitted DB suite + one generated) | `src/tests.zig`, `src/tests_data.zig` |
+| Write paths | setup, order and lines, status and history, payment, one config value | `src/data/repos.zig` |
+| Headless tests | 15 authored (28 reported with the DB suite + one generated) | `src/tests.zig`, `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/sync-sidecar/`, `tools/print-sidecar/` |
 
-### The 13 authored tests
+### The 15 authored tests
 
 | Test | Area |
 |---|---|
@@ -217,12 +218,15 @@ channel:
 | a PIN is hashed, never stored | Auth |
 | the page decoder reads the engine's dialect | Data |
 | the model reports its own numbers instead of storing them | Model |
+| the POS screen renders with a menu and a cart | POS |
 | the setup screen renders on a fresh installation | Setup |
+| the order confirmation renders after a sale | Payment |
 | the layout survives a resize | Markup |
 
 ### What works end to end
 
-1. Choose Admin → PIN → dashboard (given an employee with a PIN).
+1. On a fresh database, setup creates the company, an Admin PIN and a starter
+   menu; then choose Admin → PIN → dashboard.
 2. Dashboard → POS → search and filter → add to cart → set the order type
    → place the order. The working tree writes `orders.updated_at`, so this
    now succeeds; the committed `HEAD` still omits it (B-001).

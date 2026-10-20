@@ -79,6 +79,17 @@ pub const Msg = union(enum) {
     /// The order write came back.
     order_placed: native_sdk.EffectDbResult,
 
+    // -------------------------------------------------------- the payment
+
+    /// The payment mode the cashier picked.
+    set_payment_mode: i64,
+    /// Take the payment for the order that was just placed.
+    take_payment,
+    /// Back to the point of sale for the next order.
+    back_to_pos,
+    /// The payment write came back.
+    payment_taken: native_sdk.EffectDbResult,
+
     // ------------------------------------------------------ shortcuts
 
     /// Jump to the point of sale.
@@ -136,6 +147,7 @@ pub const Msg = union(enum) {
         "config_loaded",
         "config_saved",
         "setup_created",
+        "payment_taken",
         "db_failed",
         "order_placed",
         "order_status_saved",

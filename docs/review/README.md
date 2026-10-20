@@ -25,7 +25,7 @@ says what exists, and this review says what does not hold up.
 
 | Set | Contents | Count |
 |---|---|---|
-| [Bugs](bugs.md) | Behaviour that is wrong now — security, data, runtime, navigation | 32 |
+| [Bugs](bugs.md) | Behaviour that is wrong now — security, data, runtime, navigation, payment | 35 |
 | [Gaps](gaps.md) | Flows and features that do not exist yet | 26 |
 | [Enhancements](enhancements.md) | Improvements to correctness, UX, performance, accessibility, ops | 20 |
 | [Documentation audit](docs-audit.md) | Claims that are stale, contradictory, or untested | 18 |

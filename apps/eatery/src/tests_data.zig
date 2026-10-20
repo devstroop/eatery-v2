@@ -499,3 +499,30 @@ test "the setup refuses an empty restaurant name" {
     try testing.expect(harness.model.setup_failed());
     try testing.expect(!harness.model.signed_in);
 }
+
+test "taking the payment closes the order and records the money" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+
+    // The confirmation screen knows what was sold.
+    try testing.expect(harness.model.last_order_id != 0);
+    try testing.expectEqual(@as(i64, 24500), harness.model.last_order_total_minor);
+    try testing.expectEqual(@as(i64, 1), harness.model.last_order_items());
+
+    // The payment is taken and the order closes.
+    harness.send(.{ .set_payment_mode = @intFromEnum(domain.PaymentMode.card) });
+    harness.send(Msg{ .take_payment = {} });
+    try testing.expectEqualStrings("", harness.model.payment_error_text());
+
+    // The order is completed, and the money is on the order.
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(nav.Screen.orders, harness.model.screen());
+}

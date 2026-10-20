@@ -313,6 +313,25 @@ test "the POS screen renders with a menu and a cart" {
     _ = try expectByText(tree.root, .text, "Paneer Tikka");
 }
 
+test "the order confirmation screen renders after a sale" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.role_chosen = true;
+    model.signed_in = true;
+    model.screen_index = 12; // the order confirmation
+    model.last_order_no_field = "1700000000";
+    model.last_order_type_field = "Dine in";
+    model.last_order_total_minor = 24500;
+    model.last_order_items_count = 2;
+
+    const tree = try buildTree(arena, &model);
+    _ = try expectByText(tree.root, .text, "Order 1700000000");
+    _ = try expectByText(tree.root, .button, "Take $245.00");
+}
+
 test "the setup screen renders on a fresh installation" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();

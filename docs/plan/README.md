@@ -27,15 +27,15 @@ The current tree is a **vertical slice in progress**, not a release.
 | Measure | Count |
 |---|---|
 | Screens named in the `Screen` enum | 43 |
-| Screen templates that compile | 8 |
+| Screen templates that compile | 9 |
 | Screens mounted in the shell | 5 |
-| Screens that render at all | 8 |
+| Screens that render at all | 9 |
 | Screen templates with a render test | 3 |
 | Tables in the schema | 43 |
 | Migrations | 11 |
 | Entities with a read + decode path | 8 |
-| Entities with a write path | 5 (order, lines, history, config, setup) |
-| Headless tests | 13 authored (25 reported with the DB suite + one generated) |
+| Entities with a write path | 6 (order, lines, history, config, setup, payment) |
+| Headless tests | 15 authored (28 reported with the DB suite + one generated) |
 | Sidecars | 0 (two README-only directories) |
 | CI workflows | 1 (verify + smoke) |
 
@@ -51,10 +51,11 @@ Full matrix: [`status.md`](status.md).
 | **M4 — Release** | 8 | Signed package, migrated data, CI sale smoke |
 
 M1 is the only milestone that can be demoed to a restaurant. Do not start
-M3 before M1 is honest. M1 is currently blocked by the order write
-([B-001](../review/bugs.md#b-001--order-insert-omits-ordersupdated_at)), the
-role check ([B-002](../review/bugs.md#b-002--login-ignores-the-employees-stored-role))
-and the missing setup flow ([G-001](../review/gaps.md#g-001--no-first-run-setup)).
+M3 before M1 is honest. The order write is fixed in the working tree
+(uncommitted); M1 is now blocked by the role check
+([B-002](../review/bugs.md#b-002--login-ignores-the-employees-stored-role)),
+the salt race ([B-003](../review/bugs.md#b-003--the-boot-salt-is-accepted-before-the-database-confirms-it))
+and the setup gaps ([G-001](../review/gaps.md#g-001--first-run-setup-is-new-and-incomplete)).
 
 ## Phase board
 

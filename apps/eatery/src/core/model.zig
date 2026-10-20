@@ -112,6 +112,8 @@ pub const Model = struct {
     customers_buf: bump.Bump(customers_buffer) = .{},
     categories_buf: bump.Bump(categories_buffer) = .{},
     order_lines_buf: bump.Bump(order_lines_buffer) = .{},
+    /// Storage for the order just placed.
+    sale_buf: bump.Bump(1024) = .{},
     /// Storage for the company row's text. The page bytes are drain
     /// scratch: a name read from the database has to be COPIED before
     /// the model keeps it.
@@ -129,6 +131,21 @@ pub const Model = struct {
     selected_category: i64 = 0,
     /// The search text in the POS.
     search: canvas.TextBuffer(64) = .{},
+
+    // ------------------------------------------------------- the sale
+
+    /// The order that was just placed: the confirmation screen shows
+    /// it and the payment is taken against it.
+    last_order_id: i64 = 0,
+    last_order_no_field: []const u8 = "",
+    last_order_type_field: []const u8 = "",
+    last_order_total_minor: i64 = 0,
+    last_order_items_count: i64 = 0,
+    last_order_at: i64 = 0,
+    /// The payment mode the cashier picked.
+    payment_mode_field: i64 = 0,
+    /// Why the payment failed, or empty.
+    payment_error: []const u8 = "",
 
     // ------------------------------------------------------- first run
 
@@ -217,6 +234,52 @@ pub const Model = struct {
     /// The error the operator needs to see.
     pub fn error_message(model: *const Model) []const u8 {
         return model.error_text;
+    }
+
+    /// The order number of the order just placed.
+    pub fn last_order_no(model: *const Model) []const u8 {
+        return model.last_order_no_field;
+    }
+
+    /// The kind of the order just placed.
+    pub fn last_order_type(model: *const Model) []const u8 {
+        return model.last_order_type_field;
+    }
+
+    /// The total of the order just placed, in minor units.
+    pub fn last_order_total(model: *const Model) i64 {
+        return model.last_order_total_minor;
+    }
+
+    /// How many items the order just placed carries.
+    pub fn last_order_items(model: *const Model) i64 {
+        return model.last_order_items_count;
+    }
+
+    /// When the order just placed was taken, in epoch SECONDS - the
+    /// markup's `time()` and `date()` functions take seconds.
+    pub fn last_order_time(model: *const Model) i64 {
+        return @divTrunc(model.last_order_at, 1000);
+    }
+
+    /// The payment mode the cashier picked.
+    pub fn payment_mode(model: *const Model) i64 {
+        return model.payment_mode_field;
+    }
+
+    /// Why the last payment failed, or empty.
+    pub fn payment_error_text(model: *const Model) []const u8 {
+        return model.payment_error;
+    }
+
+    /// True when the last payment failed.
+    pub fn payment_failed(model: *const Model) bool {
+        return model.payment_error.len > 0;
+    }
+
+    /// The payment modes the cashier can pick.
+    pub fn payment_modes(_: *const Model) []const PaymentModeOption {
+        return &payment_mode_options;
     }
 
     /// True when the app is waiting for a first-run setup.
@@ -495,6 +558,19 @@ pub const Model = struct {
         }
         return count;
     }
+};
+
+/// One payment mode, as the confirmation screen sees it.
+pub const PaymentModeOption = struct {
+    id: usize,
+    label: []const u8,
+};
+
+const payment_mode_options = [_]PaymentModeOption{
+    .{ .id = @intFromEnum(domain.PaymentMode.cash), .label = domain.PaymentMode.cash.label() },
+    .{ .id = @intFromEnum(domain.PaymentMode.card), .label = domain.PaymentMode.card.label() },
+    .{ .id = @intFromEnum(domain.PaymentMode.upi), .label = domain.PaymentMode.upi.label() },
+    .{ .id = @intFromEnum(domain.PaymentMode.wallet), .label = domain.PaymentMode.wallet.label() },
 };
 
 /// One order type, as the POS filter sees it.

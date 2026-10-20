@@ -40,6 +40,9 @@ Severity: **P0** blocker · **P1** high · **P2** medium · **P3** low.
 | [B-030](#b-030--the-seedable-schema-has-invalid-default-references) | P2 | `product.tax_slab_id` defaulted to `0` with no row. **Fixed by migration 0011.** |
 | [B-031](#b-031--the-setup-currency-symbol-field-writes-the-code) | P2 | The setup screen binds both currency fields to the code handler |
 | [B-032](#b-032--the-setup-submit-button-is-never-disabled) | P2 | `setup_can_submit` exists but the markup does not bind it |
+| [B-033](#b-033--another-order-does-nothing) | P1 | The confirmation screen dispatches an unhandled `back_to_pos` |
+| [B-034](#b-034--the-confirmation-screen-shows-raw-epoch-milliseconds) | P2 | `last_order_time` is an `i64` timestamp bound as text |
+| [B-035](#b-035--payment-can-be-taken-twice) | P1 | No paid/status guard or disabled button; each tap inserts a payment |
 
 ---
 
@@ -879,6 +882,64 @@ a disabled control. The comment and code disagree.
 
 Bind `disabled="{!setup_can_submit}"` (if the markup supports negation
 via a derived helper) and test the incomplete/complete states.
+
+---
+
+## B-033 — “Another order” does nothing
+
+**Severity:** P1 · **Area:** confirmation / navigation
+
+`screen-order-confirmation.native` dispatches `on-press="back_to_pos"`, but
+the `Msg` union and `update` have no `back_to_pos` arm. `native check`
+does not reject the unknown message, and no test builds this template.
+
+**Impact:** the only escape from the confirmation screen (other than taking
+payment) is Back, which may land on the login bug (B-009). A cashier can
+be stuck after placing an order.
+
+**Fix**
+
+Add the message and arm (`go(.pos)` or reset the cart flow), include the
+screen in the render/screen-coverage test, and make `native check` (or a
+test) reject message tags that are not in the union.
+
+---
+
+## B-034 — The confirmation screen shows raw epoch milliseconds
+
+**Severity:** P2 · **Area:** display
+
+`Model.last_order_time` returns `last_order_at` (`i64` epoch ms), and the
+template interpolates `{last_order_time}` directly. The operator sees
+`1750432101234` instead of a time.
+
+**Impact:** unreadable confirmation; looks broken.
+
+**Fix**
+
+Return a formatted string (or use the SDK's date/time helper on seconds)
+and add a render test that asserts a time-like string.
+
+---
+
+## B-035 — Payment can be taken twice
+
+**Severity:** P1 · **Area:** payment / data integrity
+
+`take_payment` sets `busy` but never checks it; the button is not disabled.
+The transaction inserts a `payment` and sets `completed` with no
+`WHERE status <> completed` guard and no unique constraint on `order_id`.
+Each tap adds another payment row and another history row.
+
+**Impact**
+
+Double-charging or a duplicated payment record; the till's totals drift.
+
+**Fix**
+
+Guard in the update and in SQL (`WHERE status <> 4`), check rows affected,
+and make one payment per order unique (or explicitly support split
+payments with a sum check). Add a test that pays twice.
 
 ---
 

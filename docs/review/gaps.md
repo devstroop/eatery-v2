@@ -9,7 +9,7 @@
 | [G-001](#g-001--first-run-setup-is-new-and-incomplete) | P1 | First-run setup exists in the working tree but has gaps |
 | [G-002](#g-002--no-committed-seed-fixture-or-demo-database) | P2 | Setup has starter data, but no committed fixture/demo database |
 | [G-003](#g-003--35-of-43-screens-have-no-template) | P1 | Waiter, display, confirmation and most admin destinations are blank |
-| [G-004](#g-004--no-payments-refunds-voids-or-shifts) | P1 | The sale cannot be paid, voided, refunded or reconciled |
+| [G-004](#g-004--payments-are-partial-no-refunds-voids-or-shifts) | P1 | A payment path exists; refunds, voids, shifts and split payments do not |
 | [G-005](#g-005--no-printing) | P1 | No receipt, KOT, printer settings or sidecar |
 | [G-006](#g-006--no-sync) | P1 | No op-log writes, no second device, no conflict handling |
 | [G-007](#g-007--no-reports-or-compliance) | P1 | No X/Z report, tax report, item mix, export or audit |
@@ -100,21 +100,21 @@ templates before adding more enum entries. Add a screen-coverage test
 
 ---
 
-## G-004 — No payments, refunds, voids or shifts
+## G-004 — Payments are partial; no refunds, voids or shifts
 
 **Severity:** P1 · **Area:** money
 
-`payment`, `void_log_entry`, `shift` and `order_discount` exist; nothing
-writes them. There is no payment screen, no cash/card/UPI capture, no
-split payment, no change calculation, no refund, no void reason, no cash
-drawer and no shift open/close. `nextStatus` completes an order without
-payment.
+A confirmation screen now takes a cash/card/UPI mode and writes a
+`payment`, then marks the order completed. It can be taken twice
+(B-035), “Another order” is unhandled (B-033), and there is no split
+payment, change calculation, refund, void reason, cash drawer or shift
+open/close. `nextStatus` can still complete an unpaid order from the
+orders/KDS path.
 
-**Impact:** the POS can take an order but cannot close a sale correctly.
+**Impact:** the sale can be closed, but the money path is not safe.
 
-**Next step:** model a payment state on the order; add a payment screen,
-a void action with a reason, and shift open/close. Decide whether payment
-is required before `completed`.
+**Next step:** guard one payment per order, require payment before
+completion or mark “pay later”, then add refunds/voids and shifts.
 
 ---
 

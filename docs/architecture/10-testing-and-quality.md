@@ -1,8 +1,8 @@
 # Testing and quality
 
-> **Status:** Partial — 13 authored headless tests plus an uncommitted
-> 11-test database suite; 25/25 pass in the working tree. CI exists but its
-> smoke is non-blank only, and the DB suite is not committed.
+> **Status:** Partial — 15 authored headless tests plus a 12-test database
+> suite; 28/28 pass in the working tree. CI exists but its smoke is
+> non-blank only; the payment path has no tests for double payment.
 > **Last verified:** 2026-10-20, by source review.
 > **Source:** `src/tests.zig`, `main.zig` (`test` block), `PORT-PLAN.md` §3.8.
 
@@ -22,7 +22,7 @@ The architecture exists partly to make testing cheap:
 A rule that lives only in a comment is a rule that breaks. The tests in
 `src/tests.zig` are written as rules, not as coverage for its own sake.
 
-## Current tests (13 authored)
+## Current tests (15 authored)
 
 | # | Test | What it pins |
 |---|---|---|
@@ -38,10 +38,12 @@ A rule that lives only in a comment is a rule that breaks. The tests in
 | 10 | The page decoder reads the engine's dialect | Wire format |
 | 11 | The model reports its own numbers instead of storing them | Derived values |
 | 12 | The setup screen renders on a fresh installation | Setup gate and template |
-| 13 | The layout survives a resize | Markup build + layout at 1280×800 |
+| 13 | The POS screen renders with a menu and a cart | POS template |
+| 14 | The order confirmation renders after a sale | Confirmation template |
+| 15 | The layout survives a resize | Markup build + layout at 1280×800 |
 
-The working tree also has 11 in-memory database tests (`tests_data.zig`,
-uncommitted); with one generated test the runner reports 25. The RBAC
+The working tree also has 12 in-memory database tests (`tests_data.zig`);
+with one generated test the runner reports 28. The RBAC
 “matrix is total” test is tautological (the assertion is guarded by
 the value it asserts); see the [documentation
 audit](../review/docs-audit.md#d-007--the-rbac-matrix-test-is-tautological).
@@ -72,7 +74,7 @@ does) or bind an in-memory store.
 | Salt provisional race | Untested; see `plan/status.md` |
 | Order ID collisions | Untested; the scheme is provisional |
 | Decoders for categories/tables/employees/customers/orders/lines | Only the generic page reader is tested |
-| Every screen template | Five of eight templates have no render test |
+| Every screen template | Five of nine templates have no render test |
 | Node budget | No assertion on `widget_nodes` |
 | Error arms (`db_failed`, failed loads) | Copy and state are untested |
 | Timer tick | Untested |

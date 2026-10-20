@@ -4,9 +4,10 @@
 > this page.
 > **Last verified:** 2026-10-20 23:45, by source review plus the
 > toolchain on `PATH`. `native check` passes. The working tree runs
-> 25/25 tests: 13 authored headless, 11 in-memory database tests, and one
-> generated test. The database tests are **uncommitted**; the committed
-> `HEAD` still has the order-write defect and runs 13/13. See the
+> 28/28 tests: 15 authored headless, 12 in-memory database tests, and one
+> generated test. Setup and the order-write fix are committed in
+> `c42af4a`; the payment/confirmation work is uncommitted. The original
+> `1bc8343` still has the order-write defect. See the
 > [full audit](../review/2026-10-20-audit.md).
 > **Screen-by-screen table:** [`architecture/03`](../architecture/03-navigation-and-rbac.md#the-43-screens).
 
@@ -15,17 +16,17 @@
 | Measure | Value | Evidence |
 |---|---|---|
 | `Screen` variants | 43 | `src/core/navigation.zig` |
-| Screen templates | 8 | `src/screens/*.native` |
+| Screen templates | 9 | `src/screens/*.native` |
 | Templates mounted in the shell | 5 | `src/app.native` gates at 8, 10, 13, 17, 41 |
-| Screens that render at all | 8 | 5 shell gates + setup + role picker + login |
-| Templates with a render test | 3 (setup, role picker, login indirectly) | `src/tests.zig` |
-| `Msg` variants | 46 | `src/core/msg.zig` |
+| Screens that render at all | 9 | 5 shell gates + setup + confirmation + role picker + login |
+| Templates with a render test | 3 (setup, role picker, login indirectly; confirmation unbuilt) | `src/tests.zig` |
+| `Msg` variants | 49 | `src/core/msg.zig` |
 | Tables | 43 | `src/schema/*.sql` |
 | Migrations | 11 | `migrations.lock.json` version 11 |
 | Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
-| Write paths | order + lines, status + history, config | `repos.zig` |
-| Headless tests | 13 authored (25 reported with the DB suite + one generated) | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 11, green but uncommitted | `src/tests_data.zig` |
+| Write paths | setup, order + lines, status + history, config | `repos.zig` |
+| Headless tests | 15 authored (28 reported with the DB suite + one generated) | `src/tests.zig`, `src/tests_data.zig` |
+| Database integration tests | 12, green (the payment/confirmation work is uncommitted) | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -49,14 +50,14 @@
 | Customers | Scaffolded | Repository and buffer; no load call, no UI |
 | Employees | Partial | Login only; no list/admin |
 | Catalog admin | Planned | Schema, no write path, no templates |
-| Settings / setup | Partial | First-run setup writes company/operator/starter menu; no settings editors |
-| Payments | Scaffolded | Table only |
+| Settings / setup | Partial | First-run setup writes company/operator/starter menu; currency-symbol and disabled-submit gaps (B-031/B-032) |
+| Payments | Partial | Cash/card/UPI mode, confirmation and one payment write; no guard against double payment (B-035) |
 | Reports / compliance | Scaffolded | Tables only |
 | Printing | Scaffolded | Tables and README-only sidecar; no code |
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Scaffolded | Enum entry, no template |
 | Waiter shell | Partial | Role and rail exist; no templates |
-| Testing | Partial | 13 authored + 11 DB tests pass in the working tree; the DB suite is uncommitted; no sale smoke |
+| Testing | Partial | 15 authored + 12 DB tests pass in the working tree; no sale smoke |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -66,7 +67,7 @@
    (given an externally seeded order).
 3. Choose Kitchen → board → advance tickets.
 4. Title-bar **Theme** toggles light/dark.
-5. Dining tables board renders seeded tables.
+5. Setup creates a starter menu and six tables; the floor board renders them.
 
 The POS places an order in the **working tree**; the committed `HEAD`
 still omits `orders.updated_at` (B-001). The integration test reads the
@@ -87,7 +88,7 @@ cite the committed build as able to sell.
 4. **Display.** Signs in, lands on a blank content pane.
 5. **Order confirmation.** Navigation lands on a screen with no template.
 6. **Catalog / People / System.** Rail destinations render nothing.
-7. **Payments.** No way to pay or close an order with money.
+7. **Payment edge cases.** A payment screen exists, but it can be taken twice (B-035) and “Another order” is unhandled (B-033).
 8. **Printing.** No receipt, no KOT.
 9. **Sync.** No second device sees the first.
 10. **Customers.** Data is never loaded.
