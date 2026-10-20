@@ -116,6 +116,60 @@ pub const Msg = union(enum) {
     /// Jump to the floor.
     open_tables,
 
+    // -------------------------------------------------------- the forms
+
+    /// The currency form changed.
+    form_currency_code_edit: canvas.TextInputEvent,
+    form_currency_symbol_edit: canvas.TextInputEvent,
+    /// Save the currency.
+    save_currency,
+    /// The currency was saved.
+    currency_saved: native_sdk.EffectDbResult,
+
+    /// The product form changed.
+    form_product_name_edit: canvas.TextInputEvent,
+    form_product_price_edit: canvas.TextInputEvent,
+    /// The product's category.
+    form_product_category: i64,
+    /// The product's food marking.
+    form_product_food: i64,
+    /// Back to the catalogue.
+    open_catalogue,
+    /// Back to the people.
+    open_employees,
+    /// Edit the product with this id.
+    edit_product: i64,
+    /// Start a new product.
+    new_product,
+    /// Save the product.
+    save_product,
+    /// The product was saved.
+    product_saved: native_sdk.EffectDbResult,
+
+    /// The employee form changed.
+    form_employee_name_edit: canvas.TextInputEvent,
+    /// The employee's role.
+    form_employee_role: i64,
+    /// Edit the employee with this id.
+    edit_employee: i64,
+    /// Start a new employee.
+    new_employee,
+    /// Save the employee.
+    save_employee,
+    /// The employee was saved.
+    employee_saved: native_sdk.EffectDbResult,
+
+    // ------------------------------------------------- the settings data
+
+    /// The printers were loaded.
+    printers_loaded: native_sdk.EffectDbResult,
+    /// The tax slabs were loaded.
+    tax_slabs_loaded: native_sdk.EffectDbResult,
+    /// The modifier groups were loaded.
+    modifier_groups_loaded: native_sdk.EffectDbResult,
+    /// The discounts were loaded.
+    discounts_loaded: native_sdk.EffectDbResult,
+
     // ---------------------------------------------------- the company form
 
     /// The company form changed.
@@ -205,6 +259,13 @@ pub const Msg = union(enum) {
         "tick",
         "stations_loaded",
         "company_saved",
+        "currency_saved",
+        "product_saved",
+        "employee_saved",
+        "printers_loaded",
+        "tax_slabs_loaded",
+        "modifier_groups_loaded",
+        "discounts_loaded",
         "product_stations_loaded",
         "audio_event",
     };

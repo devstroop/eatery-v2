@@ -219,6 +219,9 @@ pub const TaxSlab = struct {
     /// Rate in basis points (5% == 500).
     rate_bps: i64,
     inclusive: bool,
+    active: bool,
+    /// "Inclusive" or "Exclusive", as the row shows it.
+    tax_label: []const u8,
 };
 
 pub const KdsStation = struct {
@@ -242,6 +245,42 @@ pub const EmployeeRole = enum(i64) {
             .display => "Display",
         };
     }
+};
+
+/// A receipt or kitchen printer.
+pub const Printer = struct {
+    id: i64,
+    name: []const u8,
+    /// 'escpos' or 'system'.
+    kind: []const u8,
+    /// 'ble', 'tcp', 'usb' or 'file'.
+    transport: []const u8,
+    address: []const u8,
+    /// 'receipt', 'kot' or 'report'.
+    job: []const u8,
+    active: bool,
+};
+
+/// A group of choices on a dish.
+pub const ModifierGroup = struct {
+    id: i64,
+    name: []const u8,
+    required: bool,
+    max_select: i64,
+    active: bool,
+    /// "Required" or "Optional", as the row shows it.
+    required_label: []const u8,
+};
+
+/// A discount: a percentage, a fixed amount, or both.
+pub const Discount = struct {
+    id: i64,
+    name: []const u8,
+    percent_bps: i64,
+    amount_minor: i64,
+    active: bool,
+    /// The discount as the row shows it: "10%" or "₹50.00".
+    value_label: []const u8,
 };
 
 /// Which station cooks which product.

@@ -45,6 +45,13 @@ pub const key_stations = 16;
 pub const key_product_stations = 18;
 pub const key_board_refresh = 19;
 pub const key_save_company = 20;
+pub const key_printers = 21;
+pub const key_tax_slabs = 22;
+pub const key_modifier_groups = 23;
+pub const key_discounts = 24;
+pub const key_save_product = 25;
+pub const key_save_employee = 26;
+pub const key_save_printer = 27;
 pub const key_chime = 17;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
@@ -116,6 +123,26 @@ pub const product_stations_sql =
 /// The kitchen stations a ticket can be routed to.
 pub const stations_sql =
     \\SELECT id, name, sort_order FROM kds_station WHERE active = 1 ORDER BY sort_order, name;
+;
+
+/// The printers the restaurant has.
+pub const printers_sql =
+    \\SELECT id, name, kind, transport, address, job, active FROM printer ORDER BY name;
+;
+
+/// The tax slabs the menu prices against.
+pub const tax_slabs_sql =
+    \\SELECT id, name, rate_bps, inclusive, active FROM tax_slab ORDER BY name;
+;
+
+/// The modifier groups on the menu.
+pub const modifier_groups_sql =
+    \\SELECT id, name, required, max_select, active FROM modifier_group ORDER BY sort_order, name;
+;
+
+/// The discounts the cashier can apply.
+pub const discounts_sql =
+    \\SELECT id, name, percent_bps, amount_minor, active FROM discount ORDER BY name;
 ;
 
 /// The company row. A v2 database holds exactly one company.
@@ -234,6 +261,38 @@ pub fn loadProductStations(fx: *Effects) void {
     });
 }
 
+pub fn loadPrinters(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_printers,
+        .sql = printers_sql,
+        .on_result = Effects.dbMsg(.printers_loaded),
+    });
+}
+
+pub fn loadTaxSlabs(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_tax_slabs,
+        .sql = tax_slabs_sql,
+        .on_result = Effects.dbMsg(.tax_slabs_loaded),
+    });
+}
+
+pub fn loadModifierGroups(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_modifier_groups,
+        .sql = modifier_groups_sql,
+        .on_result = Effects.dbMsg(.modifier_groups_loaded),
+    });
+}
+
+pub fn loadDiscounts(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_discounts,
+        .sql = discounts_sql,
+        .on_result = Effects.dbMsg(.discounts_loaded),
+    });
+}
+
 pub fn loadStations(fx: *Effects) void {
     fx.dbQuery(.{
         .key = key_stations,
@@ -255,6 +314,10 @@ pub fn loadAll(fx: *Effects) void {
     loadCompany(fx);
     loadStations(fx);
     loadProductStations(fx);
+    loadPrinters(fx);
+    loadTaxSlabs(fx);
+    loadModifierGroups(fx);
+    loadDiscounts(fx);
     loadCategories(fx);
     loadProducts(fx);
     loadTables(fx);
@@ -461,6 +524,94 @@ pub fn decodeStations(model: *Model, bytes: []const u8) void {
     model.stations_list = list[0..index];
 }
 
+pub fn decodePrinters(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.printers_buf.reset();
+    const count = reader.rows_left;
+    const list = model.printers_buf.allocSlice(domain.Printer, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.printers_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .kind = model.printers_buf.dupe(reader.textOf(&values, "kind")) orelse "",
+            .transport = model.printers_buf.dupe(reader.textOf(&values, "transport")) orelse "",
+            .address = model.printers_buf.dupe(reader.textOf(&values, "address")) orelse "",
+            .job = model.printers_buf.dupe(reader.textOf(&values, "job")) orelse "",
+            .active = reader.boolOf(&values, "active"),
+        };
+    }
+    model.printers_list = list[0..index];
+}
+
+pub fn decodeTaxSlabs(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.tax_slabs_buf.reset();
+    const count = reader.rows_left;
+    const list = model.tax_slabs_buf.allocSlice(domain.TaxSlab, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.tax_slabs_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .rate_bps = reader.intOf(&values, "rate_bps", 0),
+            .inclusive = reader.boolOf(&values, "inclusive"),
+            .active = reader.boolOf(&values, "active"),
+            .tax_label = if (reader.boolOf(&values, "inclusive")) "Inclusive" else "Exclusive",
+        };
+    }
+    model.tax_slabs_list = list[0..index];
+}
+
+pub fn decodeModifierGroups(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.modifier_groups_buf.reset();
+    const count = reader.rows_left;
+    const list = model.modifier_groups_buf.allocSlice(domain.ModifierGroup, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.modifier_groups_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .required = reader.boolOf(&values, "required"),
+            .max_select = reader.intOf(&values, "max_select", 1),
+            .active = reader.boolOf(&values, "active"),
+            .required_label = if (reader.boolOf(&values, "required")) "Required" else "Optional",
+        };
+    }
+    model.modifier_groups_list = list[0..index];
+}
+
+pub fn decodeDiscounts(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.discounts_buf.reset();
+    const count = reader.rows_left;
+    const list = model.discounts_buf.allocSlice(domain.Discount, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.discounts_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .percent_bps = reader.intOf(&values, "percent_bps", 0),
+            .amount_minor = reader.intOf(&values, "amount_minor", 0),
+            .active = reader.boolOf(&values, "active"),
+            .value_label = discountValueLabel(
+                reader.intOf(&values, "percent_bps", 0),
+                reader.intOf(&values, "amount_minor", 0),
+            ),
+        };
+    }
+    model.discounts_list = list[0..index];
+}
+
 pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     var reader = page.Reader.init(bytes);
     if (!reader.readHeader()) return;
@@ -589,6 +740,90 @@ pub fn updateCompany(
             .params = &params,
         }},
         .on_result = Effects.dbMsg(.company_saved),
+    });
+}
+
+/// Save a product. A product of id zero is a new one.
+pub fn saveProduct(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    category_id: i64,
+    name: []const u8,
+    price_minor: i64,
+    food_type: i64,
+    at: i64,
+) void {
+    var params: [7]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .integer = category_id },
+        .{ .text = name },
+        .{ .integer = price_minor },
+        .{ .integer = food_type },
+        .{ .integer = at },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO product (id, category_id, name, price_minor, product_type, food_type,
+            \\  tax_slab_id, stock_qty, track_stock, active, created_at, updated_at)
+            \\VALUES (?1, ?2, ?3, ?4, 0, ?5, 0, NULL, 0, 1, ?6, ?7)
+            \\ON CONFLICT(id) DO UPDATE SET category_id = ?2, name = ?3, price_minor = ?4,
+            \\  food_type = ?5, updated_at = ?7;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.product_saved),
+    });
+}
+
+/// Save an employee. An employee of id zero is a new one.
+pub fn saveEmployee(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    role: i64,
+    at: i64,
+) void {
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = role },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO employee (id, name, role, pin_hash, active, created_at)
+            \\VALUES (?1, ?2, ?3, '', 1, ?4)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, role = ?3;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.employee_saved),
+    });
+}
+
+/// Save the currency the restaurant trades in.
+pub fn saveCurrency(fx: *Effects, key: u64, code: []const u8, symbol: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = code },
+        .{ .text = symbol },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\UPDATE company SET currency_code = ?1, currency_symbol = ?2
+            \\WHERE id = (SELECT id FROM company LIMIT 1);
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.currency_saved),
     });
 }
 
@@ -917,6 +1152,14 @@ pub fn setOrderStatus(fx: *Effects, order_id: i64, status: domain.OrderStatus, a
 /// exist, and the write fails.
 fn idParam(value: i64) native_sdk.EffectDbValue {
     return if (value == 0) .null_value else .{ .integer = value };
+}
+
+/// A discount as the row shows it: the percentage, the amount, or both.
+fn discountValueLabel(percent_bps: i64, amount_minor: i64) []const u8 {
+    if (percent_bps > 0 and amount_minor > 0) return "both";
+    if (percent_bps > 0) return "percent";
+    if (amount_minor > 0) return "amount";
+    return "none";
 }
 
 /// The labels the markup binds. Resolved at decode time because the

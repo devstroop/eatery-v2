@@ -145,6 +145,35 @@ pub const Model = struct {
     /// The search text in the POS.
     search: canvas.TextBuffer(64) = .{},
 
+    // -------------------------------------------------------- the forms
+
+    /// The forms the settings and the catalogue edit.
+    form_currency_code_buf: canvas.TextBuffer(8) = .{},
+    form_currency_symbol_buf: canvas.TextBuffer(8) = .{},
+    form_product_name_buf: canvas.TextBuffer(64) = .{},
+    form_product_price_buf: canvas.TextBuffer(16) = .{},
+    form_product_category_id: i64 = 0,
+    form_product_food_id: i64 = 0,
+    /// The product being edited; zero means a new one.
+    form_product_id: i64 = 0,
+    form_employee_name_buf: canvas.TextBuffer(64) = .{},
+    form_employee_role_id: i64 = 0,
+    /// The employee being edited; zero means a new one.
+    form_employee_id: i64 = 0,
+
+    // ------------------------------------------------- the settings data
+
+    printers_list: []const domain.Printer = &.{},
+    tax_slabs_list: []const domain.TaxSlab = &.{},
+    modifier_groups_list: []const domain.ModifierGroup = &.{},
+    discounts_list: []const domain.Discount = &.{},
+
+    /// Storage for the settings rows the screens show.
+    printers_buf: bump.Bump(8192) = .{},
+    tax_slabs_buf: bump.Bump(4096) = .{},
+    modifier_groups_buf: bump.Bump(4096) = .{},
+    discounts_buf: bump.Bump(4096) = .{},
+
     // ------------------------------------------------- the company form
 
     /// The company's editable details, held as buffers so the form can
@@ -394,6 +423,119 @@ pub const Model = struct {
     /// The currency the restaurant trades in.
     pub fn company_currency_code(model: *const Model) []const u8 {
         return model.currency_code;
+    }
+
+    /// The currency code in the currency form.
+    pub fn form_currency_code(model: *const Model) []const u8 {
+        return model.form_currency_code_buf.text();
+    }
+
+    /// The currency symbol in the currency form.
+    pub fn form_currency_symbol(model: *const Model) []const u8 {
+        return model.form_currency_symbol_buf.text();
+    }
+
+    /// The product name in the product form.
+    pub fn form_product_name(model: *const Model) []const u8 {
+        return model.form_product_name_buf.text();
+    }
+
+    /// The product price in the product form, as typed.
+    pub fn form_product_price(model: *const Model) []const u8 {
+        return model.form_product_price_buf.text();
+    }
+
+    /// The category the product form is set to.
+    pub fn form_product_category(model: *const Model) i64 {
+        return model.form_product_category_id;
+    }
+
+    /// The food marking the product form is set to.
+    pub fn form_product_food(model: *const Model) i64 {
+        return model.form_product_food_id;
+    }
+
+    /// The title of the product form: "New product" or the name.
+    pub fn product_form_title(model: *const Model) []const u8 {
+        if (model.form_product_id == 0) return "New product";
+        for (model.products) |product| {
+            if (product.id == model.form_product_id) return product.name;
+        }
+        return "Product";
+    }
+
+    /// The employee name in the employee form.
+    pub fn form_employee_name(model: *const Model) []const u8 {
+        return model.form_employee_name_buf.text();
+    }
+
+    /// The role the employee form is set to.
+    pub fn form_employee_role(model: *const Model) i64 {
+        return model.form_employee_role_id;
+    }
+
+    /// The title of the employee form: "New employee" or the name.
+    pub fn employee_form_title(model: *const Model) []const u8 {
+        if (model.form_employee_id == 0) return "New employee";
+        for (model.employees) |employee| {
+            if (employee.id == model.form_employee_id) return employee.name;
+        }
+        return "Employee";
+    }
+
+    /// The food markings, as the product form offers them.
+    pub fn food_types(_: *const Model) []const FoodTypeOption {
+        return &food_type_options;
+    }
+
+    /// The roles an employee can have, as the form offers them.
+    pub fn employee_roles(_: *const Model) []const RoleOption {
+        return &employee_role_options;
+    }
+
+    /// How many printers there are.
+    pub fn printer_count(model: *const Model) usize {
+        return model.printers_list.len;
+    }
+
+    /// How many tax slabs there are.
+    pub fn tax_slab_count(model: *const Model) usize {
+        return model.tax_slabs_list.len;
+    }
+
+    /// How many modifier groups there are.
+    pub fn modifier_group_count(model: *const Model) usize {
+        return model.modifier_groups_list.len;
+    }
+
+    /// How many discounts there are.
+    pub fn discount_count(model: *const Model) usize {
+        return model.discounts_list.len;
+    }
+
+    /// How many categories there are.
+    pub fn category_count(model: *const Model) usize {
+        return model.categories.len;
+    }
+
+    /// The printers the restaurant has.
+    pub fn printers(model: *const Model) []const domain.Printer {
+        return model.printers_list;
+    }
+
+    /// The tax slabs the menu prices against.
+    pub fn tax_slabs(model: *const Model) []const domain.TaxSlab {
+        return model.tax_slabs_list;
+    }
+
+    /// The modifier groups on the menu.
+    pub fn modifier_groups(model: *const Model) []const domain.ModifierGroup {
+        return model.modifier_groups_list;
+    }
+
+    /// The discounts the cashier can apply.
+    pub fn discounts(model: *const Model) []const domain.Discount {
+        return model.discounts_list;
     }
 
     /// The order number of the order just placed.
@@ -760,6 +902,32 @@ pub const CartRow = struct {
     name: []const u8,
     qty: i64,
     total_minor: i64,
+};
+
+/// One food marking, as the product form offers it.
+pub const FoodTypeOption = struct {
+    id: usize,
+    label: []const u8,
+};
+
+const food_type_options = [_]FoodTypeOption{
+    .{ .id = @intFromEnum(domain.FoodType.non_veg), .label = domain.FoodType.non_veg.label() },
+    .{ .id = @intFromEnum(domain.FoodType.veg), .label = domain.FoodType.veg.label() },
+    .{ .id = @intFromEnum(domain.FoodType.egg), .label = domain.FoodType.egg.label() },
+    .{ .id = @intFromEnum(domain.FoodType.jain), .label = domain.FoodType.jain.label() },
+};
+
+/// One employee role, as the form offers it.
+pub const RoleOption = struct {
+    id: usize,
+    label: []const u8,
+};
+
+const employee_role_options = [_]RoleOption{
+    .{ .id = @intFromEnum(domain.EmployeeRole.admin), .label = domain.EmployeeRole.admin.label() },
+    .{ .id = @intFromEnum(domain.EmployeeRole.waiter), .label = domain.EmployeeRole.waiter.label() },
+    .{ .id = @intFromEnum(domain.EmployeeRole.kitchen), .label = domain.EmployeeRole.kitchen.label() },
+    .{ .id = @intFromEnum(domain.EmployeeRole.display), .label = domain.EmployeeRole.display.label() },
 };
 
 /// One row of the settings menu.
