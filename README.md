@@ -30,7 +30,7 @@ exactly where the seams hurt:
 |---|---|
 | Money in `REAL` columns, rounded by the UI | **Money is `i64` minor units, everywhere.** No float money, ever. |
 | PINs readable in the database | PINs are **salted SHA-256**; the plaintext never touches the disk |
-| Permissions buried in a router `redirect:` | Permissions are a **pure function** (`core/rbac.zig`) with a table-driven test |
+| Permissions buried in a router `redirect:` | Permissions are a **pure function** (`core/rbac.zig`); the current matrix test is tautological and is being replaced with a real table |
 | A router, a navigator, and a riverpod graph | **One model, one `update`.** Navigation is model state. |
 | A second SQLite engine vendored into the app | **The platform's own store** — engine-owned, live queries, migrations included |
 | Sync transport tangled into the domain | The app writes an **operation log**; a sidecar owns the socket |
@@ -171,13 +171,17 @@ eatery-v2/
 
 The foundation is in place and building: the app model, the permission
 matrix, the design tokens, the schema (43 tables), the repository layer, the
-PIN sign-in, the role picker, the dashboard, the point of sale, the order
-list, the floor and the kitchen board. 12 headless tests guard the rules.
+PIN sign-in, the role picker, first-run setup, the dashboard, the point of sale, the
+order list, the floor and the kitchen board. The order write is fixed in
+the working tree but not committed (see the audit). 13 authored headless
+tests cover the model, navigation and markup basics; the uncommitted
+in-memory suite covers the SQL.
 
 The rest of the product is on the phase board in
 [`docs/plan/README.md`](docs/plan/README.md), with the as-built screen
 matrix in [`docs/plan/status.md`](docs/plan/status.md). The documentation
-index is [`docs/README.md`](docs/README.md).
+index is [`docs/README.md`](docs/README.md); the dated findings are in
+[`docs/review/2026-10-20-audit.md`](docs/review/2026-10-20-audit.md).
 
 ---
 

@@ -29,7 +29,7 @@ role.
 
 | Item | Detail |
 |---|---|
-| Screen templates | 36 of 43 screens have no template |
+| Screen templates | 35 of 43 screens have no template |
 | Mounted screens | Only 5 (`dashboard`, `pos`, `orders`, `dining_tables`, `kds_board`) |
 | Waiter home | `waiter_tables` is allowed but not rendered |
 | Display home | `display_board` is allowed but not rendered |

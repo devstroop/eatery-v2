@@ -84,6 +84,12 @@ rows, NULL + INTEGER + TEXT).
 Writes are `fx.dbExec` with one or more statements. The engine runs them
 atomically.
 
+> **As-built warning (2026-10-20):** the order insert described here omits
+> the required `orders.updated_at`, so it fails with a `NOT NULL`
+> constraint. The table/customer ids are also written as `0` rather than
+> `NULL`. See [B-001](../review/bugs.md#b-001--order-insert-omits-ordersupdated_at)
+> and [B-005](../review/bugs.md#b-005--order-foreign-keys-are-written-as-0).
+
 ### Place an order
 
 `repos.saveOrder` builds a statement array on the stack:
@@ -178,7 +184,7 @@ prevent.
 The app declares the `sqlite` capability in `app.json`. The SDK compiles
 its SQLite engine into the app, generates a migrations module from
 `src/schema/*.sql`, and opens the database migrated at boot. The
-append-only authority is `src/schema/migrations.lock.json` (version 10,
+append-only authority is `src/schema/migrations.lock.json` (version 11,
 10 hashes).
 
 The app does not open the database, set PRAGMAs, or run migrations

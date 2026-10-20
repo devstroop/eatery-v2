@@ -15,7 +15,8 @@ Ship it: a signed application, a supportable install, and a path from v1.
 - `app.json` with platforms, permissions, capabilities and a window.
 - `assets/icon.png`.
 - A 0.1.0 version.
-- No packaging, no CI, no migration path.
+- No packaging and no migration path. CI exists (`verify` + a non-blank
+  smoke) but does not exercise a sale.
 
 ## What is missing
 

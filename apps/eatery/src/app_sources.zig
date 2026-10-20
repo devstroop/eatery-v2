@@ -10,6 +10,7 @@ const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 
 pub const sources = [_]canvas.ui_markup.SourceFile{
+    .{ .path = "screens/screen-setup.native", .source = @embedFile("screens/screen-setup.native") },
     .{ .path = "screens/screen-role-picker.native", .source = @embedFile("screens/screen-role-picker.native") },
     .{ .path = "screens/screen-login.native", .source = @embedFile("screens/screen-login.native") },
     .{ .path = "screens/screen-dashboard.native", .source = @embedFile("screens/screen-dashboard.native") },

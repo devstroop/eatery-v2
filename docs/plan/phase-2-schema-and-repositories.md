@@ -13,7 +13,7 @@ and all calculation ports are not.
 
 ## What exists
 
-- 43 STRICT tables across 10 migrations; lock file at version 10.
+- 43 STRICT tables across 11 migrations; lock file at version 11.
 - Read + decode for company, products, categories, tables, employees,
   customers, orders, order lines, config.
 - Writes for orders + lines, order status + history, config upsert.

@@ -78,6 +78,9 @@ date before that phase starts.
 | B11 | Are images (product photos, logos) used, and where are they stored? | File handling, backup, printing | v1 data + interviews | Product | Open |
 | B12 | What is the v1 order-number format customers expect? | Invoices, receipts, staff habits | v1 code + interviews | Product | Open |
 | B13 | Can order numbers repeat across devices or days? | Uniqueness and legal numbering | Accounting/legal | Product | Open |
+| B14 | Does the engine enable `PRAGMA foreign_keys`? | The order write stores `0` for nullable FKs; with FKs on it fails (B-005) | Probe the engine with a temporary table; document it | Eng | Open |
+| B15 | Which currency exponents must ship? | The UI hard-codes two decimals (B-013) | Target-market review; load `currency.minor_units` | Product/Eng | Open |
+| B16 | Does `dbExec` complete synchronously, and when is a result drainable? | The in-progress DB harness sees seed writes before reads; the answer decides the test loop (G-016) | Probe test around `dbExec`/`takeMsg`; document the contract | Eng | Open |
 
 ## C. Security, privacy and compliance
 
@@ -158,6 +161,8 @@ date before that phase starts.
 | G7 | What are the minimum OS versions? | SDK support matrix | SDK docs + product | Eng | Open |
 | G8 | Are there hardware/OS constraints in target restaurants (old machines, no Metal)? | GPU backend and performance | Customer audit | Eng | Open |
 | G9 | How is the database stored and protected on disk? | Privacy and tamper resistance | Security review | Eng | Open |
+| G10 | What journal mode and backup policy does the engine use? | Durability and recovery (G-022) | SDK docs + a power-loss test | Eng | Open |
+| G11 | How does a second app instance behave on the same database? | Salt race and write contention (B-028) | Two-instance spike | Eng | Open |
 | G10 | Is there a licence/subscription enforcement requirement? | `subscription` table is unused | Product | Product | Open |
 
 ## H. Scale and performance

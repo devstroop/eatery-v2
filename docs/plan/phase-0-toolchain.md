@@ -18,44 +18,39 @@ The hard part is not the code; it is the pinned environment.
   origins.
 - `apps/eatery/src/main.zig` — `UiApp.create`, shell config, panic
   capture, salt generation, runner options.
-- `apps/eatery/src/schema/` — 10 migrations and a lock file.
+- `apps/eatery/src/schema/` — 11 migrations and a lock file.
 - The CLI-synthesised build directory `.native/build/` (generated, not
   owned).
+- `scripts/setup.sh`, `env.sh`, `dev.sh`, `build.sh`, `verify-all.sh`.
+- `.github/workflows/ci.yml` (verify + non-blank smoke).
 
 ## What is missing
 
 | Item | Why it matters |
 |---|---|
-| A committed environment pin (Zig 0.16.0, Node ≥ 24, SDK v0.11.0) | A new machine will pick Zig 0.17 and fail |
-| A bootstrap script or asdf/mise file | The port plan's PATH incantation is easy to get wrong |
-| `.github/workflows/ci.yml` | Nothing verifies the tree |
-| `scripts/verify-all.sh` | No one-command check |
-| A clean-build proof | `.native/build/` exists, but no recorded green run in this workspace |
+| A non-macOS pin/instruction | `scripts/env.sh` and `setup.sh` assume Homebrew paths at `/opt/homebrew` |
+| A recorded clean-machine proof | The scripts exist; Linux and Windows are unproven |
+| CI coverage of the sale path | The workflow runs check/test and a non-blank smoke only |
 
-Known environment facts (from the port plan, not re-verified here):
+Environment facts (verified on this machine on 2026-10-20):
 
 - Zig **must** be 0.16.0. `/usr/local/bin/zig` is 0.17 and shadows Homebrew.
 - Node **≥ 24** is required by the relational toolchain.
 - The SDK's `packages/core` needs `npm ci --include=dev`.
 - The SDK must be built once: `zig build -Doptimize=ReleaseFast`.
-- The CLI is `native` from `~/native-sdk/zig-out/bin`.
-- The CLI is **not on this shell's PATH**. A binary exists at
-  `apps/eatery/zig-out/bin/eatery`, but there is no recorded reproducible
-  bootstrap in the repo.
+- On this machine the CLI is at `~/native-sdk/zig-out/bin/native`;
+  `scripts/env.sh` puts it on `PATH`. The app builds and `native check`
+  passes. There is still no recorded clean-machine bootstrap on a second
+  platform.
 
 ## Tasks
 
-1. Add a pin file (`mise.toml`, `.tool-versions`, or a documented script)
-   for Zig 0.16.0 and Node 24.
-2. Add `scripts/bootstrap.sh`: clone/use the SDK, install TS deps, build
-   the CLI, print the PATH.
-3. Add `scripts/verify.sh`: `native check`, `native test`, optionally
-   `native build`.
-4. Add a CI workflow adapted from the showcase: pin versions, cache the
-   SDK and `node_modules`, run check + test, then an automation smoke.
-5. Record the first green run with the CLI version and commit in the repo
-   (or in `status.md`).
-6. Decide whether the app owns a `build.zig` now (`native eject`) or stays
+1. Generalise `scripts/env.sh`/`setup.sh` beyond Homebrew/macOS (or add a
+   `mise.toml`/`.tool-versions`).
+2. Add a Linux bootstrap and prove `native check`/`native test` there.
+3. Extend CI's smoke through a seeded sale (see G-018).
+4. Record a green run with the CLI version and commit in `status.md`.
+5. Decide whether the app owns a `build.zig` now (`native eject`) or stays
    managed. Managed is fine until a C library is linked.
 
 ## Exit criterion

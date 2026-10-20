@@ -1,6 +1,6 @@
 # Navigation and roles
 
-> **Status:** Implemented. Seven templates exist: five are mounted in the
+> **Status:** Implemented. Eight templates exist: five are mounted in the
 > shell and two are session gates. The other 36 `Screen` values are
 > reachable in the model but have no template. Multi-window delivery is a
 > **plan** (see the last section), not a feature.
@@ -27,7 +27,8 @@ and no transition system. A navigation is three things and nothing else:
 Eatery v1 had 77 `GoRoute` entries with a `redirect:` callback that owned
 the permission check. That callback was the one place that knew what a
 role could open, and it was untested. v2 moves the same decision into a
-pure function (`core/rbac.zig`) that a table-driven test walks in full,
+pure function (`core/rbac.zig`) that a test is meant to walk in full (the
+current matrix test is tautological; see the documentation audit),
 and leaves the drawing of the result to the markup.
 
 The consequence that matters in practice: **the view never decides where

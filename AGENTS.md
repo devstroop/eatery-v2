@@ -105,6 +105,25 @@ Other rules that bite:
 - **The model must stay default-constructible.** `UiApp.create` builds it as
   `.{}`, and the model-contract checker does the same. That is why the model
   owns fixed-capacity buffers (`core/bump.zig`) instead of a heap allocator.
+- **Never free anything in an arena-derived method.** Zig 0.16's
+  `ArenaAllocator.free` is not a no-op: it rewinds the arena when the
+  block is the most recent allocation, and the next allocation
+  overwrites it. An arena-derived method that builds a list, returns
+  its items and then `deinit`s the list hands the rows back to the
+  allocator — and the view reads a menu of garbage one allocation
+  later. Count first, `arena.alloc` once, fill, return:
+
+  ```zig
+  pub fn visible_products(model: *const Model, arena: std.mem.Allocator) []const domain.Product {
+      var count: usize = 0;
+      for (model.products) |product| { if (matches(product)) count += 1; }
+      const out = arena.alloc(domain.Product, count) catch return &.{};
+      var index: usize = 0;
+      for (model.products) |product| { if (matches(product)) { out[index] = product; index += 1; } }
+      return out[0..index];
+  }
+  ```
+
 - **Never return a pointer to a local composite literal.**
 
   ```zig

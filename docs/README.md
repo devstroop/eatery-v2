@@ -130,6 +130,19 @@ template. The short version:
 | [plan/risks](plan/risks.md) | Risk register |
 | [plan/open-questions](plan/open-questions.md) | Known unknowns and unknown unknowns |
 
+### Review
+
+The review set is a dated snapshot, not a specification. Start with the
+executive audit, then use the category pages.
+
+| Document | Subject |
+|---|---|
+| [review/2026-10-20-audit](review/2026-10-20-audit.md) | Blockers, verified evidence, fix order |
+| [review/bugs](review/bugs.md) | Behaviour that is wrong now (30 findings) |
+| [review/gaps](review/gaps.md) | Flows and features that do not exist (26) |
+| [review/enhancements](review/enhancements.md) | Correctness, UX, performance, accessibility (20) |
+| [review/docs-audit](review/docs-audit.md) | Stale or overstated documentation claims (18) |
+
 ---
 
 ## Documentation rules

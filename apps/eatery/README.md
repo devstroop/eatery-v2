@@ -68,8 +68,10 @@ honest. This version may never be edited after it is shipped."). The
 engine applies the migrations when the database opens; `migrations.lock.json`
 records the source version (currently `10`) and a hash per migration.
 
-`native check` validates the markup and the manifest. It does not open the
-database. The schema is exercised when the app opens it.
+`native check` validates the markup and the manifest, and it prepares the
+schema with real SQLite: a non-`STRICT` table or a broken foreign key fails
+the check. It does not open the app's live database; that happens at
+runtime.
 
 ### Live smoke test
 
@@ -112,7 +114,7 @@ Every file under `apps/eatery/`, and what it owns.
 | `data/repos.zig` | the SQL: one named statement per query, the load functions, the decoders, `saveOrder`, `setOrderStatus`, `saveConfigValue` |
 | `data/page.zig` | the reader for the engine's row format: header, column names, row values, `intOf` / `textOf` / `boolOf` |
 | `data/auth.zig` | PIN hashing: salted SHA-256, hex-encoded, `hashPin`, `makeSalt`, `equal` |
-| `tests.zig` | the 12 headless tests |
+| `tests.zig` | the 13 authored headless tests |
 | `schema/0001_core.sql` | `company`, `currency`, `employee`, `app_config` |
 | `schema/0002_catalog.sql` | `product_category`, `tax_slab`, `product`, `modifier_group`, `modifier`, `product_modifier`, `discount` |
 | `schema/0003_floor.sql` | `dining_table_category`, `dining_table`, `kds_station`, `product_station` |
@@ -123,7 +125,9 @@ Every file under `apps/eatery/`, and what it owns.
 | `schema/0008_compliance.sql` | `compliance_report`, `void_log_entry`, `subscription` |
 | `schema/0009_printing.sql` | `printer`, `auto_print` |
 | `schema/0010_sync.sql` | `device`, `op_log`, `sync_state` |
+| `schema/0011_default_tax_slab.sql` | the zero-rate tax slab |
 | `schema/migrations.lock.json` | the schema lock: source version `10`, a hash per migration, the schema hash |
+| `screens/screen-setup.native` | the first-run company/operator/PIN form |
 | `screens/screen-role-picker.native` | the first screen: the four role cards |
 | `screens/screen-login.native` | the PIN pad |
 | `screens/screen-dashboard.native` | the counts, the recent orders, the shortcuts |
@@ -170,7 +174,7 @@ channel:
 |---|---|
 | App model | `Model` / `Msg` / `update` / `boot`, effect keys, the fake executor in tests |
 | Navigation | 43 `Screen` destinations, 4 `Role`s, the fixed-capacity `Stack` |
-| RBAC | the whole matrix, as a pure function, with a table-driven test |
+| RBAC | the whole matrix, as a pure function; the current “matrix” test is tautological and needs a real table |
 | Theming | the light and dark palettes, switched by a model field |
 | Role picker | a template, a message, a test |
 | Sign-in | the PIN pad, salted SHA-256 against the `employee` table, kiosk sign-in by device |
@@ -179,26 +183,26 @@ channel:
 | Orders | the list, and the status advance with its history row |
 | Tables | the floor board, read-only |
 | Kitchen board | the tickets, the summary, the wait time, the advance |
-| Schema | 43 `STRICT` tables across 10 migrations |
+| Schema | 43 `STRICT` tables across 11 migrations |
 | Data layer | 9 named read queries plus the login SQL; 3 write paths |
-| Tests | 12 headless tests |
+| Tests | 13 headless tests + an uncommitted 11-test DB suite |
 
 ### The numbers
 
 | Measure | Value | Where |
 |---|---|---|
 | `Screen` variants | 43 | `src/core/navigation.zig` |
-| `Msg` variants | 39 | `src/core/msg.zig` |
-| Screen templates | 7 | `src/screens/*.native` |
-| Templates mounted in the shell | 5 | the gates in `src/app.native` |
+| `Msg` variants | 46 | `src/core/msg.zig` |
+| Screen templates | 8 | `src/screens/*.native` |
+| Templates mounted | 5 in the shell + setup, login and role picker | the gates in `src/app.native` |
 | Database tables | 43, every one `STRICT` | `src/schema/*.sql` |
-| Migrations | 10, locked at version 10 | `src/schema/migrations.lock.json` |
+| Migrations | 11, locked at version 11 | `src/schema/migrations.lock.json` |
 | Read queries | 9 plus the login SQL | `src/data/repos.zig`, `src/core/update.zig` |
 | Write paths | order and lines, status and history, one config value | `src/data/repos.zig` |
-| Headless tests | 12 | `src/tests.zig` |
+| Headless tests | 13 authored (25 reported with the uncommitted DB suite + one generated) | `src/tests.zig`, `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/sync-sidecar/`, `tools/print-sidecar/` |
 
-### The 12 tests
+### The 13 authored tests
 
 | Test | Area |
 |---|---|
@@ -206,25 +210,28 @@ channel:
 | picking a role that needs a sign-in lands on the PIN screen | Session |
 | picking a kiosk role signs the device in and opens its board | Session |
 | a role cannot open a screen it may not use | RBAC |
-| the permission matrix is total: every role against every screen | RBAC |
+| the permission matrix is total: every role against every screen (tautological; being replaced) | RBAC |
 | going back returns to the previous screen | Stack |
 | the cart adds, counts and totals in minor units | POS |
 | money stays integer: two hundred and fifty cents is never a float | Domain |
 | a PIN is hashed, never stored | Auth |
 | the page decoder reads the engine's dialect | Data |
 | the model reports its own numbers instead of storing them | Model |
+| the setup screen renders on a fresh installation | Setup |
 | the layout survives a resize | Markup |
 
 ### What works end to end
 
 1. Choose Admin → PIN → dashboard (given an employee with a PIN).
 2. Dashboard → POS → search and filter → add to cart → set the order type
-   → place the order → rows written to `orders` and `order_line`.
+   → place the order. The working tree writes `orders.updated_at`, so this
+   now succeeds; the committed `HEAD` still omits it (B-001).
 3. Orders → advance the status → `orders.status` plus a row in
    `order_status_history`.
 4. Choose Kitchen → board → advance the tickets.
 5. The title bar's **Theme** button toggles light and dark.
-6. The dining tables board renders the seeded tables.
+6. The setup screen creates a starter menu and six tables; the floor board
+   renders them.
 
 ---
 
@@ -335,7 +342,13 @@ the CEF directory is configured but not installed.
 | `busy` is set on writes, never on reads | `src/core/update.zig` | no loading state on a slow query |
 | `view_unbound` lists `pending_screen`, which is not a field | `src/core/model.zig` | a stale lint entry |
 | There is no screen-coverage test | `src/tests.zig` | a blank pane is invisible to the suite |
-| There is no CI | `.github/workflows/` | nothing prevents a regression |
+| CI exists but its smoke only asserts a non-blank canvas | `.github/workflows/ci.yml` | a broken sale path still passes |
+| Order insert omitted `orders.updated_at` (`NOT NULL`) | `src/data/repos.zig` (`saveOrder`) | every order write failed; fixed in the working tree |
+| Login ignores `employee.role` | `src/core/update.zig` (`login_sql`) | any PIN can open Admin |
+| Table/customer ids were `0`, not `NULL` | `src/core/update.zig` (`placeOrder`) | FK failure or orphan references; fixed in the working tree |
+| Company strings pointed into page scratch | `src/data/repos.zig` (`decodeCompany`) | title bar/currency could dangle; fixed in the working tree |
+| PIN is a fast SHA-256 over four digits, with no lockout or masking | `src/data/auth.zig`, `src/screens/screen-login.native` | offline brute force and shoulder-surfing |
+| Status advance is not conditional | `src/core/update.zig` (`advance_order`) | double taps duplicate history |
 | No `build.zig` in the app directory | app root | fine while the CLI manages it; blocks linking a C library until `native eject` |
 
 ### Not covered by the tests
@@ -355,7 +368,8 @@ error arms, the salt lifecycle, and both sidecars.
    a `nav_section()` if it belongs in a rail.
 2. **Decide the permissions.** Add the screen to `rbac.allows` for every
    role that may open it, and to `rbac.home` if it is a role's landing
-   screen. The matrix test walks every role against every screen.
+   screen. The matrix test is meant to walk every role against every screen; the
+current one is tautological (see the audit).
 3. **Add the message** to the `Msg` union in `src/core/msg.zig` if the
    screen dispatches one. If no markup dispatches it, list it in
    `view_unbound`.

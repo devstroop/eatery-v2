@@ -1,7 +1,8 @@
 # Testing and quality
 
-> **Status:** Partial — 12 headless tests; no CI; no automation smoke; no
-> database integration tests.
+> **Status:** Partial — 13 authored headless tests plus an uncommitted
+> 11-test database suite; 25/25 pass in the working tree. CI exists but its
+> smoke is non-blank only, and the DB suite is not committed.
 > **Last verified:** 2026-10-20, by source review.
 > **Source:** `src/tests.zig`, `main.zig` (`test` block), `PORT-PLAN.md` §3.8.
 
@@ -21,7 +22,7 @@ The architecture exists partly to make testing cheap:
 A rule that lives only in a comment is a rule that breaks. The tests in
 `src/tests.zig` are written as rules, not as coverage for its own sake.
 
-## Current tests (12)
+## Current tests (13 authored)
 
 | # | Test | What it pins |
 |---|---|---|
@@ -36,7 +37,14 @@ A rule that lives only in a comment is a rule that breaks. The tests in
 | 9 | A PIN is hashed, never stored | Salt and hashing |
 | 10 | The page decoder reads the engine's dialect | Wire format |
 | 11 | The model reports its own numbers instead of storing them | Derived values |
-| 12 | The layout survives a resize | Markup build + layout at 1280×800 |
+| 12 | The setup screen renders on a fresh installation | Setup gate and template |
+| 13 | The layout survives a resize | Markup build + layout at 1280×800 |
+
+The working tree also has 11 in-memory database tests (`tests_data.zig`,
+uncommitted); with one generated test the runner reports 25. The RBAC
+“matrix is total” test is tautological (the assertion is guarded by
+the value it asserts); see the [documentation
+audit](../review/docs-audit.md#d-007--the-rbac-matrix-test-is-tautological).
 
 How they run:
 
@@ -60,11 +68,11 @@ does) or bind an in-memory store.
 | Repository SQL against a real migrated database | A typo is caught only at runtime |
 | Write atomicity (order + lines) | No test inserts then reads back |
 | Login success path | Only hashing is tested; the SQL match is not |
-| `config_loaded` salt creation | Untested; has a known source defect |
+| `config_loaded` salt creation | Covered by the working-tree DB test; the provisional gate is still untested |
 | Salt provisional race | Untested; see `plan/status.md` |
 | Order ID collisions | Untested; the scheme is provisional |
 | Decoders for categories/tables/employees/customers/orders/lines | Only the generic page reader is tested |
-| Every screen template | Five of seven templates have no render test |
+| Every screen template | Five of eight templates have no render test |
 | Node budget | No assertion on `widget_nodes` |
 | Error arms (`db_failed`, failed loads) | Copy and state are untested |
 | Timer tick | Untested |
@@ -80,7 +88,7 @@ does) or bind an in-memory store.
 | Pure update | `native test` | Model transitions, RBAC, cart, status machine | Partial |
 | Markup build | `native test` | Every template builds for its model fixture and contains its landmark | Partial |
 | Page decoder | `native test` | Every decoder against a hand-built page | Partial |
-| Relational integration | `native test` + `openMemoryMigrated` | Migrate, insert fixtures, run repo SQL, assert rows | Planned |
+| Relational integration | `native test` + `openMemoryMigrated` | Migrate, insert fixtures, run repo SQL, assert rows | In progress (uncommitted; 25/25 pass) |
 | Business calculations | `native test` | Tax, discount, rounding, split payment, against v1 tests as oracle | Planned |
 | Live automation | `native automate` | Role picker → login → sale → KDS advance, node budget, non-blank GPU | Planned |
 | Interop | External harness | Flutter app and native app converge on sync | Planned |
@@ -95,7 +103,7 @@ var db = try native_sdk.relational_store.Database.openMemoryMigrated(
 defer db.deinit();
 
 var fx = Effects.init(testing.allocator);
-fx.executor = .fake;
+// The real executor: these tests exist to run SQL.
 fx.bindRelationalStore(db.binding());
 
 // seed, then drive fx.dbExec / fx.dbQuery exactly as the app does
@@ -123,17 +131,16 @@ shell gate that points at the wrong ordinal.
 
 ## CI
 
-There is no CI. `.github/workflows/` is empty.
+`.github/workflows/ci.yml` has two jobs:
 
-The target workflow (adapted from the showcase):
+1. **verify** — installs the pinned Zig 0.16.0 and Node 24, builds or
+   restores the SDK CLI, then runs `scripts/verify-all.sh`
+   (`native check` + `native test`).
+2. **smoke** — builds with `-Dautomation=true`, runs under `xvfb`, and
+   asserts `gpu_nonblank=true` plus a screenshot.
 
-1. Install Zig 0.16.0 and Node 24.
-2. Build the Native SDK CLI (or cache it).
-3. `native check apps/eatery`.
-4. `native test apps/eatery --yes`.
-5. `native build apps/eatery -Dautomation=true`.
-6. Run the automation smoke under a virtual display.
-7. Upload screenshots and the trace on failure.
+The smoke does not sign in, place an order or assert a widget, so a broken
+sale path still passes. Extending it is gap G-018.
 
 Pinning matters: Zig 0.17 cannot parse the SDK, and Node 22 fails the
 relational toolchain. A CI runner that "looks fine" will fail at step 1.

@@ -1,6 +1,6 @@
 # UI: markup, components and tokens
 
-> **Status:** Implemented. Seven templates exist: five are mounted in the
+> **Status:** Implemented. Eight templates exist: five are mounted in the
 > shell and two are session gates. `src/components/` is **empty** - the
 > component library is a plan. Theming is implemented: light and dark palettes, re-resolved on
 > every rebuild.
@@ -623,7 +623,7 @@ Eatery runs the runtime engine today, in every build mode.
 
 ## The component library
 
-`src/components/` exists and is empty. The seven templates repeat their
+`src/components/` exists and is empty. The eight templates repeat their
 patterns inline: the empty state appears in four screens, the screen
 header in five, the row-with-badge in three. The table below is the
 plan - each row names a component v2 needs and the platform element it

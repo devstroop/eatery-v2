@@ -1,6 +1,6 @@
 # Schema
 
-> **Status:** Scaffolded — 43 tables across 10 migrations; only the core
+> **Status:** Scaffolded — 43 tables across 11 migrations; only the core
 > subset is used by repositories or UI.
 > **Last verified:** 2026-10-20, by source review.
 > **Source:** `src/schema/0001_core.sql` … `0010_sync.sql`,
@@ -26,7 +26,7 @@ partly by review.
 ## Migration policy
 
 - Files are numbered `NNNN_name.sql` in `src/schema/`.
-- `migrations.lock.json` is the authority: version 10 and ten hashes.
+- `migrations.lock.json` is the authority: version 11 and eleven hashes.
 - `native db new-migration <name>` is the intended authoring path.
 - The engine opens the database **already migrated** at boot; the app
   never runs migration code.

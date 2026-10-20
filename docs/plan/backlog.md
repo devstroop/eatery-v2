@@ -40,10 +40,11 @@ status is a `badge`.
 
 ---
 
-## The seven templates that exist
+## The eight templates that exist
 
 | Template | Mounted at | Ordinal | Screen | Test |
 |---|---|---|---|---|
+| `src/screens/screen-setup.native` | `show_setup` gate | 3 | `setup` | `expectByText(tree.root, .text, "Set up your restaurant")` |
 | `src/screens/screen-role-picker.native` | `show_role_picker` gate | 0 | `role_picker` | `expectByText(tree.root, .text, "Eatery")` |
 | `src/screens/screen-login.native` | `show_login` gate | 1 | `login` | `expectByText(tree.root, .text, "Sign in")` |
 | `src/screens/screen-dashboard.native` | `screen_index == 8` | 8 | `admin_dashboard` | none |
@@ -52,14 +53,14 @@ status is a `badge`.
 | `src/screens/screen-tables.native` | `screen_index == 17` | 17 | `dining_tables` | none |
 | `src/screens/screen-kitchen.native` | `screen_index == 41` | 41 | `kds_board` | none |
 
-All seven are listed in `apps/eatery/src/app_sources.zig` and imported at
+All eight are listed in `apps/eatery/src/app_sources.zig` and imported at
 the top of `src/app.native`. A template that is not in both places does
 not exist: the import closure is embedded, and a missing entry fails
 loudly at the import site.
 
-Five of the seven are mounted in the shell's `<if>` gates. The other two —
-the role picker and the login screen — are mounted by the two top-level
-session gates, so they are on screen without an ordinal.
+Five of the eight are mounted in the shell's `<if>` gates. The other three —
+setup, the role picker and the login screen — are mounted by top-level
+session gates, so they are on screen without a shell ordinal.
 
 ---
 
@@ -69,6 +70,7 @@ No nav section. These are reached by drilling in, not by a tab.
 
 | Screen | Ord | Route-ish id | Role | Status | Platform elements | Data source |
 |---|---|---|---|---|---|---|
+| `setup` | 3 | `onboarding/setup` | first run | Partial (working tree; B-031/B-032) | `column`, `card`, `text-field`, `text`, `button` | `company`, `employee`, `product`, `dining_table` (one `setupCompany` transaction) |
 | `role_picker` | 0 | `session/role-picker` | all four | Done | `column`, `card`, `text`, `badge`, `button` | none — the four role cards are a file-scope constant in `core/navigation.zig` |
 | `login` | 1 | `session/login` | admin, waiter | Done | `column`, `card`, `text-field`, `text`, `button` | `employee` (the check is the SQL in `core/update.zig`), `app_config` (the PIN salt) |
 | `landing` | 2 | `session/landing` | all four | Planned | `column`, `text`, `button` | `company`, `app_config` |

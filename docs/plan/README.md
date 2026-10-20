@@ -27,17 +27,17 @@ The current tree is a **vertical slice in progress**, not a release.
 | Measure | Count |
 |---|---|
 | Screens named in the `Screen` enum | 43 |
-| Screen templates that compile | 7 |
+| Screen templates that compile | 8 |
 | Screens mounted in the shell | 5 |
-| Screens that render at all | 7 |
-| Screen templates with a render test | 2 |
+| Screens that render at all | 8 |
+| Screen templates with a render test | 3 |
 | Tables in the schema | 43 |
-| Migrations | 10 |
+| Migrations | 11 |
 | Entities with a read + decode path | 8 |
-| Entities with a write path | 4 (order, order lines, status history, config) |
-| Headless tests | 12 |
-| Sidecars | 0 (two empty directories) |
-| CI workflows | 0 (empty directory) |
+| Entities with a write path | 5 (order, lines, history, config, setup) |
+| Headless tests | 13 authored (25 reported with the DB suite + one generated) |
+| Sidecars | 0 (two README-only directories) |
+| CI workflows | 1 (verify + smoke) |
 
 Full matrix: [`status.md`](status.md).
 
@@ -48,16 +48,19 @@ Full matrix: [`status.md`](status.md).
 | **M1 — Usable sale** | 0–4 | Role picker → login → POS → order → KDS, on one machine, with the four roles reachable |
 | **M2 — Back office** | 5 | Every remaining screen has a template; setup, catalog, payments, reports |
 | **M3 — Fabric** | 6–7 | Two devices converge; receipts and KOTs print |
-| **M4 — Release** | 8 | Signed package, migrated data, CI, automation smoke |
+| **M4 — Release** | 8 | Signed package, migrated data, CI sale smoke |
 
 M1 is the only milestone that can be demoed to a restaurant. Do not start
-M3 before M1 is honest.
+M3 before M1 is honest. M1 is currently blocked by the order write
+([B-001](../review/bugs.md#b-001--order-insert-omits-ordersupdated_at)), the
+role check ([B-002](../review/bugs.md#b-002--login-ignores-the-employees-stored-role))
+and the missing setup flow ([G-001](../review/gaps.md#g-001--no-first-run-setup)).
 
 ## Phase board
 
 | Phase | Title | Estimate | Status | Exit criterion met? |
 |---|---|---|---|---|
-| [0](phase-0-toolchain.md) | Toolchain & skeleton | 2 d | Partial | No (no CI, no pinned env in repo) |
+| [0](phase-0-toolchain.md) | Toolchain & skeleton | 2 d | Partial | No (scripts and CI exist; no clean-machine proof) |
 | [1](phase-1-foundation.md) | Model, navigation, theme, shell | 4 d | Partial | No (most screens blank, no layout mode) |
 | [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (core only, no DB tests) |
 | [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (order writes; no read-back test; no modifiers/tax) |

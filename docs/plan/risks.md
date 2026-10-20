@@ -11,12 +11,14 @@ owner is not being managed.
 
 | # | Risk | L | I | Why now | Mitigation | Owner |
 |---|---|---|---|---|---|---|
-| SEC0 | Provisional-salt race weakens login correctness | med | high | A fast sign-in can hash against a salt that is then replaced | Block sign-in until `salt_is_provisional == false` | Eng |
+| B0 | Every order write fails | certain | high | `orders.updated_at` is required and never inserted | Add the column to the insert and a DB read-back test (B-001) | Eng |
+| SEC1 | Any employee PIN can open Admin | certain | high | The login query ignores `employee.role` | Filter and verify the role (B-002) | Eng |
+| SEC0 | Provisional-salt race weakens login correctness | med | high | A fast sign-in can hash against a salt that is then replaced | Block sign-in until the salt is confirmed (B-003) | Eng |
 | C1 | Only 7 of 43 screens render | certain | high | The app looks complete in the enum and is blank in use | Coverage test + remove or render every screen | Eng/Product |
 | C2 | Waiter and display roles are unusable | certain | high | Two of four roles cannot do their job | Waiter templates + display board (Phase 1/4) | Eng |
 | C3 | A fresh install cannot log in | certain | high | No setup flow, no company, no employee | Setup/seed path (Phase 5) | Eng/Product |
-| R1 | Zig/Node/SDK toolchain drift | high | high | 0.17 Zig and Node 22 both fail; the CLI is absent here | Pin versions; CI; bootstrap script | Eng |
-| R2 | No CI | certain | high | Regressions land silently | Add workflow (Phase 0/8) | Eng |
+| R1 | Zig/Node/SDK toolchain drift | high | high | 0.17 Zig and Node 22 both fail; scripts assume macOS paths | Pin versions; CI; cross-platform bootstrap | Eng |
+| R2 | CI smoke is non-blank only | certain | high | A broken sale path still passes | Extend the smoke through a seeded sale | Eng |
 | P1 | BLE printing has no native path | certain | high | Receipts are core | Accept the sidecar or restrict to LAN (ADR-0008) | Product |
 | S1 | Sync has no transport in-process | certain | high | Multi-device is a product promise | Op-log + sidecar (ADR-0009) | Product/Eng |
 | I1 | Clock-based order IDs collide | high | med | A busy counter can place two orders in a second | Sequence/UUID (ADR-0013) | Eng |

@@ -103,10 +103,10 @@ rules.
 | Area | What exists |
 |---|---|
 | App model | `apps/eatery/src/core/model.zig`, `msg.zig`, `update.zig`, `navigation.zig`, `rbac.zig`, `theme.zig`, `bump.zig` |
-| View | `apps/eatery/src/app.native` plus seven templates in `apps/eatery/src/screens/` |
+| View | `apps/eatery/src/app.native` plus eight templates in `apps/eatery/src/screens/` |
 | Data | `apps/eatery/src/data/repos.zig`, `page.zig`, `auth.zig`; ten migrations in `apps/eatery/src/schema/` (43 `STRICT` tables) |
 | Manifest | `apps/eatery/app.json`, `apps/eatery/src/main.zig` |
-| Rules | `apps/eatery/src/tests.zig` — 12 headless tests |
+| Rules | `apps/eatery/src/tests.zig` + `tests_data.zig` — 13 authored headless tests and 11 in-memory DB tests (uncommitted) |
 
 **Exit criteria — met.**
 
@@ -124,9 +124,9 @@ rules.
 
 | Risk | Where it bites |
 |---|---|
-| The `native` CLI is not on the PATH in this workspace and the installed Zig is 0.17, which does not parse the SDK | Every exit criterion below is written against a toolchain that has to be provisioned first |
-| No CI | A regression can land unnoticed; `native check` and `native test` have to run somewhere |
-| `scripts/` is empty | The three commands the README advertises (`verify.sh`, `build.sh`, `dev.sh`) do not exist yet |
+| The installed Zig is 0.17 and shadows the pinned 0.16 | `scripts/env.sh` puts 0.16 first; a shell that ignores it fails to parse the SDK |
+| CI exists but its smoke is non-blank only | A regression can land unnoticed; the sale path needs an automation test |
+| `scripts/` is macOS-centric | `setup.sh`/`env.sh` assume Homebrew paths; Linux and Windows are unproven |
 | Defect D2: the provisional PIN salt is installed before the database confirms it, and `salt_is_provisional` is never read | A fast sign-in can hash against a salt that is then replaced — fixed in Phase 1 |
 
 ---
@@ -276,7 +276,7 @@ an empty pane. The rail offers a destination the shell cannot render.
 
 **Deliverables — shared components.**
 
-`apps/eatery/src/components/` is empty today and seven templates repeat
+`apps/eatery/src/components/` is empty today and eight templates repeat
 the same patterns inline: the empty state appears in four screens, the
 screen header in five, the row-with-badge in three. This phase builds the
 component files the admin screens need — `empty-state.native`,

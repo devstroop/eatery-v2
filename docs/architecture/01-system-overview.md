@@ -79,7 +79,7 @@ database or accept a job (see [08-sync](08-sync.md) and
 | Core | `src/core/*.zig` | Model, messages, update, navigation, RBAC, theme, buffers | Implemented |
 | Domain | `src/domain/models.zig` | Entity shapes, enums, money/time conventions | Implemented subset |
 | Data | `src/data/*.zig` | SQL constants, reads, decoders, writes, PIN hashing, page reader | Partial |
-| Schema | `src/schema/0001..0010_*.sql` | 43 STRICT tables, migration lock | Scaffolded beyond core |
+| Schema | `src/schema/0001..0011_*.sql` | 43 STRICT tables, migration lock | Scaffolded beyond core |
 | Sidecars | `tools/sync-sidecar`, `tools/print-sidecar` | Intended external transports | Empty directories |
 | CI / scripts | `.github/workflows`, `scripts` | Intended build/test/automation | Empty directories |
 
@@ -159,8 +159,8 @@ Implemented end to end today:
 - order list and status advance;
 - floor table board (read-only);
 - kitchen board with lifecycle advance;
-- 43-table schema, 10 migrations, core repositories;
-- 12 headless tests.
+- 43-table schema, 11 migrations, core repositories;
+- 13 authored headless tests plus an uncommitted 11-test DB suite.
 
 Not implemented, despite appearing as types or tables:
 
