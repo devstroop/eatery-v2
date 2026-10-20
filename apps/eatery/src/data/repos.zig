@@ -38,6 +38,9 @@ pub const key_order_lines = 9;
 pub const key_config = 10;
 pub const key_setup = 11;
 pub const key_payment = 12;
+pub const key_watch_orders = 13;
+pub const key_open_order = 14;
+pub const key_add_line = 15;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
 pub const key_write_table = 22;
@@ -147,6 +150,18 @@ pub fn loadCustomers(fx: *Effects) void {
         .key = key_customers,
         .sql = customers_sql,
         .on_result = Effects.dbMsg(.customers_loaded),
+    });
+}
+
+/// Watch the open orders. The kitchen board is the one screen that
+/// must not wait for a refresh: a live query re-runs itself when
+/// SQLite says the `orders` table changed.
+pub fn watchOpenOrders(fx: *Effects) void {
+    fx.dbSubscribe(.{
+        .key = key_watch_orders,
+        .sql = orders_sql,
+        .tables = &.{"orders"},
+        .on_result = Effects.dbMsg(.orders_loaded),
     });
 }
 
@@ -387,6 +402,88 @@ pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     model.currency_code = model.company_buf.dupe(reader.textOf(&values, "currency_code")) orelse "";
     model.currency_symbol = model.company_buf.dupe(reader.textOf(&values, "currency_symbol")) orelse "";
     model.tax_inclusive = reader.boolOf(&values, "tax_inclusive");
+}
+
+/// Open an order for a table. A table that already has an open order
+/// is not given a second one: the waiter keeps adding to the order the
+/// table already has.
+pub fn openOrderForTable(
+    fx: *Effects,
+    key: u64,
+    table_id: i64,
+    employee_id: i64,
+    order_no: []const u8,
+    at: i64,
+) void {
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = at },
+        .{ .text = order_no },
+        .{ .integer = table_id },
+        .{ .integer = employee_id },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
+            \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
+            \\  total_minor, placed_at, notes, created_at, updated_at)
+            \\VALUES (?1, ?2, 0, 0, ?3, NULL, ?4, 0, 0, 0, 0, ?1, '', ?1, ?1);
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.order_opened),
+    });
+}
+
+/// Add one line to an open order and bring the order's total up with
+/// it. One transaction, so a line never exists without its total.
+pub fn addOrderLine(
+    fx: *Effects,
+    key: u64,
+    order_id: i64,
+    product_id: i64,
+    product_name: []const u8,
+    unit_price_minor: i64,
+    at: i64,
+) void {
+    var line_params: [5]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = product_id },
+        .{ .text = product_name },
+        .{ .integer = unit_price_minor },
+        .{ .integer = at },
+    };
+    var order_params: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{
+            .{
+                // The line id is left to SQLite: two lines added in the
+                // same millisecond are still two lines.
+                .sql =
+                \\INSERT INTO order_line (id, order_id, product_id, product_name, qty,
+                \\  unit_price_minor, tax_bps, notes, created_at)
+                \\VALUES (NULL, ?1, ?2, ?3, 1, ?4, 0, '', ?5);
+                ,
+                .params = &line_params,
+            },
+            .{
+                .sql =
+                \\UPDATE orders SET
+                \\  subtotal_minor = (SELECT COALESCE(SUM(unit_price_minor * qty), 0) FROM order_line WHERE order_id = ?1),
+                \\  total_minor = (SELECT COALESCE(SUM(unit_price_minor * qty), 0) FROM order_line WHERE order_id = ?1),
+                \\  updated_at = ?2
+                \\WHERE id = ?1;
+                ,
+                .params = &order_params,
+            },
+        },
+        .on_result = Effects.dbMsg(.order_line_added),
+    });
 }
 
 /// Take the payment for an order and close it. ONE transaction: the
