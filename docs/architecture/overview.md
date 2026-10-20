@@ -296,7 +296,7 @@ to be copied — into the model's bump buffers. That rule is the reason
 | `data/auth.zig` | PIN hashing: `hashPin`, `makeSalt`, `equal`, and `hex_len`. Pure — no clock, no allocation, no effects. |
 | `schema/0001..0010_*.sql` | The database: ten migrations, 43 tables, every one `STRICT`. |
 | `schema/migrations.lock.json` | The migration authority: version 11, eleven per-file hashes, and a `schema_hash`. |
-| `screens/*.native` | Eight screen templates: setup, role picker, login, dashboard, POS, orders, tables, kitchen. |
+| `screens/*.native` | Nine screen templates: setup, role picker, login, dashboard, POS, orders, confirmation, tables, kitchen. |
 | `tests.zig` | The rules the app must not break. Twelve tests, written as rules. |
 | `app.json` (in `apps/eatery/`) | The manifest: identity, permissions, capabilities (`sqlite` among them), the shell window and its GPU surface, and the navigation policy. |
 

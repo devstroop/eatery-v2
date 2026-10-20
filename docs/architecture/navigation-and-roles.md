@@ -1,6 +1,6 @@
 # Navigation and roles
 
-> **Status:** Implemented. Eight templates exist: five are mounted in the
+> **Status:** Implemented. Nine templates exist: six are mounted in the
 > shell and two are session gates. The other 36 `Screen` values are
 > reachable in the model but have no template. Multi-window delivery is a
 > **plan** (see the last section), not a feature.

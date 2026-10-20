@@ -40,7 +40,7 @@ status is a `badge`.
 
 ---
 
-## The eight templates that exist
+## The nine templates that exist
 
 | Template | Mounted at | Ordinal | Screen | Test |
 |---|---|---|---|---|
@@ -48,17 +48,18 @@ status is a `badge`.
 | `src/screens/screen-role-picker.native` | `show_role_picker` gate | 0 | `role_picker` | `expectByText(tree.root, .text, "Eatery")` |
 | `src/screens/screen-login.native` | `show_login` gate | 1 | `login` | `expectByText(tree.root, .text, "Sign in")` |
 | `src/screens/screen-dashboard.native` | `screen_index == 8` | 8 | `admin_dashboard` | none |
-| `src/screens/screen-pos.native` | `screen_index == 10` | 10 | `pos` | none |
+| `src/screens/screen-pos.native` | `screen_index == 10` | 10 | `pos` | `expectByText(tree.root, .text, "Paneer Tikka")` |
 | `src/screens/screen-orders.native` | `screen_index == 13` | 13 | `orders` | none |
 | `src/screens/screen-tables.native` | `screen_index == 17` | 17 | `dining_tables` | none |
+| `src/screens/screen-order-confirmation.native` | `screen_index == 12` | 12 | `order_confirmation` | `expectByText(tree.root, .text, "Order 1700000000")` |
 | `src/screens/screen-kitchen.native` | `screen_index == 41` | 41 | `kds_board` | none |
 
-All eight are listed in `apps/eatery/src/app_sources.zig` and imported at
+All nine are listed in `apps/eatery/src/app_sources.zig` and imported at
 the top of `src/app.native`. A template that is not in both places does
 not exist: the import closure is embedded, and a missing entry fails
 loudly at the import site.
 
-Five of the eight are mounted in the shell's `<if>` gates. The other three —
+Six of the nine are mounted in the shell's `<if>` gates. The other three —
 setup, the role picker and the login screen — are mounted by top-level
 session gates, so they are on screen without a shell ordinal.
 
@@ -93,7 +94,7 @@ No nav section. These are reached by drilling in, not by a tab.
 |---|---|---|---|---|---|---|
 | `pos` | 10 | `sell/pos` | admin | Done | `split`, `column`, `row`, `search-field`, `toggle-button`, `scroll`, `grid`, `card`, `text`, `button` | `product`, `product_category` |
 | `pos_cart` | 11 | `sell/cart` | admin | Planned | `column`, `row`, `card`, `text`, `text-field`, `badge`, `button` | `product`, `modifier_group`, `modifier`, `discount` |
-| `order_confirmation` | 12 | `sell/order-confirmation` | admin | Foundation | `column`, `row`, `card`, `text`, `badge`, `button` | `orders`, `order_line`, `payment` |
+| `order_confirmation` | 12 | `sell/order-confirmation` | admin | Partial | `column`, `row`, `card`, `text`, `badge`, `button` | `orders`, `order_line`, `payment` |
 
 ## Orders and money
 
@@ -176,8 +177,6 @@ No nav section. These are reached by drilling in, not by a tab.
 | Three admin rail entries open an empty pane: Catalog (`product_categories`), People (`employees`), System (`settings`) | `src/core/rbac.zig` `section_screen` | 2 |
 | The waiter signs in and lands on a blank content pane | `waiter_tables` | 3 |
 | The display role lands on a blank content pane | `display_board` | 3 |
-| Order confirmation navigates to a screen with no template | `order_confirmation` | 2 |
-| There is no setup flow, so a fresh install has no company and no employee, and sign-in cannot succeed | `setup`, `wizard`, `create_company` | 2 |
 | The customer dataset is decoded but never loaded — `loadAll` omits it | `loadAll` in `data/repos.zig` | 1 |
 | `order_status_history` is written but never read | `order_detail` | 1 |
 | The tax and discount paths exist in the schema but the order write hard-codes both to zero | `placeOrder` in `core/update.zig` | 1 |

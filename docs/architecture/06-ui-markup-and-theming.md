@@ -1,6 +1,6 @@
 # UI markup and theming
 
-> **Status:** Implemented subset — 8 templates render (5 in the shell, 3 as
+> **Status:** Implemented subset — 9 templates render (6 in the shell, 3 as
 > session gates). Theming is implemented (light/dark).
 > **Last verified:** 2026-10-20, by source review.
 > **Source:** `src/app.native`, `src/screens/*.native`, `src/app_sources.zig`,

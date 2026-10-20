@@ -88,7 +88,7 @@ enum silently breaks the shell.
 | 42 | `display_board` | display | No |
 
 "In shell" means `app.native` has an `<if test="{screen_index == N}">`
-gate that mounts a template. Eight screens render at all: setup plus the two session
+gate that mounts a template. Nine screens render at all: setup, the confirmation plus the two session
 gates (role picker and login) plus the five shell gates. The remaining 35
 enum values exist, and many are reachable through `open_section`, but no
 template mounts. That is the single largest as-built gap in the app.
@@ -191,7 +191,7 @@ the handler indexes must mean the same thing.**
 
 ## As-built navigation defects
 
-1. **Eight templates, 43 screens.** Role picker, login, Dashboard, POS,
+1. **Nine templates, 43 screens.** Setup, role picker, login, Dashboard, POS,
    Orders, Dining tables and KDS render. The other 36 screens are a blank
    content pane.
 2. **The waiter shell is effectively broken.** Waiter signs in, lands on

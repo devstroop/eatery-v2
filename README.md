@@ -173,7 +173,7 @@ The foundation is in place and building: the app model, the permission
 matrix, the design tokens, the schema (43 tables), the repository layer, the
 PIN sign-in, the role picker, first-run setup, the dashboard, the point of sale, the
 order list, the floor and the kitchen board. The order write is fixed in
-the working tree but not committed (see the audit). 13 authored headless
+the working tree but not committed (see the audit). 15 authored headless
 tests cover the model, navigation and markup basics; the uncommitted
 in-memory suite covers the SQL.
 

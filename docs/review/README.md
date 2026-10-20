@@ -7,6 +7,14 @@
 > **Scope:** the whole repository — source, schema, tests, scripts, CI,
 > manifests, and the documentation set. No code was changed.
 
+**Since this snapshot:** the first-run setup, the data-layer integration
+suite, the order confirmation and the payment have landed (commits
+`c42af4a`, `bc33547`), and they fixed a number of the findings below -
+the fresh-install gap, the missing data-layer tests, the unpayable order
+and the crash on the point of sale are all closed. **The findings have
+not been re-verified line by line: re-read the source before acting on
+one.**
+
 This directory records what is wrong, missing, risky or worth improving.
 It is deliberately separate from the [plan](../plan/README.md): the plan
 says what we intend to build, the [as-built status](../plan/status.md)

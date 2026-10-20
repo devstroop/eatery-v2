@@ -103,10 +103,10 @@ rules.
 | Area | What exists |
 |---|---|
 | App model | `apps/eatery/src/core/model.zig`, `msg.zig`, `update.zig`, `navigation.zig`, `rbac.zig`, `theme.zig`, `bump.zig` |
-| View | `apps/eatery/src/app.native` plus eight templates in `apps/eatery/src/screens/` |
+| View | `apps/eatery/src/app.native` plus nine templates in `apps/eatery/src/screens/` |
 | Data | `apps/eatery/src/data/repos.zig`, `page.zig`, `auth.zig`; ten migrations in `apps/eatery/src/schema/` (43 `STRICT` tables) |
 | Manifest | `apps/eatery/app.json`, `apps/eatery/src/main.zig` |
-| Rules | `apps/eatery/src/tests.zig` + `tests_data.zig` — 13 authored headless tests and 11 in-memory DB tests (uncommitted) |
+| Rules | `apps/eatery/src/tests.zig` + `tests_data.zig` — 15 authored headless tests and 12 in-memory DB tests |
 
 **Exit criteria — met.**
 
@@ -276,7 +276,7 @@ an empty pane. The rail offers a destination the shell cannot render.
 
 **Deliverables — shared components.**
 
-`apps/eatery/src/components/` is empty today and eight templates repeat
+`apps/eatery/src/components/` is empty today and nine templates repeat
 the same patterns inline: the empty state appears in four screens, the
 screen header in five, the row-with-badge in three. This phase builds the
 component files the admin screens need — `empty-state.native`,

@@ -160,7 +160,7 @@ Implemented end to end today:
 - floor table board (read-only);
 - kitchen board with lifecycle advance;
 - 43-table schema, 11 migrations, core repositories;
-- 13 authored headless tests plus an uncommitted 11-test DB suite.
+- 15 authored headless tests plus a 12-test in-memory DB suite.
 
 Not implemented, despite appearing as types or tables:
 
