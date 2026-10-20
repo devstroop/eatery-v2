@@ -1,0 +1,32 @@
+<!-- The menu: everything the restaurant sells, with its price. The
+     category chips filter the list, and the filter belongs to the
+     model, so the kitchen and the catalogue never disagree about what
+     is on sale. -->
+
+<template name="screen-catalogue">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Catalogue</text>
+      <text foreground="text_muted">{product_count} on the menu</text>
+    </row>
+
+    <row gap="4" cross="center">
+      <toggle-button selected="{selected_category == 0}" on-toggle="set_category_all">All</toggle-button>
+      <for each="categories" key="id" as="category">
+        <toggle-button selected="{category.id == selected_category}" on-toggle="set_category:{category.id}">{category.name}</toggle-button>
+      </for>
+    </row>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="visible_products" key="id" as="product">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1">{product.name}</text>
+            <badge>{product.food_label}</badge>
+            <text>{currency_symbol}{fixed(product.price_minor / 100, 2)}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

@@ -349,6 +349,19 @@ pub const Model = struct {
         return total;
     }
 
+    /// How many people are on the team.
+    pub fn employee_count(model: *const Model) usize {
+        return model.employees.len;
+    }
+
+    /// The settings menu. This method lives INSIDE the struct on
+    /// purpose: the binding resolver only sees the declarations in the
+    /// struct body, and a method at file scope is invisible to the
+    /// markup.
+    pub fn settings_items(_: *const Model) []const SettingsItem {
+        return &settings_menu;
+    }
+
     /// The order number of the order just placed.
     pub fn last_order_no(model: *const Model) []const u8 {
         return model.last_order_no_field;
@@ -708,6 +721,25 @@ pub const CartRow = struct {
     name: []const u8,
     qty: i64,
     total_minor: i64,
+};
+
+/// One row of the settings menu.
+pub const SettingsItem = struct {
+    /// The screen the row opens. Computed from the enum, so a
+    /// reordering of `Screen` breaks the build instead of the menu.
+    id: usize,
+    title: []const u8,
+    detail: []const u8,
+};
+
+const settings_menu = [_]SettingsItem{
+    .{ .id = @intFromEnum(Screen.settings_company), .title = "Company", .detail = "Name, address, tax number" },
+    .{ .id = @intFromEnum(Screen.settings_printers), .title = "Printers", .detail = "Receipt and kitchen printers" },
+    .{ .id = @intFromEnum(Screen.settings_tax), .title = "Tax slabs", .detail = "The rates and the slabs" },
+    .{ .id = @intFromEnum(Screen.settings_currency), .title = "Currency", .detail = "Currency and region" },
+    .{ .id = @intFromEnum(Screen.settings_modifiers), .title = "Modifier groups", .detail = "The choices on a dish" },
+    .{ .id = @intFromEnum(Screen.settings_discounts), .title = "Discounts", .detail = "Percent and fixed discounts" },
+    .{ .id = @intFromEnum(Screen.data_management), .title = "Data", .detail = "Import, export and backup" },
 };
 
 /// One card on the customer display.
