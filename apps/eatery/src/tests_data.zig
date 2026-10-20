@@ -656,3 +656,40 @@ test "the kitchen board filters by station" {
     try testing.expectEqual(@as(usize, 1), harness.model.kitchen_tickets(arena).len);
     try testing.expectEqual(@as(i64, 2), harness.model.kitchen_tickets(arena)[0].id);
 }
+
+test "the company details are saved and read back" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The form starts from what is stored: opening the screen seeds
+    // the form from the saved company.
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    harness.send(.{ .open_screen = @intCast(nav.Screen.settings_company.index()) });
+    try testing.expectEqualStrings("Test Diner", harness.model.form_company_name());
+
+    // The form is edited and saved.
+    harness.model.form_name_buf.set("Sharma Restaurant and Bar");
+    harness.model.form_address_buf.set("12 MG Road");
+    harness.model.form_phone_buf.set("+91 98765 43210");
+    harness.model.form_tax_buf.set("29ABCDE1234F1Z5");
+    harness.send(Msg{ .save_company = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    // And the database has the new details.
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("Sharma Restaurant and Bar", harness.model.company_name_field);
+    try testing.expectEqualStrings("12 MG Road", harness.model.company_address_field);
+    try testing.expectEqualStrings("+91 98765 43210", harness.model.company_phone_field);
+    try testing.expectEqualStrings("29ABCDE1234F1Z5", harness.model.company_tax_field);
+}
+
+test "a company cannot be saved without a name" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_name_buf.set("   ");
+    harness.send(Msg{ .save_company = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}

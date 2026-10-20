@@ -116,6 +116,20 @@ pub const Msg = union(enum) {
     /// Jump to the floor.
     open_tables,
 
+    // ---------------------------------------------------- the company form
+
+    /// The company form changed.
+    form_company_name_edit: canvas.TextInputEvent,
+    form_company_address_edit: canvas.TextInputEvent,
+    form_company_phone_edit: canvas.TextInputEvent,
+    form_company_tax_edit: canvas.TextInputEvent,
+    /// Save the company.
+    save_company,
+    /// Back to the settings menu.
+    open_settings,
+    /// The company was saved.
+    company_saved: native_sdk.EffectDbResult,
+
     // ------------------------------------------------------ the kitchen board
 
     /// The board refreshes itself: the kitchen is a different device
@@ -190,6 +204,7 @@ pub const Msg = union(enum) {
         "order_status_saved",
         "tick",
         "stations_loaded",
+        "company_saved",
         "product_stations_loaded",
         "audio_event",
     };

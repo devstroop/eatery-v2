@@ -97,6 +97,9 @@ pub const Model = struct {
     company_id: i64 = 0,
     /// The company name, owned by `company_buf`.
     company_name_field: []const u8 = "",
+    company_address_field: []const u8 = "",
+    company_phone_field: []const u8 = "",
+    company_tax_field: []const u8 = "",
     currency_code: []const u8 = "USD",
     currency_symbol: []const u8 = "$",
     /// True when the menu's prices already include tax.
@@ -141,6 +144,15 @@ pub const Model = struct {
     selected_category: i64 = 0,
     /// The search text in the POS.
     search: canvas.TextBuffer(64) = .{},
+
+    // ------------------------------------------------- the company form
+
+    /// The company's editable details, held as buffers so the form can
+    /// be typed into before it is saved.
+    form_name_buf: canvas.TextBuffer(64) = .{},
+    form_address_buf: canvas.TextBuffer(128) = .{},
+    form_phone_buf: canvas.TextBuffer(32) = .{},
+    form_tax_buf: canvas.TextBuffer(32) = .{},
 
     // ------------------------------------------------------ the kitchen
 
@@ -354,12 +366,34 @@ pub const Model = struct {
         return model.employees.len;
     }
 
+    /// The company form's fields, one binding each.
+    pub fn form_company_name(model: *const Model) []const u8 {
+        return model.form_name_buf.text();
+    }
+
+    pub fn form_company_address(model: *const Model) []const u8 {
+        return model.form_address_buf.text();
+    }
+
+    pub fn form_company_phone(model: *const Model) []const u8 {
+        return model.form_phone_buf.text();
+    }
+
+    pub fn form_company_tax(model: *const Model) []const u8 {
+        return model.form_tax_buf.text();
+    }
+
     /// The settings menu. This method lives INSIDE the struct on
     /// purpose: the binding resolver only sees the declarations in the
     /// struct body, and a method at file scope is invisible to the
     /// markup.
     pub fn settings_items(_: *const Model) []const SettingsItem {
         return &settings_menu;
+    }
+
+    /// The currency the restaurant trades in.
+    pub fn company_currency_code(model: *const Model) []const u8 {
+        return model.currency_code;
     }
 
     /// The order number of the order just placed.
@@ -394,6 +428,11 @@ pub const Model = struct {
     }
 
     /// Why the last payment failed, or empty.
+    /// The error the operator needs to see.
+    pub fn error_text_text(model: *const Model) []const u8 {
+        return model.error_text;
+    }
+
     pub fn payment_error_text(model: *const Model) []const u8 {
         return model.payment_error;
     }

@@ -148,6 +148,26 @@ fn addToOrder(model: *Model, fx: *Effects, product_id: i64) void {
     );
 }
 
+/// Save the company. The name is the one field that must not be empty:
+/// it is on every receipt.
+fn saveCompany(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The restaurant needs a name";
+        return;
+    }
+    model.busy = true;
+    model.error_text = "";
+    repos.updateCompany(
+        fx,
+        repos.key_save_company,
+        name,
+        std.mem.trim(u8, model.form_address_buf.text(), " "),
+        std.mem.trim(u8, model.form_phone_buf.text(), " "),
+        std.mem.trim(u8, model.form_tax_buf.text(), " "),
+    );
+}
+
 /// Take the payment for the order that was just placed and close it.
 fn takePayment(model: *Model, fx: *Effects) void {
     if (model.last_order_id == 0) {
@@ -369,6 +389,16 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_screen => |index| {
             const screen = std.enums.fromInt(Screen, index) orelse return;
+            // The company form starts from what is stored: opening the
+            // settings shows the saved details, not an empty form. It
+            // is seeded HERE, when the screen is opened - seeding it on
+            // every load would wipe what the operator is typing.
+            if (screen == .settings_company and model.company_id != 0) {
+                model.form_name_buf.set(model.company_name_field);
+                model.form_address_buf.set(model.company_address_field);
+                model.form_phone_buf.set(model.company_phone_field);
+                model.form_tax_buf.set(model.company_tax_field);
+            }
             go(model, screen);
         },
 
@@ -517,6 +547,32 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // closed order is now a completed one.
             go(model, .orders);
             repos.loadOrders(fx);
+        },
+
+        // ------------------------------------------------ the company form
+
+        .form_company_name_edit => |event| model.form_name_buf.apply(event),
+
+        .form_company_address_edit => |event| model.form_address_buf.apply(event),
+
+        .form_company_phone_edit => |event| model.form_phone_buf.apply(event),
+
+        .form_company_tax_edit => |event| model.form_tax_buf.apply(event),
+
+        .save_company => saveCompany(model, fx),
+
+        .open_settings => go(model, .settings),
+
+        .company_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the company";
+                return;
+            }
+            model.error_text = "";
+            // Read it back: the form's buffers are the edit model, and
+            // the company row is the truth.
+            repos.loadCompany(fx);
         },
 
         // -------------------------------------------------- the kitchen board

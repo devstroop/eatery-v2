@@ -44,6 +44,7 @@ pub const key_add_line = 15;
 pub const key_stations = 16;
 pub const key_product_stations = 18;
 pub const key_board_refresh = 19;
+pub const key_save_company = 20;
 pub const key_chime = 17;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
@@ -119,7 +120,8 @@ pub const stations_sql =
 
 /// The company row. A v2 database holds exactly one company.
 pub const company_sql =
-    \\SELECT id, name, currency_code, currency_symbol, tax_inclusive
+    \\SELECT id, name, currency_code, currency_symbol, tax_inclusive,
+    \\       address, phone, tax_number
     \\FROM company
     \\LIMIT 1;
 ;
@@ -469,6 +471,9 @@ pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     model.company_buf.reset();
     model.company_id = reader.intOf(&values, "id", 0);
     model.company_name_field = model.company_buf.dupe(reader.textOf(&values, "name")) orelse "";
+    model.company_address_field = model.company_buf.dupe(reader.textOf(&values, "address")) orelse "";
+    model.company_phone_field = model.company_buf.dupe(reader.textOf(&values, "phone")) orelse "";
+    model.company_tax_field = model.company_buf.dupe(reader.textOf(&values, "tax_number")) orelse "";
     model.currency_code = model.company_buf.dupe(reader.textOf(&values, "currency_code")) orelse "";
     model.currency_symbol = model.company_buf.dupe(reader.textOf(&values, "currency_symbol")) orelse "";
     model.tax_inclusive = reader.boolOf(&values, "tax_inclusive");
@@ -553,6 +558,37 @@ pub fn addOrderLine(
             },
         },
         .on_result = Effects.dbMsg(.order_line_added),
+    });
+}
+
+/// Save the company's details. One statement, one row.
+pub fn updateCompany(
+    fx: *Effects,
+    key: u64,
+    name: []const u8,
+    address: []const u8,
+    phone: []const u8,
+    tax_number: []const u8,
+) void {
+    // The parameters match the placeholders EXACTLY: the engine refuses
+    // a statement whose parameter count differs from the placeholders it
+    // uses, and the refusal is a silent no-write.
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .text = name },
+        .{ .text = address },
+        .{ .text = phone },
+        .{ .text = tax_number },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\UPDATE company SET name = ?1, address = ?2, phone = ?3, tax_number = ?4
+            \\WHERE id = (SELECT id FROM company LIMIT 1);
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.company_saved),
     });
 }
 

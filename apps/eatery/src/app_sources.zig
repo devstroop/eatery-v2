@@ -17,6 +17,7 @@ pub const sources = [_]canvas.ui_markup.SourceFile{
     .{ .path = "screens/screen-pos.native", .source = @embedFile("screens/screen-pos.native") },
     .{ .path = "screens/screen-orders.native", .source = @embedFile("screens/screen-orders.native") },
     .{ .path = "screens/screen-tables.native", .source = @embedFile("screens/screen-tables.native") },
+    .{ .path = "screens/screen-settings-company.native", .source = @embedFile("screens/screen-settings-company.native") },
     .{ .path = "screens/screen-settings.native", .source = @embedFile("screens/screen-settings.native") },
     .{ .path = "screens/screen-catalogue.native", .source = @embedFile("screens/screen-catalogue.native") },
     .{ .path = "screens/screen-employees.native", .source = @embedFile("screens/screen-employees.native") },
