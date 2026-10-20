@@ -1,0 +1,33 @@
+<!-- The floor. A grid of tables, each one showing who is sitting at
+     it. The status is a badge, not a colour: the SDK's colour
+     attributes take token names, and a status-coloured tile would need
+     a dynamic token the markup cannot resolve. -->
+
+<template name="screen-tables">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Dining tables</text>
+      <badge>{occupied_table_count} busy of {table_count}</badge>
+    </row>
+
+    <if test="{table_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No tables yet. Add them in the setup wizard.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <grid columns="4" gap="8">
+        <for each="tables" key="id" as="table">
+          <card padding="12">
+            <column gap="4">
+              <text size="lg">{table.name}</text>
+              <badge>{table.status_label}</badge>
+              <text size="sm" foreground="text_muted">{table.seats} seats</text>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
+  </column>
+</template>

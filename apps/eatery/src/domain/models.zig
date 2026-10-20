@@ -1,0 +1,276 @@
+//! Domain entities.
+//!
+//! One file for the whole vocabulary: these are the shapes the database
+//! rows decode into and the shapes the view renders. Two house rules
+//! hold everywhere in this file:
+//!
+//!   * **Money is `i64` minor units.** Never a float. A rupee, a cent or
+//!     a yen is an integer; the currency decides the scale. Eatery v1 kept
+//!     money in REAL columns and lost cents to rounding - that class of bug
+//!     does not get a second chance here.
+//!   * **Time is `i64` epoch milliseconds, UTC.** Every timestamp in the
+//!     database is the same shape, so ordering and range queries need no
+//!     per-column knowledge.
+//!
+//! Text is `[]const u8` owned by the loader, never by the model: rows are
+//! decoded into an arena the view owns and dropped with it.
+
+const std = @import("std");
+
+/// The three kinds of sale a restaurant runs. The POS picks one per
+/// order; the kitchen and the receipt both care.
+pub const OrderType = enum(i64) {
+    dine_in = 0,
+    take_away = 1,
+    delivery = 2,
+
+    pub fn label(self: OrderType) []const u8 {
+        return switch (self) {
+            .dine_in => "Dine in",
+            .take_away => "Take away",
+            .delivery => "Delivery",
+        };
+    }
+};
+
+/// Order lifecycle. The transition table lives in `domain/orders.zig`.
+pub const OrderStatus = enum(i64) {
+    pending = 0,
+    preparing = 1,
+    ready = 2,
+    served = 3,
+    completed = 4,
+    voided = 5,
+
+    pub fn label(self: OrderStatus) []const u8 {
+        return switch (self) {
+            .pending => "Pending",
+            .preparing => "Preparing",
+            .ready => "Ready",
+            .served => "Served",
+            .completed => "Completed",
+            .voided => "Voided",
+        };
+    }
+
+    /// The badge tone for the status, expressed in theme tokens.
+    pub fn tone(self: OrderStatus) []const u8 {
+        return switch (self) {
+            .pending => "warning",
+            .preparing => "info",
+            .ready => "success",
+            .served => "accent",
+            .completed => "text_muted",
+            .voided => "destructive",
+        };
+    }
+
+    pub fn fromCode(code: i64) OrderStatus {
+        return std.enums.fromInt(OrderStatus, code) catch .pending;
+    }
+};
+
+/// How a product is prepared. Drives the KDS grouping and whether stock
+/// is decremented.
+pub const ProductType = enum(i64) {
+    dish = 0,
+    beverage = 1,
+    dessert = 2,
+    combo = 3,
+    service = 4,
+
+    pub fn label(self: ProductType) []const u8 {
+        return switch (self) {
+            .dish => "Dish",
+            .beverage => "Beverage",
+            .dessert => "Dessert",
+            .combo => "Combo",
+            .service => "Service",
+        };
+    }
+};
+
+/// Vegetarian / non-vegetarian / egg - the usual kitchen markings.
+pub const FoodType = enum(i64) {
+    non_veg = 0,
+    veg = 1,
+    egg = 2,
+    jain = 3,
+
+    pub fn label(self: FoodType) []const u8 {
+        return switch (self) {
+            .non_veg => "Non-veg",
+            .veg => "Veg",
+            .egg => "Egg",
+            .jain => "Jain",
+        };
+    }
+};
+
+pub const TableStatus = enum(i64) {
+    free = 0,
+    occupied = 1,
+    reserved = 2,
+    dirty = 3,
+
+    pub fn label(self: TableStatus) []const u8 {
+        return switch (self) {
+            .free => "Free",
+            .occupied => "Occupied",
+            .reserved => "Reserved",
+            .dirty => "Needs cleaning",
+        };
+    }
+};
+
+pub const PaymentMode = enum(i64) {
+    cash = 0,
+    card = 1,
+    upi = 2,
+    wallet = 3,
+    credit = 4,
+
+    pub fn label(self: PaymentMode) []const u8 {
+        return switch (self) {
+            .cash => "Cash",
+            .card => "Card",
+            .upi => "UPI",
+            .wallet => "Wallet",
+            .credit => "On account",
+        };
+    }
+};
+
+/// The company the device belongs to. One company per database in v2 -
+/// the multi-company story from v1 was never used and cost real time.
+pub const Company = struct {
+    id: i64,
+    name: []const u8,
+    currency_code: []const u8,
+    currency_symbol: []const u8,
+    tax_inclusive: bool,
+};
+
+/// A staff member. The PIN hash never enters this struct: the login
+/// check happens in SQL, and only the id and display name come back.
+pub const Employee = struct {
+    id: i64,
+    name: []const u8,
+    role: i64,
+    active: bool,
+};
+
+pub const ProductCategory = struct {
+    id: i64,
+    name: []const u8,
+    sort_order: i64,
+};
+
+pub const Product = struct {
+    id: i64,
+    category_id: i64,
+    name: []const u8,
+    /// Price in minor units (cents, paise, yen...).
+    price_minor: i64,
+    product_type: ProductType,
+    food_type: FoodType,
+    tax_slab_id: i64,
+    stock_qty: i64,
+    active: bool,
+};
+
+pub const DiningTableCategory = struct {
+    id: i64,
+    name: []const u8,
+};
+
+pub const DiningTable = struct {
+    id: i64,
+    category_id: i64,
+    name: []const u8,
+    status: TableStatus,
+    /// The status as text, resolved at decode time - the markup binds
+    /// fields, not methods.
+    status_label: []const u8,
+    seats: i64,
+    /// Position on the floor plan, in grid cells.
+    pos_x: i64,
+    pos_y: i64,
+};
+
+pub const Customer = struct {
+    id: i64,
+    name: []const u8,
+    phone: []const u8,
+    email: []const u8,
+    loyalty_points: i64,
+};
+
+pub const TaxSlab = struct {
+    id: i64,
+    name: []const u8,
+    /// Rate in basis points (5% == 500).
+    rate_bps: i64,
+    inclusive: bool,
+};
+
+pub const KdsStation = struct {
+    id: i64,
+    name: []const u8,
+    sort_order: i64,
+};
+
+/// One line of an order. Prices are frozen at the moment the order was
+/// taken - a price change tomorrow must not rewrite yesterday's bills.
+pub const OrderLine = struct {
+    id: i64,
+    order_id: i64,
+    product_id: i64,
+    product_name: []const u8,
+    qty: i64,
+    unit_price_minor: i64,
+    tax_bps: i64,
+    notes: []const u8,
+};
+
+pub const Order = struct {
+    id: i64,
+    order_no: []const u8,
+    order_type: OrderType,
+    status: OrderStatus,
+    /// Labels resolved at decode time: the markup binds fields.
+    status_label: []const u8,
+    type_label: []const u8,
+    dining_table_id: i64,
+    customer_id: i64,
+    employee_id: i64,
+    subtotal_minor: i64,
+    tax_minor: i64,
+    discount_minor: i64,
+    total_minor: i64,
+    placed_at: i64,
+    notes: []const u8,
+};
+
+/// A printable report of the day's takings. Kept so a device can print
+/// an X report without the app being open.
+pub const Shift = struct {
+    id: i64,
+    employee_id: i64,
+    opened_at: i64,
+    closed_at: i64,
+    opening_cash_minor: i64,
+    closing_cash_minor: i64,
+    expected_cash_minor: i64,
+};
+
+/// One line of the POS cart. The cart is session state, not database
+/// state: it lives in the model until the order is placed.
+pub const CartLine = struct {
+    product_id: i64,
+    /// The product name, frozen at the moment it was added so a later
+    /// price change cannot rewrite the cart.
+    name: []const u8,
+    price_minor: i64,
+    qty: i64,
+};

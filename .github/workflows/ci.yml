@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The SDK release the app is authored against. The CLI is built from
+  # this tag because the published npm tarball ships without the SDK's
+  # tests/ fixtures that `native test` compiles (FileNotFound), while a
+  # source checkout carries them.
+  NATIVE_SDK_TAG: v0.11.0
+  # The Zig version the SDK pins (src/tooling/toolchain.zig
+  # pinned_zig_version); the CLI rejects any other minor version. 0.17
+  # does not build this SDK (verified: `zig build` fails to parse it).
+  NATIVE_ZIG_VERSION: "0.16.0"
+  # The relational schema generator is TypeScript and needs node 24+.
+  NODE_VERSION: "24"
+
+jobs:
+  verify:
+    name: Tests and checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Zig
+        uses: vercel-labs/setup-zig@v1
+        with:
+          version: ${{ env.NATIVE_ZIG_VERSION }}
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Restore the Native SDK checkout
+        id: sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/native-sdk
+          key: native-sdk-${{ runner.os }}-${{ env.NATIVE_SDK_TAG }}-zig${{ env.NATIVE_ZIG_VERSION }}-b2
+      - name: Fetch and build the SDK CLI
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$NATIVE_SDK_TAG" https://github.com/vercel-labs/native.git "$HOME/native-sdk"
+          cd "$HOME/native-sdk"
+          # Baseline CPU: the cached binary must run on any runner of this
+          # OS (runners differ in CPU features, and a native-CPU build
+          # SIGILLs when restored onto an older host).
+          zig build -Doptimize=ReleaseFast -Dcpu=baseline
+      - name: Put the SDK CLI on PATH
+        run: |
+          test -x "$HOME/native-sdk/zig-out/bin/native"
+          echo "$HOME/native-sdk/zig-out/bin" >> "$GITHUB_PATH"
+      - name: Install the SDK TypeScript toolchain
+        # The relational schema generator lives in packages/core and is
+        # TypeScript: without these dependencies the SQLite migrations
+        # cannot be prepared and `native check` fails.
+        run: |
+          set -euo pipefail
+          cd "$HOME/native-sdk/packages/core"
+          npm ci --include=dev
+      - name: Cache the Zig compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zig
+          key: zig-cache-${{ runner.os }}-${{ env.NATIVE_SDK_TAG }}-zig${{ env.NATIVE_ZIG_VERSION }}
+      - name: Run every app's tests and checks
+        run: bash scripts/verify-all.sh
+
+  smoke:
+    name: Automation smoke (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [eatery]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Zig
+        uses: vercel-labs/setup-zig@v1
+        with:
+          version: ${{ env.NATIVE_ZIG_VERSION }}
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install GTK and Xvfb
+        # No WebKitGTK dev package: this app declares no web use, so its
+        # Linux host compiles without the embedded web layer.
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev xvfb
+      - name: Restore the Native SDK checkout
+        id: sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/native-sdk
+          key: native-sdk-${{ runner.os }}-${{ env.NATIVE_SDK_TAG }}-zig${{ env.NATIVE_ZIG_VERSION }}-b2
+      - name: Fetch and build the SDK CLI
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$NATIVE_SDK_TAG" https://github.com/vercel-labs/native.git "$HOME/native-sdk"
+          cd "$HOME/native-sdk"
+          zig build -Doptimize=ReleaseFast -Dcpu=baseline
+      - name: Put the SDK CLI on PATH
+        run: |
+          test -x "$HOME/native-sdk/zig-out/bin/native"
+          echo "$HOME/native-sdk/zig-out/bin" >> "$GITHUB_PATH"
+      - name: Install the SDK TypeScript toolchain
+        run: |
+          set -euo pipefail
+          cd "$HOME/native-sdk/packages/core"
+          npm ci --include=dev
+      - name: Cache the Zig compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zig
+          key: zig-cache-${{ runner.os }}-${{ env.NATIVE_SDK_TAG }}-zig${{ env.NATIVE_ZIG_VERSION }}
+      - name: Build with automation and drive the app headless
+        run: |
+          set -euo pipefail
+          cd "apps/${{ matrix.app }}"
+          native build -Dautomation=true --yes
+          rm -rf .zig-cache/native-sdk-automation
+          xvfb-run -a "./zig-out/bin/${{ matrix.app }}" &
+          pid=$!
+          trap 'kill "$pid" >/dev/null 2>&1 || true; pkill -x "${{ matrix.app }}" >/dev/null 2>&1 || true' EXIT
+          native automate wait
+          native automate assert 'gpu_nonblank=true'
+          native automate screenshot main-canvas
+          test -s .zig-cache/native-sdk-automation/screenshot-main-canvas.png

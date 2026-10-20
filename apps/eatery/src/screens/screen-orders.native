@@ -1,0 +1,35 @@
+<!-- The order list. Every order on the board, newest first, with the
+     status that the kitchen is working through. The list is the model's
+     live view of the `orders` table - a status change anywhere in the
+     app lands here without a refresh. -->
+
+<template name="screen-orders">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Orders</text>
+      <badge>{order_count} open</badge>
+    </row>
+
+    <if test="{order_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No open orders.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="orders" key="id" as="order">
+          <card padding="12">
+            <row gap="12" cross="center">
+              <text grow="1">{order.order_no}</text>
+              <badge>{order.status_label}</badge>
+              <text foreground="text_muted">{order.type_label}</text>
+              <text>{currency_symbol}{fixed(order.total_minor / 100, 2)}</text>
+              <button size="sm" variant="secondary" on-press="advance_order:{order.id}">Advance</button>
+            </row>
+          </card>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

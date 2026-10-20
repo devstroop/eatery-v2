@@ -1,0 +1,20 @@
+# Native SDK build output
+.native/
+zig-out/
+.zig-cache/
+zig-cache/
+
+# Local databases and exports
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+/exports/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
