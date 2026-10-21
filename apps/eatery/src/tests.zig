@@ -811,6 +811,50 @@ const gated_ordinals = [_]usize{
     39, 40, 41, 42, 43, 44, 45, 46,
 };
 
+
+/// The text that proves a screen rendered ITSELF, and not just the
+/// shell around it.
+///
+/// The shell draws a title bar, a rail and a status bar whatever is
+/// mounted, so the landmark has to come from the screen's own
+/// template. A test that only counts nodes cannot tell a screen from
+/// an empty pane.
+const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
+    .{ .template = "screen-setup", .text = "Set up your restaurant" },
+    .{ .template = "screen-role-picker", .text = "Eatery" },
+    .{ .template = "screen-login", .text = "Sign in" },
+    .{ .template = "screen-dashboard", .text = "Dashboard" },
+    .{ .template = "screen-pos", .text = "Cart" },
+    .{ .template = "screen-catalogue-list", .text = "Catalogue" },
+    .{ .template = "screen-product-form", .text = "Category" },
+    .{ .template = "screen-orders", .text = "Orders" },
+    .{ .template = "screen-order-detail", .text = "Total" },
+    .{ .template = "screen-order-confirmation", .text = "Items" },
+    .{ .template = "screen-tables", .text = "Dining tables" },
+    .{ .template = "screen-reservations", .text = "Reservations" },
+    .{ .template = "screen-customers", .text = "Customers" },
+    .{ .template = "screen-kitchen", .text = "Kitchen" },
+    .{ .template = "screen-display", .text = "No orders" },
+    .{ .template = "screen-waiter-tables", .text = "Tables" },
+    .{ .template = "screen-waiter-menu", .text = "Tables" },
+    .{ .template = "screen-waiter-cart", .text = "Nothing on this table yet." },
+    .{ .template = "screen-waiter-orders", .text = "Open orders" },
+    .{ .template = "screen-employees-list", .text = "Employees" },
+    .{ .template = "screen-employee-form", .text = "Role" },
+    .{ .template = "screen-suppliers", .text = "Suppliers" },
+    .{ .template = "screen-purchase-orders", .text = "Purchase orders" },
+    .{ .template = "screen-settings", .text = "Settings" },
+    .{ .template = "screen-settings-company", .text = "Company" },
+    .{ .template = "screen-settings-currency", .text = "Currency" },
+    .{ .template = "screen-settings-tax", .text = "Tax slabs" },
+    .{ .template = "screen-settings-modifiers", .text = "Modifier groups" },
+    .{ .template = "screen-settings-discounts", .text = "Discounts" },
+    .{ .template = "screen-settings-printers", .text = "Printers" },
+    .{ .template = "screen-settings-data", .text = "Data" },
+    .{ .template = "screen-tax-slab-form", .text = "The price already includes this tax" },
+    .{ .template = "screen-discount-form", .text = "A percentage wins over an amount." },
+};
+
 /// The widgets in a tree, the tree itself included.
 fn countWidgets(widget: canvas.Widget) usize {
     var total: usize = 1;
@@ -886,6 +930,89 @@ test "every gated screen renders, and none of them blows the widget budget" {
             return error.ScreenOverBudget;
         }
     }
+}
+
+test "every screen shows a landmark of its own" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.role_chosen = true;
+    model.signed_in = true;
+
+    // Each screen proves it rendered ITSELF. The shell draws a title
+    // bar and a status bar whatever is mounted, so a screen that shows
+    // nothing but the shell still passes a node count.
+    for (screen_landmarks) |landmark| {
+        // The session screens are gated by their own condition rather
+        // than by the ordinal: the setup shows on a fresh install, the
+        // role picker before a role is chosen, and the login between.
+        model.needs_setup = false;
+        model.role_chosen = true;
+        model.signed_in = true;
+        if (std.mem.eql(u8, landmark.template, "screen-setup")) {
+            model.needs_setup = true;
+        } else if (std.mem.eql(u8, landmark.template, "screen-role-picker")) {
+            model.role_chosen = false;
+        } else if (std.mem.eql(u8, landmark.template, "screen-login")) {
+            model.signed_in = false;
+        }
+        model.screen_index = screen_index_of(landmark.template);
+        const tree = try buildTree(arena, &model);
+        // A landmark may be a line of text or a button's label: a
+        // screen whose whole content is a binding has no literal text
+        // of its own, and the label is what a person reads.
+        if (findByText(tree.root, .text, landmark.text) == null and
+            findByText(tree.root, .button, landmark.text) == null)
+        {
+            std.debug.print("the screen {s} never showed \"{s}\"\n", .{ landmark.template, landmark.text });
+            return error.NoLandmark;
+        }
+    }
+}
+
+/// The screen a template belongs to, by its name.
+fn screen_index_of(template: []const u8) usize {
+    const names = [_]struct { template: []const u8, screen: nav.Screen }{
+        .{ .template = "screen-setup", .screen = .setup },
+        .{ .template = "screen-role-picker", .screen = .role_picker },
+        .{ .template = "screen-login", .screen = .login },
+        .{ .template = "screen-dashboard", .screen = .admin_dashboard },
+        .{ .template = "screen-pos", .screen = .pos },
+        .{ .template = "screen-catalogue-list", .screen = .product_categories },
+        .{ .template = "screen-product-form", .screen = .product_form },
+        .{ .template = "screen-orders", .screen = .orders },
+        .{ .template = "screen-order-detail", .screen = .order_detail },
+        .{ .template = "screen-order-confirmation", .screen = .order_confirmation },
+        .{ .template = "screen-tables", .screen = .dining_tables },
+        .{ .template = "screen-reservations", .screen = .reservations },
+        .{ .template = "screen-customers", .screen = .customers },
+        .{ .template = "screen-kitchen", .screen = .kds_board },
+        .{ .template = "screen-display", .screen = .display_board },
+        .{ .template = "screen-waiter-tables", .screen = .waiter_tables },
+        .{ .template = "screen-waiter-menu", .screen = .waiter_menu },
+        .{ .template = "screen-waiter-cart", .screen = .waiter_cart },
+        .{ .template = "screen-waiter-orders", .screen = .waiter_orders },
+        .{ .template = "screen-employees-list", .screen = .employees },
+        .{ .template = "screen-employee-form", .screen = .employee_form },
+        .{ .template = "screen-suppliers", .screen = .suppliers },
+        .{ .template = "screen-purchase-orders", .screen = .purchase_orders },
+        .{ .template = "screen-settings", .screen = .settings },
+        .{ .template = "screen-settings-company", .screen = .settings_company },
+        .{ .template = "screen-settings-currency", .screen = .settings_currency },
+        .{ .template = "screen-settings-tax", .screen = .settings_tax },
+        .{ .template = "screen-settings-modifiers", .screen = .settings_modifiers },
+        .{ .template = "screen-settings-discounts", .screen = .settings_discounts },
+        .{ .template = "screen-settings-printers", .screen = .settings_printers },
+        .{ .template = "screen-settings-data", .screen = .data_management },
+        .{ .template = "screen-tax-slab-form", .screen = .tax_slab_form },
+        .{ .template = "screen-discount-form", .screen = .discount_form },
+    };
+    for (names) |entry| {
+        if (std.mem.eql(u8, entry.template, template)) return entry.screen.index();
+    }
+    return 0;
 }
 
 test "every screen builds a view inside the budget" {

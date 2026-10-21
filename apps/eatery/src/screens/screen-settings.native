@@ -319,6 +319,7 @@
           label="Or an amount off the bill"
           on-input="form_discount_amount_edit"
         />
+        <text size="sm" foreground="text_muted">A percentage wins over an amount.</text>
         <row gap="8">
           <spacer grow="1"/>
           <button variant="primary" on-press="save_discount">Save</button>
