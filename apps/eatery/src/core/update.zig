@@ -821,6 +821,84 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_dashboard => go(model, .admin_dashboard),
 
+        .open_inventory => {
+            go(model, .inventory_items);
+            repos.loadStock(fx);
+        },
+
+        .count_stock => |id| {
+            model.form_stock_product_id = id;
+            model.form_stock_name_field = "";
+            for (model.stock_items_list) |item| {
+                if (item.id != id) continue;
+                model.form_stock_name_field = item.name;
+                break;
+            }
+            // The form starts where the shelf is, so the owner types
+            // the count they see, not the difference.
+            model.form_stock_count_buf.set("");
+            model.form_stock_reason_buf.set("");
+            go(model, .stock_count);
+        },
+
+        .form_stock_count_edit => |event| model.form_stock_count_buf.apply(event),
+
+        .form_stock_reason_edit => |event| model.form_stock_reason_buf.apply(event),
+
+        .save_stock_count => {
+            if (model.form_stock_product_id == 0) {
+                model.error_text = "Nothing is being counted";
+                return;
+            }
+            const typed = std.mem.trim(u8, model.form_stock_count_buf.text(), " \t");
+            const qty = std.fmt.parseInt(i64, typed, 10) catch {
+                model.error_text = "A count is a number";
+                return;
+            };
+            if (qty < 0) {
+                model.error_text = "A count cannot be negative";
+                return;
+            }
+            const current = model.form_stock_current();
+            const delta = qty - current;
+            const reason = std.mem.trim(u8, model.form_stock_reason_buf.text(), " \t");
+            if (reason.len == 0) {
+                model.error_text = "Say why the count changed";
+                return;
+            }
+            model.busy = true;
+            model.error_text = "";
+            repos.saveStockCount(
+                fx,
+                repos.key_save_stock,
+                model.form_stock_product_id,
+                qty,
+                delta,
+                reason,
+                fx.wallMs(),
+            );
+        },
+
+        .stock_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The count could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadStock(fx);
+            go(model, .inventory_items);
+        },
+
+        .stock_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The stock could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeStock(model, result.bytes);
+        },
+
         .open_tables => go(model, .dining_tables),
 
         // ---------------------------------------------------------- the POS

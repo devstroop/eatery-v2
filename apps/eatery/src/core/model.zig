@@ -287,6 +287,7 @@ pub const Model = struct {
     suppliers_list: []const domain.Supplier = &.{},
     payments_list: []const domain.Payment = &.{},
     report_modes_list: []const domain.ReportMode = &.{},
+    stock_items_list: []const domain.StockItem = &.{},
     purchase_orders_list: []const domain.PurchaseOrder = &.{},
 
     /// Storage for the settings rows the screens show.
@@ -298,6 +299,7 @@ pub const Model = struct {
     suppliers_buf: bump.Bump(8192) = .{},
     payments_buf: bump.Bump(16384) = .{},
     report_modes_buf: bump.Bump(2048) = .{},
+    stock_buf: bump.Bump(8192) = .{},
     purchase_orders_buf: bump.Bump(8192) = .{},
 
     // ------------------------------------------------- the company form
@@ -335,6 +337,14 @@ pub const Model = struct {
 
     // ------------------------------------------------------- the sale
 
+    /// The thing whose stock is being counted.
+    form_stock_product_id: i64 = 0,
+    /// Its name, for the form's heading.
+    form_stock_name_field: []const u8 = "",
+    /// The count the owner is typing.
+    form_stock_count_buf: canvas.TextBuffer(16) = .{},
+    /// Why the count changed.
+    form_stock_reason_buf: canvas.TextBuffer(64) = .{},
     /// The day's order count, from the report query.
     report_orders_field: i64 = 0,
     /// The day's gross, in minor units.
@@ -961,6 +971,39 @@ pub const Model = struct {
     /// How many reservations are on the book.
     pub fn reservation_count(model: *const Model) usize {
         return model.reservations_list.len;
+    }
+
+    /// What the restaurant has on the shelf.
+    pub fn stock_items(model: *const Model) []const domain.StockItem {
+        return model.stock_items_list;
+    }
+
+    /// How many things the restaurant counts.
+    pub fn stock_item_count(model: *const Model) usize {
+        return model.stock_items_list.len;
+    }
+
+    /// The thing whose stock is being counted.
+    pub fn form_stock_name(model: *const Model) []const u8 {
+        return model.form_stock_name_field;
+    }
+
+    /// The count the shelf says now, before the owner changes it.
+    pub fn form_stock_current(model: *const Model) i64 {
+        for (model.stock_items_list) |item| {
+            if (item.id == model.form_stock_product_id) return item.stock_qty;
+        }
+        return 0;
+    }
+
+    /// The count the owner is typing.
+    pub fn form_stock_count(model: *const Model) []const u8 {
+        return model.form_stock_count_buf.text();
+    }
+
+    /// Why the count changed.
+    pub fn form_stock_reason(model: *const Model) []const u8 {
+        return model.form_stock_reason_buf.text();
     }
 
     /// The orders taken today.

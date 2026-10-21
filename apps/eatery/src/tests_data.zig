@@ -359,6 +359,47 @@ fn storedPinHash(harness: *Harness, employee_id: i64, out: []u8) ![]const u8 {
 /// The count comes back as a page, and the page bytes are drain
 /// scratch: they are read inside the loop, before the next message
 /// takes the memory.
+/// Every row a query returns, as raw values.
+fn rowsOf(harness: *Harness, sql: []const u8) ![]const []repos.page.Value {
+    var out: std.ArrayList([]repos.page.Value) = .empty;
+    errdefer out.deinit(harness.allocator);
+    harness.fx.dbQuery(.{
+        .key = 906,
+        .sql = sql,
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                if (!reader.readHeader()) continue;
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                while (reader.nextRow(&values)) {
+                    // The page bytes are drain scratch: the text in a
+                    // row points into them, and they die with the
+                    // message. The text is copied out; the numbers are
+                    // values and can be kept as they are.
+                    var row = harness.allocator.dupe(repos.page.Value, &values) catch return error.NoRoom;
+                    for (row[0..reader.columns.len]) |*value| {
+                        switch (value.*) {
+                            .text => |text| {
+                                const copy = harness.allocator.dupe(u8, text) catch return error.NoRoom;
+                                value.* = .{ .text = copy };
+                            },
+                            else => {},
+                        }
+                    }
+                    try out.append(harness.allocator, row);
+                }
+            },
+            else => {},
+        }
+    }
+    return out.toOwnedSlice(harness.allocator);
+}
+
 fn countRows(harness: *Harness, sql: []const u8, params: []const native_sdk.EffectDbValue) !i64 {
     harness.fx.dbQuery(.{
         .key = 907,
@@ -1465,6 +1506,85 @@ test "a fresh install becomes a restaurant through the app alone" {
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(harness.model.signed_in);
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+}
+
+test "the owner counts the stock, and the count says why it moved" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A product the restaurant counts: twenty on the shelf.
+    harness.fx.dbExec(.{
+        .key = 944,
+        .statements = &.{.{
+            .sql = "UPDATE product SET track_stock = 1, stock_qty = 20 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The owner opens the stock and sees what is there.
+    harness.send(Msg{ .open_inventory = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.inventory_items, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.stock_item_count());
+    try testing.expectEqualStrings("Paneer Tikka", harness.model.stock_items()[0].name);
+    try testing.expectEqual(@as(i64, 20), harness.model.stock_items()[0].stock_qty);
+
+    // They count the shelf, and say why it differs.
+    harness.send(Msg{ .count_stock = 1 });
+    try testing.expectEqual(nav.Screen.stock_count, harness.model.screen());
+    try testing.expectEqual(@as(i64, 20), harness.model.form_stock_current());
+    harness.model.form_stock_count_buf.set("18");
+    harness.model.form_stock_reason_buf.set("two broke");
+    harness.send(Msg{ .save_stock_count = {} });
+
+    // The shelf says eighteen, and the ledger says how it got there.
+    harness.drain();
+    try testing.expectEqual(nav.Screen.inventory_items, harness.model.screen());
+    try testing.expectEqual(@as(i64, 18), harness.model.stock_items()[0].stock_qty);
+
+    const rows = try rowsOf(&harness,
+        "SELECT delta, reason FROM stock_adjustment WHERE product_id = 1;",
+    );
+    // The rows are freed after the outer list, so the list is still
+    // readable when its rows are handed back.
+    defer harness.allocator.free(rows);
+    defer for (rows) |row| {
+        for (row) |value| switch (value) {
+            .text => |text| harness.allocator.free(text),
+            else => {},
+        };
+        harness.allocator.free(row);
+    };
+    try testing.expectEqual(@as(usize, 1), rows.len);
+    try testing.expectEqual(@as(i64, -2), rows[0][0].int());
+    try testing.expectEqualStrings("two broke", rows[0][1].asText());
+}
+
+test "a count without a reason is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 945,
+        .statements = &.{.{
+            .sql = "UPDATE product SET track_stock = 1, stock_qty = 20 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    harness.send(Msg{ .open_inventory = {} });
+    harness.drain();
+    harness.send(Msg{ .count_stock = 1 });
+    harness.model.form_stock_count_buf.set("18");
+    harness.send(Msg{ .save_stock_count = {} });
+
+    // The count is not written, and the owner is told why.
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM stock_adjustment;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
 }
 
 test "the report says what the day came to" {

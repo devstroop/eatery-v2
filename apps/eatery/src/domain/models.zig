@@ -407,6 +407,16 @@ pub const ReportMode = struct {
     amount_minor: i64,
 };
 
+/// Something the restaurant counts. The stock on the shelf, as of the
+/// last count.
+pub const StockItem = struct {
+    id: i64,
+    name: []const u8,
+    /// The number on the shelf. Zero is a real number, and so is a
+    /// product that is not counted at all.
+    stock_qty: i64,
+};
+
 /// One line of the POS cart. The cart is session state, not database
 /// state: it lives in the model until the order is placed.
 pub const CartLine = struct {

@@ -131,6 +131,10 @@ pub const Msg = union(enum) {
     payments_loaded: native_sdk.EffectDbResult,
     /// The day's takings.
     report_loaded: native_sdk.EffectDbResult,
+    /// The stock on the shelf.
+    stock_loaded: native_sdk.EffectDbResult,
+    /// The stock was counted.
+    stock_saved: native_sdk.EffectDbResult,
     /// The day's takings by mode.
     report_modes_loaded: native_sdk.EffectDbResult,
 
@@ -166,6 +170,16 @@ pub const Msg = union(enum) {
     open_reports,
     /// Back to the dashboard.
     open_dashboard,
+    /// Open the stock on the shelf.
+    open_inventory,
+    /// Count the stock of the product with this id.
+    count_stock: i64,
+    /// The count being typed.
+    form_stock_count_edit: canvas.TextInputEvent,
+    /// The reason for the count.
+    form_stock_reason_edit: canvas.TextInputEvent,
+    /// Save the count.
+    save_stock_count,
     /// Jump to the floor.
     open_tables,
 
@@ -347,6 +361,8 @@ pub const Msg = union(enum) {
         "payment_taken",
         "payments_loaded",
         "report_loaded",
+        "stock_loaded",
+        "stock_saved",
         "report_modes_loaded",
         "order_opened",
         "order_line_added",

@@ -68,3 +68,72 @@
     </scroll>
   </column>
 </template>
+
+<!-- The stock on the shelf. The owner counts what is there, and the
+     count is written with the reason it moved: a number that changed
+     with no reason behind it is a number nobody can trust later. -->
+
+<template name="screen-inventory-items">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Stock</text>
+      <text foreground="text_muted">{stock_item_count} counted</text>
+      <button size="sm" variant="ghost" on-press="open_dashboard">Back</button>
+    </row>
+
+    <if test="{stock_item_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing is counted. Turn on stock tracking on a product and it appears here.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="stock_items" key="id" as="item">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1" on-press="count_stock:{item.id}">{item.name}</text>
+            <text>{item.stock_qty}</text>
+            <button size="sm" variant="secondary" on-press="count_stock:{item.id}">Count</button>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The count: what the owner sees, and why it is different from what
+     the shelf said. -->
+
+<template name="screen-stock-count">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Count {form_stock_name}</text>
+      <button size="sm" variant="ghost" on-press="open_inventory">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <row cross="center">
+          <text size="sm" foreground="text_muted" grow="1">The shelf says</text>
+          <text>{form_stock_current}</text>
+        </row>
+        <text-field
+          text="{form_stock_count}"
+          placeholder="the number you counted"
+          label="Counted"
+          on-input="form_stock_count_edit"
+        />
+        <text-field
+          text="{form_stock_reason}"
+          placeholder="delivery, breakage, a count"
+          label="Why it changed"
+          on-input="form_stock_reason_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_stock_count">Save the count</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>

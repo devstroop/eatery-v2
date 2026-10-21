@@ -78,6 +78,8 @@ pub const key_save_pin_hash = 38;
 pub const key_payments = 42;
 pub const key_report = 43;
 pub const key_report_modes = 44;
+pub const key_stock = 45;
+pub const key_save_stock = 46;
 
 // ------------------------------------------------------------ queries
 
@@ -237,6 +239,14 @@ pub const inventory_sql =
     \\WHERE track_stock = 1 ORDER BY name;
 ;
 
+/// The stock on the shelf: the things the restaurant counts.
+pub const stock_sql =
+    \\SELECT id, name, COALESCE(stock_qty, 0) AS stock_qty
+    \\FROM product
+    \\WHERE track_stock = 1 AND active = 1
+    \\ORDER BY name;
+;
+
 /// The printers the restaurant has.
 pub const printers_sql =
     \\SELECT id, name, kind, transport, address, job, active FROM printer ORDER BY name;
@@ -317,6 +327,58 @@ pub fn loadOrders(fx: *Effects) void {
         .key = key_orders,
         .sql = orders_sql,
         .on_result = Effects.dbMsg(.orders_loaded),
+    });
+}
+
+/// Load the stock on the shelf.
+pub fn loadStock(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_stock,
+        .sql = stock_sql,
+        .on_result = Effects.dbMsg(.stock_loaded),
+    });
+}
+
+/// Write a count of the stock, and say why it changed.
+///
+/// The count and the reason are one transaction: a number that moved
+/// with no reason behind it is a number nobody can trust later. The
+/// `stock_adjustment` row is the ledger - the count is what the shelf
+/// says now, and the adjustment says how it got there.
+pub fn saveStockCount(
+    fx: *Effects,
+    key: u64,
+    product_id: i64,
+    qty: i64,
+    delta: i64,
+    reason: []const u8,
+    at: i64,
+) void {
+    // The count, the move, the reason, the product and the moment. The
+    // count is what the shelf says now; the move is how far it came.
+    var params: [5]native_sdk.EffectDbValue = .{
+        .{ .integer = qty },
+        .{ .integer = delta },
+        .{ .text = reason },
+        .{ .integer = product_id },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{
+            .{
+                .sql =
+                \\INSERT INTO stock_adjustment (id, product_id, delta, reason, reference, created_at)
+                \\VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM stock_adjustment), ?4, ?2, ?3, '', ?5);
+                ,
+                .params = &params,
+            },
+            .{
+                .sql = "UPDATE product SET stock_qty = ?1, updated_at = ?5 WHERE id = ?4;",
+                .params = &params,
+            },
+        },
+        .on_result = Effects.dbMsg(.stock_saved),
     });
 }
 
@@ -846,6 +908,25 @@ pub fn decodeReservations(model: *Model, bytes: []const u8) void {
         };
     }
     model.reservations_list = list[0..index];
+}
+
+/// Decode the stock on the shelf.
+pub fn decodeStock(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.stock_buf.reset();
+    const count = reader.rows_left;
+    const list = model.stock_buf.allocSlice(domain.StockItem, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.stock_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .stock_qty = reader.intOf(&values, "stock_qty", 0),
+        };
+    }
+    model.stock_items_list = list[0..index];
 }
 
 /// Decode the day's takings.

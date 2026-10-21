@@ -806,9 +806,9 @@ const max_view_widgets = 1024;
 /// numbers, and the markup would mount the wrong screen. A test that
 /// fails here means "append, do not insert".
 const gated_ordinals = [_]usize{
-    4,  5,  6,  8,  10, 12, 13, 14, 15, 16, 17, 20, 23, 24,
+    4,  5,  6,  8,  10, 12, 13, 14, 15, 16, 17, 20, 22, 23, 24,
     25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 48,
+    40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
 };
 
 
@@ -830,6 +830,8 @@ const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-orders", .text = "Orders" },
     .{ .template = "screen-payments", .text = "No payments yet." },
     .{ .template = "screen-reports", .text = "How it was paid" },
+    .{ .template = "screen-inventory-items", .text = "Nothing is counted. Turn on stock tracking on a product and it appears here." },
+    .{ .template = "screen-stock-count", .text = "The shelf says" },
     .{ .template = "screen-order-detail", .text = "Total" },
     .{ .template = "screen-order-confirmation", .text = "Items" },
     .{ .template = "screen-tables", .text = "Dining tables" },
@@ -992,6 +994,8 @@ fn screen_index_of(template: []const u8) usize {
         .{ .template = "screen-orders", .screen = .orders },
         .{ .template = "screen-payments", .screen = .payments },
         .{ .template = "screen-reports", .screen = .reports },
+        .{ .template = "screen-inventory-items", .screen = .inventory_items },
+        .{ .template = "screen-stock-count", .screen = .stock_count },
         .{ .template = "screen-order-detail", .screen = .order_detail },
         .{ .template = "screen-order-confirmation", .screen = .order_confirmation },
         .{ .template = "screen-tables", .screen = .dining_tables },

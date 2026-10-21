@@ -65,6 +65,8 @@
         <if test="{screen_index == 13}"><use template="screen-orders"/></if>
         <if test="{screen_index == 15}"><use template="screen-payments"/></if>
         <if test="{screen_index == 27}"><use template="screen-reports"/></if>
+        <if test="{screen_index == 22}"><use template="screen-inventory-items"/></if>
+        <if test="{screen_index == 49}"><use template="screen-stock-count"/></if>
         <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
         <if test="{screen_index == 16}"><use template="screen-customers"/></if>
         <if test="{screen_index == 20}"><use template="screen-reservations"/></if>
