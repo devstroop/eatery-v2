@@ -27,7 +27,7 @@
 | Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, payment | `repos.zig` |
 | Effect keys | 36, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 56 authored (57 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
+| Headless tests | 64 authored (65 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
 | Database integration tests | 28, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
@@ -45,7 +45,7 @@
 | Theming | Implemented | Light/dark semantic tokens |
 | Shell layout | Partial | Fixed rail + content; no responsive mode |
 | Dashboard | Implemented | Counts, recent orders, shortcuts; money is hard-coded to 2 decimals (B-013) |
-| POS | Partial | Menu, filter, cart and order types work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; no modifiers, tax, discount or payment |
+| POS | Partial | Menu, filter, cart, order types and discounts work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; the tax is worked out line by line from each product's slab. No modifiers, and the currency's decimals are still two |
 | Orders | Partial | Lists non-voided orders including completed; status advance is not conditional (B-008/B-012) |
 | Kitchen board | Implemented | Tickets, summary, wait time, advance |
 | Floor board | Partial | Read-only table cards |
@@ -53,7 +53,7 @@
 | Employees | Partial | The list and the form work; the list is not mounted in a rail of its own |
 | Catalog admin | Partial | The catalogue list and the product form work; the write path is not in the category screen |
 | Settings / setup | Partial | First-run setup writes company/operator/starter menu/salt; currency-symbol and disabled-submit gaps (B-031/B-032) |
-| Payments | Partial | Cash/card/UPI mode, confirmation and one payment write; no guard against double payment (B-035) |
+| Payments | Partial | Cash/card/UPI mode, confirmation and one payment write; a payment is taken once, and an order can still be closed without one |
 | Reports / compliance | Scaffolded | Tables only |
 | Printing | Scaffolded | Tables and README-only sidecar; no code |
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
@@ -128,9 +128,11 @@ a docs change.
 | D16 | `decodeCompany` kept slices into page drain memory | `src/data/repos.zig` (`decodeCompany`) | Company name/currency dangled; fixed in the working tree (B-004) |
 | D17 | PIN is a fast SHA-256 over four digits, with no lockout or masking | `src/data/auth.zig`, `src/screens/screen-login.native` | Offline brute force and shoulder-surfing (B-027) |
 | D18 | Setup exists but has gaps (currency symbol field, no disabled submit) | `src/screens/screen-setup.native`, `src/core/update.zig` | A fresh install can start, but setup is not trustworthy (G-001) |
-| D19 | Status advance is not conditional; history can duplicate | `src/core/update.zig` (`advance_order`), `src/data/repos.zig` (`setOrderStatus`) | Double taps produce duplicate transitions (B-008) |
+| D19 | ~~Status advance is not conditional; history can duplicate~~ | `src/core/update.zig` (`advance_order`), `src/data/repos.zig` (`setOrderStatus`) | FIXED: the move happens only from the status the order is in, and the history is written only when it did (B-008) |
 | D20 | Four screens bound counts the model does not have (`customer_count`, `reservation_count`, `supplier_count`, `purchase_order_count`) | `src/screens/screen-customers.native`, `screen-reservations.native`, `screen-suppliers.native`, `screen-purchase-orders.native` | FIXED: those rail destinations could never render at all. The counts are model methods now |
 | D21 | Three effect keys were used by two effects each (20, 21, 22) | `src/data/repos.zig` (the key table) | FIXED: a second live effect with the same key is REFUSED, so a company save could refuse an order write. Every key is used once, and a test says so |
+| D22 | The amounts are shown with two decimals whatever the currency is | `apps/eatery/src/screens/*.native` (`fixed(...)`) | The yen and the dinar are shown with decimals they do not have (B-013) |
+| D23 | An order can be closed without a payment | `src/core/update.zig` (`nextStatus`) | The kitchen can advance a ticket straight to closed and the money is never taken (B-014) |
 
 B-002 and B-003 are fixed in the working tree of 2026-10-21, with the
 effect-key collision (D21) and the four unrenderable screens (D20) found
@@ -140,8 +142,12 @@ a request key makes a retry the same sale
 ([ADR-0014](../decisions/0014-order-identity.md), which supersedes
 [ADR-0013](../decisions/0013-clock-based-order-ids.md)).
 
-The first remaining fixes are B-027 (PIN strength) and B-014 (tax,
-discount and payment); the full order is in the
+The money track has since closed the amount: the tax is worked out line
+by line from each product's own slab, a discount is spread across the
+lines and the tax follows it, a payment is taken once, and every
+transition is conditional. What is left of the money is the currency's
+decimals (D22), an order that can close without a payment (D23), and
+the PIN's strength (B-027). The full order is in the
 [audit](../review/archive/2026-10-20-audit.md).
 
 The compile-time `makeSalt` mismatch and the invisible-error-banner gap
@@ -164,6 +170,14 @@ now defers detailed evidence to the [review set](../review/README.md).
 | The order number is a sequence | POS |
 | A failed sale does not consume an order number | POS |
 | A retried write is the same sale | POS |
+| The tax is worked out line by line, from the product's own slab | POS |
+| An inclusive price already carries its tax | POS |
+| The tax is rounded half up | POS |
+| A discount comes off the bill, and the tax follows it | POS |
+| A fixed discount is spread over the lines | POS |
+| Advancing an order twice writes one history row | Orders |
+| A move that does not apply leaves the order where it is | Orders |
+| A payment is taken once | Payment |
 | Integer money | Domain |
 | PIN hashing | Auth |
 | A waiter's PIN does not open an admin session | Session |
