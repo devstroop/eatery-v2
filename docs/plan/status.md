@@ -48,10 +48,10 @@
 | POS | Partial | Menu, filter, cart, order types and discounts work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; the tax is worked out line by line from each product's slab. No modifiers, and the currency's decimals are still two |
 | Orders | Partial | Lists non-voided orders including completed; status advance is not conditional (B-008/B-012) |
 | Kitchen board | Implemented | Tickets, summary, wait time, advance |
-| Floor board | Partial | Read-only table cards |
-| Customers | Partial | The list screen and the count exist; the data is never loaded (B-015) |
-| Employees | Partial | The list and the form work; the list is not mounted in a rail of its own |
-| Catalog admin | Partial | The catalogue list and the product form work; the write path is not in the category screen |
+| Floor board | Partial | The table board shows what is true about each table; a guest cannot be moved to another table |
+| Customers | Partial | The list, the count and the load all work; a customer cannot be added or attached to an order |
+| Employees | Partial | The list and the form work; a PIN cannot be reset and an employee cannot be deactivated |
+| Catalog admin | Partial | The catalogue list, the product form, the categories, the tax slabs and the discounts all work; the modifier groups do not |
 | Settings / setup | Partial | First-run setup writes company/operator/starter menu/salt; currency-symbol and disabled-submit gaps (B-031/B-032) |
 | Payments | Partial | Cash/card/UPI mode, confirmation and one payment write; a payment is taken once, and an order can still be closed without one |
 | Reports / compliance | Scaffolded | Tables only |
@@ -135,6 +135,10 @@ a docs change.
 | D23 | An order can be closed without a payment | `src/core/update.zig` (`nextStatus`) | The kitchen can advance a ticket straight to closed and the money is never taken (B-014) |
 | D24 | ~~Back from home exposed the login screen; the stack froze at depth 32; cart/search/filters survived sign-out and role change~~ | `src/core/update.zig` (`resetSession`, `go`), `src/core/navigation.zig` (`Stack.push`) | FIXED: one session reset path, session gates are roots, pushing the current screen is a no-op and a full stack drops its oldest entry ([ADR-0015](../decisions/0015-session-scoped-navigation.md); B-009, B-010, B-011) |
 | D25 | The PIN salt is per installation, not per employee | `src/data/auth.zig` | A database that is cracked gives up every PIN, not one ([ADR-0016](../decisions/0016-what-a-pin-is.md)) |
+| D26 | A table with an order on it still said "Free" | `src/data/repos.zig` (`openOrderForTable`, `takePayment`) | FIXED: the table is occupied when the order opens and free when it is paid for, in the same transaction as each |
+| D27 | The lists showed what the restaurant had finished with | `src/data/repos.zig` (the list queries) | FIXED: the categories, tables, customers and suppliers are filtered on `active` |
+| D28 | The shell's import closure was full | `apps/eatery/src/screens/` | FIXED: the screens of one area share one file, so the ceiling is no longer the reason the forms had to share |
+| D29 | An empty pane and a working screen looked the same | `src/tests.zig` | FIXED: every screen has a landmark of its own, and the test finds it |
 | D26 | The failed-PIN counter is per session | `src/core/model.zig` | A restart clears it, so a determined guesser restarts (B-027) |
 | D27 | ~~A second instance could confirm its own salt after a no-op write~~ | `src/core/update.zig` (`config_saved`) | FIXED: a successful salt write is read back; the model adopts the stored salt and only confirms that one (B-028) |
 
