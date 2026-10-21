@@ -1318,6 +1318,86 @@ test "a fresh database asks to be set up" {
     try testing.expectEqual(nav.Screen.setup, harness.model.screen());
 }
 
+test "a fresh install becomes a restaurant through the app alone" {
+    // A fresh database. Nothing is seeded: whatever the app needs, the
+    // app makes.
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // The installation salt. The app makes one at boot, where it has
+    // the randomness; the harness has to name it.
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // The app opens on the setup, because the database has no company.
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.needs_setup);
+    try testing.expect(harness.model.show_setup());
+
+    // The owner fills the form in.
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
+    harness.model.setup_currency_code.set("INR");
+    harness.model.setup_currency_symbol.set("Rs");
+    harness.send(Msg{ .setup_submit = {} });
+
+    // The operator is signed in, and the app is a point of sale.
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+    try testing.expectEqualStrings("Sharma Restaurant", harness.model.company_name_field);
+
+    // The company, the operator and the salt are in the database.
+    var company = false;
+    var operator = false;
+    var salt = false;
+    harness.fx.dbQuery(.{
+        .key = 929,
+        .sql = "SELECT (SELECT COUNT(*) FROM company) AS companies, (SELECT COUNT(*) FROM employee) AS staff, (SELECT COUNT(*) FROM app_config WHERE key = 'pin_salt') AS salts;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                company = reader.intOf(&values, "companies", 0) == 1;
+                operator = reader.intOf(&values, "staff", 0) == 1;
+                salt = reader.intOf(&values, "salts", 0) == 1;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(company);
+    try testing.expect(operator);
+    try testing.expect(salt);
+
+    // And the menu and the floor are there: a category, a product and
+    // a table, made by the app.
+    repos.loadCategories(harness.fx);
+    repos.loadProducts(harness.fx);
+    repos.loadTables(harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.categories.len >= 1);
+    try testing.expect(harness.model.products.len >= 1);
+    try testing.expect(harness.model.tables.len >= 1);
+
+    // The operator's PIN is the one they chose, and the database holds
+    // a hash of it and never the PIN.
+    harness.model.signed_in = false;
+    harness.model.employee_id = 0;
+    harness.model.pin.set("482155");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+}
+
 test "the setup writes the company, the operator and the starter menu" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
