@@ -22,7 +22,7 @@
           <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_product:{product.id}">
             <text grow="1">{product.name}</text>
             <badge>{product.food_label}</badge>
-            <text>{currency_symbol}{fixed(product.price_minor / 100, 2)}</text>
+            <text>{currency_symbol}{fixed(product.price_minor / currency_divisor, currency_decimal_count)}</text>
           </row>
         </for>
       </column>

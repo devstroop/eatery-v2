@@ -349,23 +349,28 @@ fn submitSetup(model: *Model, fx: *Effects) void {
 
     // The PIN is hashed with the installation salt, exactly as it is
     // at every other sign-in. The plaintext never reaches the disk.
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(model.pin_salt(), pin, &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(model.pin_salt(), pin, &hash) orelse {
+        model.setup_error = "Could not hash the PIN - try again";
+        return;
+    };
 
     const code = std.mem.trim(u8, model.setup_currency_code.text(), " ");
     const symbol = std.mem.trim(u8, model.setup_currency_symbol.text(), " ");
 
     model.busy = true;
     model.setup_error = "";
+    const currency = if (code.len == 0) "USD" else code;
     repos.setupCompany(
         fx,
         repos.key_setup,
         name,
-        if (code.len == 0) "USD" else code,
+        currency,
         if (symbol.len == 0) "$" else symbol,
         admin,
-        &hash,
+        hashed,
         model.pin_salt(),
+        model_mod.decimalsForCurrency(currency),
         fx.wallMs(),
     );
 }
@@ -428,11 +433,29 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.login_error = "Still starting up - try again in a moment";
                 return;
             }
+            // The till stops guessing. A PIN is short, and a short PIN
+            // is found by trying every one of them; the till is where
+            // that trying happens, so the till is where it stops.
+            if (model.login_locked()) {
+                model.login_error = "Too many wrong PINs - try again in a moment";
+                return;
+            }
             if (model.pin.text().len == 0) {
                 model.login_error = "Enter your PIN";
                 return;
             }
-            auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash);
+            // The hash the sign-in looks up: the slow one, and the
+            // old fast one, so an employee whose PIN was hashed
+            // before bcrypt can still sign in.
+            const hashed = auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash) orelse {
+                model.login_error = "Could not check the PIN - try again";
+                return;
+            };
+            model.login_hash_len = hashed.len;
+            const legacy = auth.legacyHash(model.pin_salt(), model.pin.text(), &model.login_legacy_hash) orelse {
+                model.login_error = "Could not check the PIN - try again";
+                return;
+            };
             fx.dbQuery(.{
                 .key = repos.key_login,
                 // The query carries the session's role: the sign-in is
@@ -440,7 +463,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // stored role matches it may hold it.
                 .sql = repos.login_sql,
                 .params = &.{
-                    .{ .text = model.login_hash[0..] },
+                    .{ .text = hashed },
+                    .{ .text = legacy },
                     .{ .integer = @intFromEnum(rbac.employee_role(model.role)) },
                 },
                 .on_result = Effects.dbMsg(.login_checked),
@@ -449,6 +473,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .login_checked => |result| {
             if (result.kind != .page or result.outcome != .ok) {
+                noteLoginFailure(model);
                 model.login_error = "Sign-in failed - try again";
                 model.pin.set("");
                 return;
@@ -456,6 +481,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             var reader = page.Reader.init(result.bytes);
             var values: [page.max_columns]page.Value = undefined;
             if (!reader.readHeader() or !reader.nextRow(&values)) {
+                noteLoginFailure(model);
                 model.login_error = "Wrong PIN";
                 model.pin.set("");
                 return;
@@ -470,6 +496,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.pin.set("");
                 return;
             }
+            // The row's hash is the one that matched, and the PIN is
+            // what it was made from: verify it here, so a row that
+            // matched for any other reason is not a sign-in.
+            const stored = reader.textOf(&values, "pin_hash");
+            if (!auth.verifyPin(model.pin_salt(), model.pin.text(), stored)) {
+                model.login_error = "Sign-in failed - try again";
+                model.pin.set("");
+                return;
+            }
             // The session begins now. Reset before taking the name:
             // the reset clears the operator buffer the name lives in.
             const employee_id = reader.intOf(&values, "id", 0);
@@ -479,7 +514,17 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.employee_name = model.operator_buf.dupe(employee_name) orelse "";
             model.signed_in = true;
             model.role_chosen = true;
+            // The counter of wrong PINs starts again: the cashier is
+            // in, and the till is not holding a grudge.
+            model.login_failures = 0;
+            model.login_locked_until = 0;
             repos.loadAll(fx);
+            // A hash from before bcrypt is rewritten in the modern
+            // form, so the next sign-in of this employee is a slow
+            // one and the old digest stops being worth anything.
+            if (auth.isLegacy(stored)) {
+                repos.savePinHash(fx, repos.key_save_pin_hash, model.employee_id, model.login_hash[0..model.login_hash_len]);
+            }
         },
 
         .pick_role_again => {
@@ -788,7 +833,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.busy = true;
-            repos.saveCurrency(fx, repos.key_save_currency, code, if (symbol.len == 0) "$" else symbol);
+            repos.saveCurrency(
+                fx,
+                repos.key_save_currency,
+                code,
+                if (symbol.len == 0) "$" else symbol,
+                model_mod.decimalsForCurrency(code),
+            );
         },
 
         .currency_saved => |result| {
@@ -958,9 +1009,26 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             };
             const next = nextStatus(order.status);
+            // An order does not close without the money. The last step
+            // of the lifecycle is the payment, and the kitchen cannot
+            // take it - so a ticket that has not been paid for stops
+            // here, and says why.
+            if (next == .completed and !order.paid) {
+                model.error_text = "Take the money before closing the order";
+                return;
+            }
             model.advance_order_id = order_id;
             model.busy = true;
             repos.setOrderStatus(fx, order_id, order.status, next, fx.wallMs());
+        },
+
+        .pin_rehashed => |result| {
+            // The rewrite is a courtesy: the sign-in has already
+            // happened, and a row that could not be rewritten is worth
+            // knowing about but not worth failing over.
+            if (result.outcome != .ok) {
+                model.error_text = "The PIN could not be upgraded - it still works";
+            }
         },
 
         .order_status_saved => |result| {
@@ -1314,6 +1382,21 @@ fn nextStatus(status: domain.OrderStatus) domain.OrderStatus {
         .served => .completed,
         .completed, .voided => status,
     };
+}
+
+/// Count a wrong PIN, and lock the till when there have been too
+/// many.
+///
+/// A PIN is short, and a short PIN is found by trying every one of
+/// them. The till is where that trying happens, so the till is where it
+/// stops: after a few wrong guesses it refuses for a while, and a
+/// shoulder-surfing guesser gets one attempt rather than five.
+fn noteLoginFailure(model: *Model) void {
+    model.login_failures += 1;
+    if (model.login_failures < model_mod.max_login_failures) return;
+    model.login_failures = 0;
+    model.login_locked_until = model.now_ms + model_mod.login_lockout_ms;
+    model.login_error = "Too many wrong PINs - try again in a moment";
 }
 
 /// Turn the cart into an order and write it.

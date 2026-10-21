@@ -49,6 +49,53 @@ pub const company_buffer = 1024;
 /// The most lines one cart may carry.
 pub const max_cart_lines = 50;
 
+/// How many wrong PINs the till takes before it stops taking them.
+pub const max_login_failures = 5;
+
+/// How long the till stops taking PINs for, in milliseconds.
+pub const login_lockout_ms = 60_000;
+
+/// The decimals of a currency code, for the currencies a restaurant is
+/// likely to trade in.
+///
+/// The company's own exponent is the authority - this is how a code
+/// becomes one. A code nobody has heard of is assumed to have two
+/// decimals, which is the safe guess: a restaurant that meant three
+/// would set it.
+pub fn decimalsForCurrency(code: []const u8) i64 {
+    const known = [_]struct { code: []const u8, decimals: i64 }{
+        .{ .code = "USD", .decimals = 2 },
+        .{ .code = "EUR", .decimals = 2 },
+        .{ .code = "GBP", .decimals = 2 },
+        .{ .code = "INR", .decimals = 2 },
+        .{ .code = "AED", .decimals = 2 },
+        .{ .code = "SAR", .decimals = 2 },
+        .{ .code = "QAR", .decimals = 2 },
+        .{ .code = "ZAR", .decimals = 2 },
+        .{ .code = "JPY", .decimals = 0 },
+        .{ .code = "KRW", .decimals = 0 },
+        .{ .code = "VND", .decimals = 0 },
+        .{ .code = "KWD", .decimals = 3 },
+        .{ .code = "BHD", .decimals = 3 },
+        .{ .code = "OMR", .decimals = 3 },
+        .{ .code = "JOD", .decimals = 3 },
+    };
+    for (known) |entry| {
+        if (std.mem.eql(u8, entry.code, code)) return entry.decimals;
+    }
+    return 2;
+}
+
+/// Ten to the power of a small exponent: the divisor a currency's
+/// decimals mean.
+fn tenTo(exponent: i64) i64 {
+    if (exponent <= 0) return 1;
+    var value: i64 = 1;
+    var index: i64 = 0;
+    while (index < exponent) : (index += 1) value *= 10;
+    return value;
+}
+
 /// Where the installation salt stands.
 ///
 /// The salt is the one piece of state a PIN hash cannot be checked
@@ -99,6 +146,9 @@ pub const Model = struct {
         "salt_state",
         "last_issued_order_id",
         "advance_order_id",
+        "login_hash",
+        "login_hash_len",
+        "login_legacy_hash",
     };
 
     // ------------------------------------------------------------ session
@@ -144,6 +194,9 @@ pub const Model = struct {
     currency_symbol: []const u8 = "$",
     /// True when the menu's prices already include tax.
     tax_inclusive: bool = false,
+    /// How many decimals this company's currency has. The yen has none,
+    /// the dinar has three, and most have two.
+    currency_decimals: i64 = 2,
 
     // ----------------------------------------------------------- datasets
 
@@ -330,11 +383,24 @@ pub const Model = struct {
     cart_attempt_id: i64 = 0,
     /// The hash of the PIN being checked. Lives in the model so the
     /// query parameter has a stable home.
-    login_hash: [64]u8 = undefined,
+    login_hash: [auth.hash_length]u8 = undefined,
+    /// The length of the hash in `login_hash`. The buffer is larger
+    /// than the string, so the length is what says where it ends.
+    login_hash_len: usize = 0,
+    /// The OLD hash of the same PIN - a SHA-256 digest. It is what the
+    /// sign-in looks up as well, so a restaurant whose employees signed
+    /// in before bcrypt can still sign in; the next sign-in rewrites
+    /// the row in the new form.
+    login_legacy_hash: [auth.legacy_len]u8 = undefined,
     /// Storage for the signed-in operator's name.
     operator_buf: bump.Bump(1024) = .{},
     /// Why the last sign-in failed, or empty.
     login_error: []const u8 = "",
+    /// How many wrong PINs this session has seen.
+    login_failures: i64 = 0,
+    /// The moment the till stops accepting PINs, in epoch
+    /// milliseconds. Zero when it is not locked.
+    login_locked_until: i64 = 0,
 
     // -------------------------------------------------------------- cart
 
@@ -502,6 +568,18 @@ pub const Model = struct {
             if (slab.id == slab_id) return slab;
         }
         return null;
+    }
+
+    /// The number to divide a minor-unit amount by to get the units a
+    /// person reads: a hundred for most currencies, one for the yen, a
+    /// thousand for the dinar.
+    pub fn currency_divisor(model: *const Model) i64 {
+        return tenTo(model.currency_decimals);
+    }
+
+    /// How many decimals this company's currency has.
+    pub fn currency_decimal_count(model: *const Model) i64 {
+        return model.currency_decimals;
     }
 
     /// The tax on an amount, at a rate, in the business's mode.
@@ -936,8 +1014,34 @@ pub const Model = struct {
         const admin = std.mem.trim(u8, model.setup_admin_name.text(), " ");
         const pin = model.setup_pin.text();
         const pin2 = model.setup_pin2.text();
-        if (name.len == 0 or admin.len == 0 or pin.len == 0) return false;
+        if (name.len == 0 or admin.len == 0) return false;
+        if (!model.pin_is_acceptable(pin)) return false;
         return std.mem.eql(u8, pin, pin2);
+    }
+
+    /// True when a PIN is worth accepting.
+    ///
+    /// Six digits or more, and digits only. A four-digit PIN is ten
+    /// thousand guesses, and a stolen database is worth ten thousand
+    /// guesses: the hash can be slow, but it cannot be slow enough to
+    /// make a small space safe.
+    pub fn pin_is_acceptable(_: *const Model, pin: []const u8) bool {
+        if (pin.len < auth.min_pin_len) return false;
+        for (pin) |digit| {
+            if (digit < '0' or digit > '9') return false;
+        }
+        return true;
+    }
+
+    /// True when the till is refusing PINs for a while.
+    pub fn login_locked(model: *const Model) bool {
+        return model.login_locked_until > model.now_ms;
+    }
+
+    /// How many seconds the till is locked for, or zero.
+    pub fn login_locked_seconds(model: *const Model) i64 {
+        if (!model.login_locked()) return 0;
+        return @divTrunc(model.login_locked_until - model.now_ms, 1000);
     }
 
     /// True when the last sign-in attempt failed.

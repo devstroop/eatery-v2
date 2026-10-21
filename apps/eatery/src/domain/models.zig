@@ -348,6 +348,9 @@ pub const OrderLine = struct {
 };
 
 pub const Order = struct {
+    /// True when a payment has been taken for this order. An order
+    /// without one is not closed, whatever its status says.
+    paid: bool = false,
     id: i64,
     order_no: []const u8,
     order_type: OrderType,

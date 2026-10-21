@@ -71,6 +71,7 @@ pub const key_write_product = 34;
 pub const key_write_table = 35;
 pub const key_save_salt = 36;
 pub const key_save_currency = 37;
+pub const key_save_pin_hash = 38;
 
 // ------------------------------------------------------------ queries
 
@@ -107,10 +108,17 @@ pub const customers_sql =
     \\ORDER BY name;
 ;
 
+/// The orders, with what has been paid for them.
+///
+/// The payment count is here because the order list has to know, before
+/// anyone is offered the chance to close an order, whether the money
+/// has been taken. An order that can be closed without being paid for
+/// is a sale the restaurant never sees.
 pub const orders_sql =
     \\SELECT id, order_no, order_type, status, dining_table_id, customer_id,
     \\       employee_id, subtotal_minor, tax_minor, discount_minor,
-    \\       total_minor, placed_at, notes
+    \\       total_minor, placed_at, notes,
+    \\       (SELECT COUNT(*) FROM payment WHERE order_id = orders.id) AS paid
     \\FROM orders
     \\WHERE status <> 5
     \\ORDER BY placed_at DESC
@@ -141,8 +149,8 @@ pub const config_sql =
 /// The two parameters are the PIN hash (text) and the stored role
 /// (integer) - see `rbac.employee_role`.
 pub const login_sql =
-    \\SELECT id, name, role FROM employee
-    \\WHERE pin_hash = ?1 AND role = ?2 AND active = 1
+    \\SELECT id, name, role, pin_hash FROM employee
+    \\WHERE (pin_hash = ?1 OR pin_hash = ?2) AND role = ?3 AND active = 1
     \\LIMIT 1;
 ;
 
@@ -201,7 +209,7 @@ pub const discounts_sql =
 /// The company row. A v2 database holds exactly one company.
 pub const company_sql =
     \\SELECT id, name, currency_code, currency_symbol, tax_inclusive,
-    \\       address, phone, tax_number
+    \\       address, phone, tax_number, currency_decimals
     \\FROM company
     \\LIMIT 1;
 ;
@@ -571,6 +579,7 @@ pub fn decodeOrders(model: *Model, bytes: []const u8) void {
             .total_minor = reader.intOf(&values, "total_minor", 0),
             .placed_at = reader.intOf(&values, "placed_at", 0),
             .notes = model.orders_buf.dupe(reader.textOf(&values, "notes")) orelse "",
+            .paid = reader.intOf(&values, "paid", 0) > 0,
         };
     }
     model.orders = list[0..index];
@@ -832,6 +841,7 @@ pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     model.currency_code = model.company_buf.dupe(reader.textOf(&values, "currency_code")) orelse "";
     model.currency_symbol = model.company_buf.dupe(reader.textOf(&values, "currency_symbol")) orelse "";
     model.tax_inclusive = reader.boolOf(&values, "tax_inclusive");
+    model.currency_decimals = reader.intOf(&values, "currency_decimals", 2);
 }
 
 /// Open an order for a table. A table that already has an open order
@@ -996,6 +1006,27 @@ pub fn saveProduct(
 }
 
 /// Save an employee. An employee of id zero is a new one.
+/// Rewrite an employee's PIN hash in the modern form.
+///
+/// The sign-in finds the employee by the hash it computes, so the row
+/// keeps the hash it was given - but an old SHA-256 digest is worth
+/// nothing to an attacker with the database, and this is the moment to
+/// replace it.
+pub fn savePinHash(fx: *Effects, key: u64, employee_id: i64, hash: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = hash },
+        .{ .integer = employee_id },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET pin_hash = ?1 WHERE id = ?2;",
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.pin_rehashed),
+    });
+}
+
 pub fn saveEmployee(
     fx: *Effects,
     key: u64,
@@ -1025,16 +1056,17 @@ pub fn saveEmployee(
 }
 
 /// Save the currency the restaurant trades in.
-pub fn saveCurrency(fx: *Effects, key: u64, code: []const u8, symbol: []const u8) void {
-    var params: [2]native_sdk.EffectDbValue = .{
+pub fn saveCurrency(fx: *Effects, key: u64, code: []const u8, symbol: []const u8, decimals: i64) void {
+    var params: [3]native_sdk.EffectDbValue = .{
         .{ .text = code },
         .{ .text = symbol },
+        .{ .integer = decimals },
     };
     fx.dbExec(.{
         .key = key,
         .statements = &.{.{
             .sql =
-            \\UPDATE company SET currency_code = ?1, currency_symbol = ?2
+            \\UPDATE company SET currency_code = ?1, currency_symbol = ?2, currency_decimals = ?3
             \\WHERE id = (SELECT id FROM company LIMIT 1);
             ,
             .params = &params,
@@ -1138,24 +1170,27 @@ pub fn setupCompany(
     admin_name: []const u8,
     pin_hash: []const u8,
     pin_salt: []const u8,
+    currency_decimals: i64,
     at: i64,
 ) void {
     const statement_count = comptime 3 + starter.categories.len + starter.dishes.len + starter.stations.len + starter.dishes.len + 1 + starter.tables.len;
     var statements: [statement_count]native_sdk.EffectDbStatement = undefined;
     var count: usize = 0;
 
-    var company_params: [6]native_sdk.EffectDbValue = .{
+    var company_params: [7]native_sdk.EffectDbValue = .{
         .{ .integer = 1 },
         .{ .text = name },
         .{ .text = currency_code },
         .{ .text = currency_symbol },
         .{ .integer = 0 },
         .{ .integer = at },
+        .{ .integer = currency_decimals },
     };
     statements[count] = .{
         .sql =
-        \\INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive, created_at)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6);
+        \\INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive,
+        \\  created_at, currency_decimals)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);
         ,
         .params = &company_params,
     };

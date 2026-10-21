@@ -353,20 +353,57 @@ test "money stays integer: two hundred and fifty cents is never a float" {
 }
 
 test "a PIN is hashed, never stored" {
-    var hash_a: [auth.hex_len]u8 = undefined;
-    var hash_b: [auth.hex_len]u8 = undefined;
-    var hash_c: [auth.hex_len]u8 = undefined;
+    // A salt long enough for the hash to be derived from.
+    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    var hash_a: [auth.hash_length]u8 = undefined;
+    var hash_b: [auth.hash_length]u8 = undefined;
+    var hash_c: [auth.hash_length]u8 = undefined;
 
-    auth.hashPin("salt", "1234", &hash_a);
-    auth.hashPin("salt", "1234", &hash_b);
-    auth.hashPin("other-salt", "1234", &hash_c);
+    const a = auth.hashPin(salt, "123456", &hash_a) orelse return error.NoHash;
+    const b = auth.hashPin(salt, "123456", &hash_b) orelse return error.NoHash;
+    const c = auth.hashPin("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "123456", &hash_c) orelse return error.NoHash;
 
-    try testing.expectEqualSlices(u8, &hash_a, &hash_b);
+    // The same PIN and the same salt give the same hash: the sign-in
+    // finds the employee by the hash it computes.
+    try testing.expectEqualStrings(a, b);
     // A different salt gives a different hash: two restaurants with
     // the same PIN do not share a digest.
-    try testing.expect(!std.mem.eql(u8, &hash_a, &hash_c));
-    try testing.expect(auth.equal(&hash_a, &hash_b));
-    try testing.expect(!auth.equal(&hash_a, &hash_c));
+    try testing.expect(!std.mem.eql(u8, a, c));
+
+    // The hash is not the PIN, and it does not contain it.
+    try testing.expect(std.mem.indexOf(u8, a, "123456") == null);
+    // It is a bcrypt string, and it carries its own cost and salt, so
+    // it can be verified years later without knowing what the app was
+    // doing then.
+    try testing.expect(std.mem.startsWith(u8, a, "$2b$10$"));
+}
+
+test "a PIN verifies against its own hash and nothing else" {
+    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    var hash: [auth.hash_length]u8 = undefined;
+    const stored = auth.hashPin(salt, "123456", &hash) orelse return error.NoHash;
+
+    try testing.expect(auth.verifyPin(salt, "123456", stored));
+    try testing.expect(!auth.verifyPin(salt, "123457", stored));
+    // The hash carries the salt it was made with, so it verifies on
+    // its own terms: the installation is what scopes the LOOKUP, not
+    // the check.
+    try testing.expect(auth.verifyPin("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "123456", stored));
+}
+
+test "the old hash still verifies, so a running restaurant still works" {
+    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    var legacy: [auth.legacy_len]u8 = undefined;
+    const stored = auth.legacyHash(salt, "123456", &legacy) orelse return error.NoHash;
+
+    // The old digest is recognised as old, and it verifies.
+    try testing.expect(auth.isLegacy(stored));
+    try testing.expect(auth.verifyPin(salt, "123456", stored));
+    try testing.expect(!auth.verifyPin(salt, "123457", stored));
+    // A bcrypt string is not an old one.
+    var modern: [auth.hash_length]u8 = undefined;
+    const bcrypt_hash = auth.hashPin(salt, "123456", &modern) orelse return error.NoHash;
+    try testing.expect(!auth.isLegacy(bcrypt_hash));
 }
 
 test "the tax is rounded half up, and an inclusive price keeps it inside" {
@@ -398,6 +435,27 @@ test "the tax is rounded half up, and an inclusive price keeps it inside" {
 
     // A product with no slab is not taxed.
     try testing.expectEqual(@as(i64, 0), model.line_tax(99, 100));
+}
+
+test "a currency's decimals are its own" {
+    var model = main.initialModel();
+
+    // The yen has no decimals, the dinar has three, and most have two.
+    try testing.expectEqual(@as(i64, 0), core.decimalsForCurrency("JPY"));
+    try testing.expectEqual(@as(i64, 3), core.decimalsForCurrency("KWD"));
+    try testing.expectEqual(@as(i64, 2), core.decimalsForCurrency("USD"));
+    // A currency nobody has heard of is assumed to have two, which is
+    // the safe guess: a restaurant that meant three would set it.
+    try testing.expectEqual(@as(i64, 2), core.decimalsForCurrency("XYZ"));
+
+    // And the divisor is what the decimals mean: a hundred for most,
+    // one for the yen, a thousand for the dinar.
+    model.currency_decimals = 0;
+    try testing.expectEqual(@as(i64, 1), model.currency_divisor());
+    model.currency_decimals = 2;
+    try testing.expectEqual(@as(i64, 100), model.currency_divisor());
+    model.currency_decimals = 3;
+    try testing.expectEqual(@as(i64, 1000), model.currency_divisor());
 }
 
 test "a failed salt write does not make the salt look confirmed" {
@@ -432,8 +490,10 @@ test "the sign-in query is scoped to the session's role" {
     try testing.expectEqual(domain.EmployeeRole.display, rbac.employee_role(nav.Role.display));
 
     // The query asks the database for that role, rather than taking
-    // whatever employee the PIN belongs to.
-    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?2") != null);
+    // whatever employee the PIN belongs to. The role is the third
+    // parameter: the first two are the two hashes the sign-in looks
+    // the employee up by.
+    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?3") != null);
 }
 
 test "a second tap while the ticket is moving does not move it twice" {

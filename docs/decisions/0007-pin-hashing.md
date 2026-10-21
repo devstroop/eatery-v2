@@ -1,10 +1,15 @@
 # ADR-0007: Salted SHA-256 PIN hashing
 
-> **Status:** Provisional — in use, known to be weaker than a password KDF
+> **Status:** Superseded by [ADR-0016](0016-what-a-pin-is.md)
 > **Date:** 2026-10-20
 > **Deciders:** Eatery maintainers
 > **Related:** [`architecture/04`](../architecture/04-data-layer.md),
 > [`plan/open-questions.md`](../plan/open-questions.md)
+>
+> **Superseded on 2026-10-21.** The digest is now bcrypt, the PIN is
+> six digits, and the till stops taking guesses. The decision below is
+> kept as the record of why hashing was the first step and what it did
+> not solve.
 
 ## Context
 

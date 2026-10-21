@@ -17,7 +17,7 @@ This project follows a lightweight MADR-style format.
 | [0004](0004-four-roles-one-binary.md) | Four roles in one binary | Accepted |
 | [0005](0005-engine-owned-sqlite-strict-schema.md) | Engine-owned SQLite and a STRICT schema | Accepted |
 | [0006](0006-integer-money-epoch-ms.md) | Integer minor-unit money and epoch-ms time | Accepted |
-| [0007](0007-pin-hashing.md) | Salted SHA-256 PIN hashing | Provisional |
+| [0007](0007-pin-hashing.md) | Salted SHA-256 PIN hashing | Superseded by ADR-0016 |
 | [0008](0008-sidecar-for-printing.md) | A sidecar owns printing and BLE | Proposed |
 | [0009](0009-oplog-sync-with-transport-sidecar.md) | Op-log sync with the transport in a sidecar | Proposed |
 | [0010](0010-markup-only-no-custom-paint.md) | Markup only; no custom paint or Lottie | Accepted |
@@ -26,6 +26,7 @@ This project follows a lightweight MADR-style format.
 | [0013](0013-clock-based-order-ids.md) | Clock-based order IDs | Superseded by ADR-0014 |
 | [0014](0014-order-identity.md) | The order identity: a sequence, an id and a request key | Accepted |
 | [0015](0015-session-scoped-navigation.md) | A session owns its state and its history | Accepted |
+| [0016](0016-what-a-pin-is.md) | What a PIN is in this app | Accepted |
 
 ## Drafts
 
