@@ -1359,6 +1359,84 @@ test "the setup refuses a PIN that does not match" {
     try testing.expect(!harness.model.signed_in);
 }
 
+test "the stock comes down with the sale" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A dish that is counted, with ten on the shelf, and a drink that
+    // is not counted at all.
+    harness.fx.dbExec(.{
+        .key = 926,
+        .statements = &.{
+            .{
+                .sql = "UPDATE product SET track_stock = 1, stock_qty = 10 WHERE id = 1;",
+                .params = &.{},
+            },
+            .{
+                .sql = "UPDATE product SET track_stock = 0, stock_qty = 99 WHERE id = 2;",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 10, .active = true },
+        .{ .id = 2, .category_id = 2, .name = "Masala Chai", .food_label = "Veg", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 99, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(Msg{ .place_order = {} });
+
+    // Two dishes sold: eight left on the shelf.
+    harness.fx.dbQuery(.{
+        .key = 927,
+        .sql = "SELECT stock_qty FROM product WHERE id = 1;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    var left: i64 = -1;
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                left = reader.intOf(&values, "stock_qty", -1);
+            },
+            else => {},
+        }
+    }
+    try testing.expectEqual(@as(i64, 8), left);
+
+    // And the drink that is not counted is not subtracted from: the
+    // shelf would be telling a lie.
+    harness.fx.dbQuery(.{
+        .key = 928,
+        .sql = "SELECT stock_qty FROM product WHERE id = 2;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    var untouched: i64 = -1;
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                untouched = reader.intOf(&values, "stock_qty", -1);
+            },
+            else => {},
+        }
+    }
+    try testing.expectEqual(@as(i64, 99), untouched);
+}
+
 test "a discount is saved, and it takes what the owner said off" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

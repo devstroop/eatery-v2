@@ -1427,8 +1427,11 @@ pub const max_order_lines = 64;
 /// synchronously, so the parameters can live on the stack for the
 /// duration of the call.
 pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderLine, request_key: []const u8) void {
-    var statements: [2 + max_order_lines]native_sdk.EffectDbStatement = undefined;
+    // The order, its lines, and the stock it takes: three statements
+    // per line, and one transaction for all of them.
+    var statements: [2 + 3 * max_order_lines]native_sdk.EffectDbStatement = undefined;
     var line_params: [max_order_lines][9]native_sdk.EffectDbValue = undefined;
+    var stock_params: [max_order_lines][3]native_sdk.EffectDbValue = undefined;
 
     // The order number is a sequence, and the database assigns it. The
     // statement that takes the next number and the statement that
@@ -1506,6 +1509,25 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
             \\ON CONFLICT(id) DO NOTHING;
             ,
             .params = &line_params[slot],
+        };
+        count += 1;
+
+        // The stock goes down with the sale, in the same transaction:
+        // a dish that was sold is a dish that is not on the shelf, and
+        // a sale that did not happen leaves the shelf alone. Only the
+        // products that are counted come down - the others are not
+        // tracked, and subtracting from them would be a lie.
+        stock_params[slot] = .{
+            .{ .integer = line.qty },
+            .{ .integer = line.product_id },
+            .{ .integer = order.placed_at },
+        };
+        statements[count] = .{
+            .sql =
+            \\UPDATE product SET stock_qty = COALESCE(stock_qty, 0) - ?1, updated_at = ?3
+            \\WHERE id = ?2 AND track_stock = 1;
+            ,
+            .params = &stock_params[slot],
         };
         count += 1;
     }
