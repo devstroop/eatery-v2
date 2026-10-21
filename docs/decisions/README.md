@@ -25,6 +25,7 @@ This project follows a lightweight MADR-style format.
 | [0012](0012-csv-first-interchange.md) | CSV first for import/export | Proposed |
 | [0013](0013-clock-based-order-ids.md) | Clock-based order IDs | Superseded by ADR-0014 |
 | [0014](0014-order-identity.md) | The order identity: a sequence, an id and a request key | Accepted |
+| [0015](0015-session-scoped-navigation.md) | A session owns its state and its history | Accepted |
 
 ## Drafts
 

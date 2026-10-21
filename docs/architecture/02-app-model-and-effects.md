@@ -1,7 +1,7 @@
 # App model, messages and effects
 
 > **Status:** Implemented.
-> **Last verified:** 2026-10-20, by source review.
+> **Last verified:** 2026-10-21, by source review and the headless suite.
 > **Source:** `src/core/model.zig`, `src/core/msg.zig`, `src/core/update.zig`,
 > `src/core/bump.zig`, `src/main.zig`, `src/data/page.zig`.
 
@@ -27,8 +27,8 @@ passing it by value.
 
 | Group | Fields | Notes |
 |---|---|---|
-| Session | `role`, `role_chosen`, `signed_in`, `employee_id`, `employee_name` | The PIN hash never lives in the model |
-| Navigation | `screen_index`, `nav_section`, `stack`, `rail_split`, `menu_split`, `now_ms` | Screen index is an enum ordinal; the enum is append-only |
+| Session | `role`, `role_chosen`, `signed_in`, `employee_id`, `employee_name` | The PIN hash never lives in the model; `resetSession` is the only teardown |
+| Navigation | `screen_index`, `nav_section`, `stack`, `rail_split`, `menu_split`, `now_ms` | Screen index is an enum ordinal; the enum is append-only; the stack is session history (ADR-0015) |
 | Company | `company_id`, `company_name`, `currency_code`, `currency_symbol`, `tax_inclusive` | One company per database |
 | Datasets | seven bump buffers and seven row slices | Products, tables, employees, orders, customers, categories, order lines |
 | POS filters | `selected_category`, `search` | 0 means "all"; search is a `TextBuffer(64)` |
@@ -46,8 +46,9 @@ passing it by value.
    `visible_products(arena)`, `cart_lines(arena)`, `kitchen_tickets(arena)`.
 3. **Anything the view must not see is listed in `view_unbound`.**
    Current entries: `stack`, `employee_id`, `db_ready`, `busy`,
-   `company_id`, `pending_screen`, `theme_dark`. The view reads errors
-   through the derived `has_error` and `error_message` methods.
+   `company_id`, `theme_dark`, `salt_state`, `last_issued_order_id`,
+   `advance_order_id`. The view reads errors through the derived
+   `has_error` and `error_message` methods.
 4. **Rows are plain data.** The markup cannot call a method on a row, so
    labels (`status_label`, `type_label`) are resolved at decode time and
    stored in the row.
@@ -148,9 +149,10 @@ Notable arms:
 
 | Arm | Behaviour |
 |---|---|
-| `pick_role` | Set role; kiosk roles sign in immediately and load data; PIN roles go to login |
+| `pick_role` | Reset the session, set the role; kiosk roles sign in immediately and load data; PIN roles land on login |
 | `submit_login` | Refuse unless the salt is confirmed; hash the PIN, query `employee` by `pin_hash` **and the session's role**, wait for `login_checked` |
-| `login_checked` | On a row of the session's role: set operator, sign in, go home, load data. On no row, or a row of another role: "Wrong PIN", clear PIN |
+| `login_checked` | On a row of the session's role: reset the session to home, set the operator, sign in, load data. On no row, or a row of another role: "Wrong PIN", clear PIN |
+| `sign_out` / `pick_role_again` | Reset the session; a PIN role lands on login, a kiosk on the role picker |
 | `open_screen` / `open_section` | Route through `go()`, which checks `rbac.allows` and pushes the stack |
 | `go_back` | Pop; stay put at a root |
 | `place_order` | Build an order from the cart and `dbExec` it |
@@ -172,7 +174,7 @@ fn go(model: *Model, screen: Screen) void {
         model.error_text = "This role cannot open that screen";
         return;
     }
-    if (!model.stack.push(screen)) return;   // depth 32
+    model.stack.push(screen);   // no-op on the current screen; oldest dropped at 32
     model.screen_index = screen.index();
     model.nav_section = sectionIndex(screen);
 }
@@ -180,6 +182,13 @@ fn go(model: *Model, screen: Screen) void {
 
 This is the replacement for a router `redirect:` guard. It is pure,
 total, and directly unit-tested.
+
+Sessions are the other half of navigation. `resetSession(model, gate)`
+clears everything the operator owns, keeps the device settings, and
+calls `resetTo(gate)`. A sign-in lands on the role's home; a sign-out
+lands on the role's gate. The history never contains the previous
+session, and Back at the first screen of a session stays there. See
+[ADR-0015](../decisions/0015-session-scoped-navigation.md).
 
 ### Error handling
 
@@ -206,9 +215,13 @@ main.zig
           config_loaded ──▶ adopt/create salt
                  │
                  ▼
-          role picker ──▶ login (PIN) ──▶ home ──▶ loadAll
-                     └──▶ kiosk sign-in ──▶ board ──▶ loadAll
+          role picker ──▶ login (PIN) ──▶ resetSession(home) ──▶ loadAll
+                     └──▶ kiosk sign-in ──▶ resetSession(board) ──▶ loadAll
 ```
+
+Every session transition calls `resetSession` before it enters the next
+session, so the next operator starts from the gate with no cart, filters,
+forms or history from the previous one.
 
 The salt is the one piece of state a PIN hash cannot be checked without,
 so it has three states rather than a flag:
@@ -245,7 +258,11 @@ decision:
 - kiosk role signs in, PIN role lands on login;
 - a role cannot open a screen it may not use;
 - the permission matrix is total;
-- back returns to the previous screen;
+- back returns to the previous screen, and back at a session root stays
+  put;
+- a full history drops its oldest entry, and pressing the current screen
+  does not grow it;
+- a role change and a sign-out clear the previous session;
 - cart arithmetic and integer money;
 - model reports derived numbers instead of storing them;
 - layout survives a resize;

@@ -826,6 +826,89 @@ test "a PIN only matches the hash of the salted PIN" {
     try testing.expect(other.model.login_failed());
 }
 
+test "back from home after a sign-in stays home" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    const salt = "a1b2c3d4";
+    var hash: [auth.hex_len]u8 = undefined;
+    auth.hashPin(salt, "4821", &hash);
+
+    harness.fx.dbExec(.{
+        .key = 902,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = &hash }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
+    harness.model.pin_salt_len = salt.len;
+    harness.model.salt_state = .confirmed;
+
+    harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+
+    // The sign-in screen is a session gate, not a history entry. Back
+    // from the first screen of a session is the first screen.
+    const depth = harness.model.stack.len;
+    harness.send(Msg{ .go_back = {} });
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+    try testing.expectEqual(depth, harness.model.stack.len);
+}
+
+test "signing out clears the cart and the operator" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    const salt = "a1b2c3d4";
+    var hash: [auth.hex_len]u8 = undefined;
+    auth.hashPin(salt, "4821", &hash);
+
+    harness.fx.dbExec(.{
+        .key = 903,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = &hash }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
+    harness.model.pin_salt_len = salt.len;
+    harness.model.salt_state = .confirmed;
+
+    harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.model.search.set("paneer");
+    harness.model.selected_category = 1;
+
+    harness.send(Msg{ .sign_out = {} });
+
+    try testing.expect(!harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 0), harness.model.employee_id);
+    try testing.expectEqualStrings("", harness.model.employee_name);
+    try testing.expectEqual(@as(usize, 0), harness.model.cart_count());
+    try testing.expectEqual(@as(usize, 0), harness.model.search.text().len);
+    try testing.expectEqual(@as(i64, 0), harness.model.selected_category);
+    try testing.expectEqual(nav.Screen.login, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.stack.len);
+    try testing.expectEqual(nav.Screen.login, harness.model.stack.current().?);
+}
+
 test "an employee's PIN only opens the mode they are stored for" {
     // A waiter is a waiter. Their PIN must not open an admin session,
     // however the till is set up.
