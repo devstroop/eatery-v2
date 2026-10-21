@@ -11,9 +11,14 @@
 suite, the order confirmation and the payment have landed (commits
 `c42af4a`, `bc33547`), and they fixed a number of the findings below -
 the fresh-install gap, the missing data-layer tests, the unpayable order
-and the crash on the point of sale are all closed. **The findings have
-not been re-verified line by line: re-read the source before acting on
-one.**
+and the crash on the point of sale are all closed. On 2026-10-21 the
+waiter, the kitchen stations, the customer display, the settings screens
+and the catalogue and people forms landed, and with them B-002 (the
+sign-in now checks the employee's stored role), B-003 (the sign-in waits
+for the database to confirm the salt), B-036 (two effects shared an
+effect key) and B-037 (four screens bound a count the model did not
+have). **The findings have not been re-verified line by line: re-read the
+source before acting on one.**
 
 This directory records what is wrong, missing, risky or worth improving.
 It is deliberately separate from the [plan](../plan/README.md): the plan
@@ -33,7 +38,7 @@ says what exists, and this review says what does not hold up.
 
 | Set | Contents | Count |
 |---|---|---|
-| [Bugs](bugs.md) | Behaviour that is wrong now — security, data, runtime, navigation, payment | 35 |
+| [Bugs](bugs.md) | Behaviour that is wrong now — security, data, runtime, navigation, payment | 37 |
 | [Gaps](gaps.md) | Flows and features that do not exist yet | 26 |
 | [Enhancements](enhancements.md) | Improvements to correctness, UX, performance, accessibility, ops | 20 |
 | [Documentation audit](docs-audit.md) | Claims that are stale, contradictory, or untested | 18 |

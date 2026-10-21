@@ -25,8 +25,16 @@ const Model = model_mod.Model;
 const Effects = native_sdk.Effects(@import("../core/msg.zig").Msg);
 
 // --------------------------------------------------------------- keys
-
-/// Effect keys. One per long-running read plus one per write family.
+//
+// Effect keys. One per long-running read plus one per write family.
+//
+// A key is an effect's identity in the channel: two live effects cannot
+// share one. A write that reuses a live key is REFUSED (the outcome is
+// `.rejected`), so a collision is a write that silently never happens -
+// the worst kind of bug in a till. Every key below is used exactly once.
+//
+// `28` is not used: it was the reservation for the printer write that
+// became `key_save_printer`.
 pub const key_products = 1;
 pub const key_tables = 2;
 pub const key_employees = 3;
@@ -43,6 +51,7 @@ pub const key_watch_orders = 13;
 pub const key_open_order = 14;
 pub const key_add_line = 15;
 pub const key_stations = 16;
+pub const key_chime = 17;
 pub const key_product_stations = 18;
 pub const key_board_refresh = 19;
 pub const key_save_company = 20;
@@ -57,10 +66,11 @@ pub const key_reservations = 29;
 pub const key_suppliers = 30;
 pub const key_purchase_orders = 31;
 pub const key_inventory = 32;
-pub const key_chime = 17;
-pub const key_write_order = 20;
-pub const key_write_product = 21;
-pub const key_write_table = 22;
+pub const key_write_order = 33;
+pub const key_write_product = 34;
+pub const key_write_table = 35;
+pub const key_save_salt = 36;
+pub const key_save_currency = 37;
 
 // ------------------------------------------------------------ queries
 
@@ -118,6 +128,22 @@ pub const order_lines_sql =
 /// One setting out of `app_config`. The PIN salt lives there.
 pub const config_sql =
     \\SELECT key, value FROM app_config WHERE key = 'pin_salt' LIMIT 1;
+;
+
+/// The sign-in query.
+///
+/// The role is part of the lookup, not a check afterwards: the session
+/// is for ONE operating mode, and the employee who may work that mode is
+/// the one whose stored role says so. A PIN that belongs to a waiter
+/// finds no row here when the till is in admin mode, and the sign-in is
+/// refused.
+///
+/// The two parameters are the PIN hash (text) and the stored role
+/// (integer) - see `rbac.employee_role`.
+pub const login_sql =
+    \\SELECT id, name, role FROM employee
+    \\WHERE pin_hash = ?1 AND role = ?2 AND active = 1
+    \\LIMIT 1;
 ;
 
 /// Which station cooks which product.
@@ -251,20 +277,30 @@ pub fn loadConfig(fx: *Effects) void {
     });
 }
 
-/// Write one setting. The write is a single statement and the engine
-/// runs it atomically with anything else in the same transaction.
-pub fn saveConfigValue(fx: *Effects, key: u64, name: []const u8, value: []const u8, at: i64) void {
-    var params: [3]native_sdk.EffectDbValue = .{
-        .{ .text = name },
-        .{ .text = value },
+/// Store the installation salt, if the database does not have one yet.
+///
+/// The write is a single statement and the engine runs it atomically
+/// with anything else in the same transaction.
+///
+/// The salt is written ONCE and never replaced. Every PIN hash in the
+/// database was computed against the salt that is already there, so a
+/// later boot that overwrites it would lock every employee out of the
+/// till. `DO NOTHING` makes the first salt win.
+///
+/// The setup transaction writes the salt too - that is the path a fresh
+/// installation takes, because the operator's PIN hash and the salt it
+/// was hashed with must land together or not at all.
+pub fn saveSalt(fx: *Effects, key: u64, salt: []const u8, at: i64) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = salt },
         .{ .integer = at },
     };
     fx.dbExec(.{
         .key = key,
         .statements = &.{.{
             .sql =
-            \\INSERT INTO app_config (key, value, updated_at) VALUES (?1, ?2, ?3)
-            \\ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = ?3;
+            \\INSERT INTO app_config (key, value, updated_at) VALUES ('pin_salt', ?1, ?2)
+            \\ON CONFLICT(key) DO NOTHING;
             ,
             .params = &params,
         }},
@@ -1042,10 +1078,20 @@ pub fn takePayment(fx: *Effects, key: u64, order_id: i64, mode: domain.PaymentMo
     });
 }
 
-/// The first-run setup: the company, the first operator, and a starter
-/// menu and floor. ONE transaction - a restaurant that exists with no
-/// company, or a company with no operator, is worse than a setup that
-/// failed and can be retried.
+/// The first-run setup: the company, the first operator, the
+/// installation salt, and a starter menu and floor. ONE transaction - a
+/// restaurant that exists with no company, or a company with no
+/// operator, is worse than a setup that failed and can be retried.
+///
+/// The salt is in the same transaction as the operator's PIN hash, and
+/// it is the salt that hash was computed with. A hash without its salt
+/// is a PIN that can never be verified, so the two must land together:
+/// either the whole installation is there, or none of it is.
+///
+/// The salt is written with `DO UPDATE` here, unlike the boot-time
+/// writer: at this point the installation has no company and no
+/// employees, so there is no existing hash to invalidate, and the salt
+/// the operator's PIN was hashed with must be the salt that is stored.
 pub fn setupCompany(
     fx: *Effects,
     key: u64,
@@ -1054,9 +1100,10 @@ pub fn setupCompany(
     currency_symbol: []const u8,
     admin_name: []const u8,
     pin_hash: []const u8,
+    pin_salt: []const u8,
     at: i64,
 ) void {
-    const statement_count = comptime 2 + starter.categories.len + starter.dishes.len + starter.stations.len + starter.dishes.len + 1 + starter.tables.len;
+    const statement_count = comptime 3 + starter.categories.len + starter.dishes.len + starter.stations.len + starter.dishes.len + 1 + starter.tables.len;
     var statements: [statement_count]native_sdk.EffectDbStatement = undefined;
     var count: usize = 0;
 
@@ -1091,6 +1138,21 @@ pub fn setupCompany(
         \\VALUES (?1, ?2, ?3, ?4, ?5, ?6);
         ,
         .params = &employee_params,
+    };
+    count += 1;
+
+    // The salt the operator's PIN was hashed with, in the same
+    // transaction as the hash itself.
+    var salt_params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = pin_salt },
+        .{ .integer = at },
+    };
+    statements[count] = .{
+        .sql =
+        \\INSERT INTO app_config (key, value, updated_at) VALUES ('pin_salt', ?1, ?2)
+        \\ON CONFLICT(key) DO UPDATE SET value = ?1, updated_at = ?2;
+        ,
+        .params = &salt_params,
     };
     count += 1;
 

@@ -160,11 +160,11 @@ Implemented end to end today:
 - floor table board (read-only);
 - kitchen board with lifecycle advance;
 - 43-table schema, 11 migrations, core repositories;
-- 15 authored headless tests plus a 12-test in-memory DB suite.
+- 49 authored headless tests, of which 28 run against an in-memory database.
 
 Not implemented, despite appearing as types or tables:
 
-- 36 of the 43 screens have no template;
+- 14 of the 45 screens have no template;
 - customers, employees, catalog and settings administration;
 - payments, reports, discounts, modifiers, inventory in the UI;
 - display board, waiter shell;

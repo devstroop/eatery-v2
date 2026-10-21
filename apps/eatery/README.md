@@ -106,7 +106,7 @@ Every file under `apps/eatery/`, and what it owns.
 | `core/model.zig` | the `Model`: every field the view may bind, every derived method, the `view_unbound` list |
 | `core/msg.zig` | the `Msg` union: every message the app understands, and the `view_unbound` list of the ones no markup dispatches |
 | `core/update.zig` | `update` and `boot`: the only place state changes; the SQL behind the sign-in; the cart and the order write |
-| `core/navigation.zig` | the `Screen` enum (43 destinations), the `Role` enum, the `NavSection` enum, the fixed-capacity navigation `Stack`, the role cards |
+| `core/navigation.zig` | the `Screen` enum (45 destinations), the `Role` enum, the `NavSection` enum, the fixed-capacity navigation `Stack`, the role cards |
 | `core/rbac.zig` | the permission matrix: `allows(role, screen)`, `home(role)`, the per-role rails, `section_screen(section)` |
 | `core/theme.zig` | the design tokens: the light and dark palettes, the brand colours, `tokens(model)` |
 | `core/bump.zig` | `Bump`, the fixed-capacity allocator the model uses to own its rows without a heap |
@@ -114,7 +114,7 @@ Every file under `apps/eatery/`, and what it owns.
 | `data/repos.zig` | the SQL: one named statement per query, the load functions, the decoders, `saveOrder`, `setOrderStatus`, `saveConfigValue` |
 | `data/page.zig` | the reader for the engine's row format: header, column names, row values, `intOf` / `textOf` / `boolOf` |
 | `data/auth.zig` | PIN hashing: salted SHA-256, hex-encoded, `hashPin`, `makeSalt`, `equal` |
-| `tests.zig` | the 15 authored headless tests |
+| `tests.zig` | the 21 authored headless tests |
 | `schema/0001_core.sql` | `company`, `currency`, `employee`, `app_config` |
 | `schema/0002_catalog.sql` | `product_category`, `tax_slab`, `product`, `modifier_group`, `modifier`, `product_modifier`, `discount` |
 | `schema/0003_floor.sql` | `dining_table_category`, `dining_table`, `kds_station`, `product_station` |
@@ -174,36 +174,36 @@ channel:
 | Area | State |
 |---|---|
 | App model | `Model` / `Msg` / `update` / `boot`, effect keys, the fake executor in tests |
-| Navigation | 43 `Screen` destinations, 4 `Role`s, the fixed-capacity `Stack` |
+| Navigation | 45 `Screen` destinations, 4 `Role`s, the fixed-capacity `Stack` |
 | RBAC | the whole matrix, as a pure function; the current “matrix” test is tautological and needs a real table |
 | Theming | the light and dark palettes, switched by a model field |
 | Role picker | a template, a message, a test |
-| Sign-in | the PIN pad, salted SHA-256 against the `employee` table, kiosk sign-in by device |
+| Sign-in | the PIN pad, salted SHA-256 against the `employee` table, kiosk sign-in by device; the sign-in checks the employee's stored role and waits for the database to confirm the salt |
 | Dashboard | counts, recent orders, shortcuts |
 | Point of sale | menu, category filter, search, cart, order types, place order |
 | Orders | the list, and the status advance with its history row |
 | Tables | the floor board, read-only |
 | Kitchen board | the tickets, the summary, the wait time, the advance |
 | Schema | 43 `STRICT` tables across 11 migrations |
-| Data layer | 9 named read queries plus the login SQL; 3 write paths |
-| Tests | 15 headless tests + a 12-test DB suite |
+| Data layer | 9 named read queries plus the login SQL; 9 write paths |
+| Tests | 21 headless tests + a 28-test DB suite |
 
 ### The numbers
 
 | Measure | Value | Where |
 |---|---|---|
-| `Screen` variants | 43 | `src/core/navigation.zig` |
-| `Msg` variants | 49 | `src/core/msg.zig` |
-| Screen templates | 9 | `src/screens/*.native` |
-| Templates mounted | 5 in the shell + setup, login and role picker | the gates in `src/app.native` |
+| `Screen` variants | 45 | `src/core/navigation.zig` |
+| `Msg` variants | 72 | `src/core/msg.zig` |
+| Screen templates | 31 | `src/screens/*.native` |
+| Templates mounted | all 31: 28 behind an ordinal gate + setup, login and role picker | the gates in `src/app.native` |
 | Database tables | 43, every one `STRICT` | `src/schema/*.sql` |
 | Migrations | 11, locked at version 11 | `src/schema/migrations.lock.json` |
-| Read queries | 9 plus the login SQL | `src/data/repos.zig`, `src/core/update.zig` |
-| Write paths | setup, order and lines, status and history, payment, one config value | `src/data/repos.zig` |
-| Headless tests | 15 authored (28 reported with the DB suite + one generated) | `src/tests.zig`, `src/tests_data.zig` |
+| Read queries | 9 plus the login SQL | `src/data/repos.zig` |
+| Write paths | setup (with the salt), order and lines, status and history, payment, product, employee, company, currency | `src/data/repos.zig` |
+| Headless tests | 49 authored (50 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/sync-sidecar/`, `tools/print-sidecar/` |
 
-### The 15 authored tests
+### The authored tests
 
 | Test | Area |
 |---|---|
@@ -222,6 +222,12 @@ channel:
 | the setup screen renders on a fresh installation | Setup |
 | the order confirmation renders after a sale | Payment |
 | the layout survives a resize | Markup |
+| a failed salt write does not make the salt look confirmed | Auth |
+| the sign-in query is scoped to the session's role | Session |
+| every effect key names one effect and no two | Data |
+| the shell gates the screens the enum says it does | Navigation |
+| every gated screen renders, and none of them blows the widget budget | Markup |
+| every screen builds a view inside the budget | Markup |
 
 ### What works end to end
 
@@ -236,6 +242,9 @@ channel:
 5. The title bar's **Theme** button toggles light and dark.
 6. The setup screen creates a starter menu and six tables; the floor board
    renders them.
+7. Choose Waiter → tables → menu → cart → the order joins the table's open
+   order.
+8. Choose Display → the customer board shows the order cards.
 
 ---
 

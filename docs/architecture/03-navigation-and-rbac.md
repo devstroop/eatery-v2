@@ -35,7 +35,7 @@ and no operator identity for them. This is intentional for a wall-mounted
 board, but it means a kiosk cannot attribute an action to a person. That
 is an open question in [`plan/open-questions.md`](../plan/open-questions.md).
 
-## The 43 screens
+## The 45 screens
 
 `Screen` is the product's destination vocabulary. It is **append-only**:
 markup compares `screen_index` against fixed ordinals, so reordering the
@@ -46,7 +46,7 @@ enum silently breaks the shell.
 | 0 | `role_picker` | — | Yes (top-level gate) |
 | 1 | `login` | — | Yes (top-level gate) |
 | 2 | `landing` | — | No |
-| 3 | `setup` | — | No |
+| 3 | `setup` | — | Yes (top-level gate) |
 | 4 | `wizard` | — | No |
 | 5 | `create_company` | — | No |
 | 6 | `reset_pin` | — | No |
@@ -55,42 +55,45 @@ enum silently breaks the shell.
 | 9 | `control_center` | overview | No |
 | 10 | `pos` | sell | Yes |
 | 11 | `pos_cart` | sell | No |
-| 12 | `order_confirmation` | sell | No |
+| 12 | `order_confirmation` | sell | Yes |
 | 13 | `orders` | orders | Yes |
-| 14 | `order_detail` | orders | No |
+| 14 | `order_detail` | orders | Yes |
 | 15 | `payments` | orders | No |
-| 16 | `customers` | floor | No |
+| 16 | `customers` | floor | Yes |
 | 17 | `dining_tables` | floor | Yes |
 | 18 | `table_categories` | floor | No |
 | 19 | `floor_plan` | floor | No |
-| 20 | `reservations` | floor | No |
+| 20 | `reservations` | floor | Yes |
 | 21 | `kitchen_dishes` | catalog | No |
 | 22 | `inventory_items` | catalog | No |
-| 23 | `product_categories` | catalog | No |
-| 24 | `suppliers` | catalog | No |
-| 25 | `purchase_orders` | catalog | No |
-| 26 | `employees` | people | No |
+| 23 | `product_categories` | catalog | Yes |
+| 24 | `suppliers` | catalog | Yes |
+| 25 | `purchase_orders` | catalog | Yes |
+| 26 | `employees` | people | Yes |
 | 27 | `reports` | overview | No |
-| 28 | `settings` | system | No |
-| 29 | `settings_company` | system | No |
-| 30 | `settings_printers` | system | No |
-| 31 | `settings_tax` | system | No |
-| 32 | `settings_currency` | system | No |
-| 33 | `settings_modifiers` | system | No |
-| 34 | `settings_discounts` | system | No |
-| 35 | `data_management` | system | No |
+| 28 | `settings` | — | Yes |
+| 29 | `settings_company` | — | Yes |
+| 30 | `settings_printers` | — | Yes |
+| 31 | `settings_tax` | — | Yes |
+| 32 | `settings_currency` | — | Yes |
+| 33 | `settings_modifiers` | — | Yes |
+| 34 | `settings_discounts` | — | Yes |
+| 35 | `data_management` | — | Yes |
 | 36 | `db_inspector` | system | No |
-| 37 | `waiter_tables` | service | No |
-| 38 | `waiter_menu` | service | No |
-| 39 | `waiter_cart` | service | No |
-| 40 | `waiter_orders` | service | No |
+| 37 | `waiter_tables` | service | Yes |
+| 38 | `waiter_menu` | service | Yes |
+| 39 | `waiter_cart` | service | Yes |
+| 40 | `waiter_orders` | service | Yes |
 | 41 | `kds_board` | kitchen | Yes |
-| 42 | `display_board` | display | No |
+| 42 | `display_board` | display | Yes |
+| 43 | `product_form` | — | Yes |
+| 44 | `employee_form` | — | Yes |
 
 "In shell" means `app.native` has an `<if test="{screen_index == N}">`
-gate that mounts a template. Nine screens render at all: setup, the confirmation plus the two session
-gates (role picker and login) plus the five shell gates. The remaining 35
-enum values exist, and many are reachable through `open_section`, but no
+gate that mounts a template. Thirty-one screens render at all: the
+confirmation, the two session gates (role picker and login), the setup
+screen, and the twenty-eight shell gates. The remaining fourteen enum
+values exist, and many are reachable through `open_section`, but no
 template mounts. That is the single largest as-built gap in the app.
 
 ## Navigation stack
@@ -191,27 +194,19 @@ the handler indexes must mean the same thing.**
 
 ## As-built navigation defects
 
-1. **Nine templates, 43 screens.** Setup, role picker, login, Dashboard, POS,
-   Orders, Dining tables and KDS render. The other 36 screens are a blank
-   content pane.
-2. **The waiter shell is effectively broken.** Waiter signs in, lands on
-   `waiter_tables`, and no template mounts. The rail's only entry is
-   Service, which also lands on `waiter_tables`.
-3. **Display signs in to a blank board.** `display_board` has no
-   template, so a display device shows only the shell chrome.
-4. **Admin rail dead ends.** Catalog opens `product_categories`, People
-   opens `employees`, System opens `settings`; none are rendered.
-5. **`pos_cart` is unused.** The POS uses an inline cart pane, not the
+1. **Thirty-one templates, 45 screens.** The other fourteen screens are
+   a blank content pane.
+2. **The waiter's rail leads to a working floor, but the waiter cannot
+   pay for a table.** The floor, the menu, the cart and the order list
+   render; the money does not.
+3. **`pos_cart` is unused.** The POS uses an inline cart pane, not the
    `pos_cart` screen.
-6. **`order_confirmation` is a navigation target without a template.**
-   After an order is placed, `update` goes there and the content is
-   blank.
-7. **No responsive layout mode.** The target calls for a model-computed
+4. **No responsive layout mode.** The target calls for a model-computed
    layout mode; the shell is a fixed split with a 200 px rail. The split
    fraction is resizable but the structure does not adapt.
-8. **The stack is not surfaced.** `go_back` exists, but no visible
+5. **The stack is not surfaced.** `go_back` exists, but no visible
    affordance dispatches it. A kiosk cannot go back today.
-9. **The error banner is implemented, but it is the only feedback path.**
+6. **The error banner is implemented, but it is the only feedback path.**
    Denials and failures are visible now; there is no toast, inline field
    error or per-panel state.
 
@@ -219,14 +214,15 @@ the handler indexes must mean the same thing.**
 
 - Every `Screen` has a template or is explicitly removed from the enum.
 - The shell renders a generic list/form template for the read-mostly
-  entities, which covers most of the 36 unmounted screens.
-- Waiter gets its four templates; display gets its board.
+  entities, which covers most of the fourteen unmounted screens.
 - A layout-mode method (wide/narrow) chooses rail vs tabs and table vs
   card list.
 - Back is an explicit affordance (button or keyboard) on screens that can
   be drilled into.
 - A screen-coverage test asserts that every allowed screen is either
-  rendered or listed as intentionally unavailable.
+  rendered or listed as intentionally unavailable. (The suite now builds
+  every mounted screen; the "either rendered or unavailable" half is
+  still to come.)
 
 ## Tests
 
@@ -235,6 +231,8 @@ the handler indexes must mean the same thing.**
 - The permission matrix is walked for every role × every screen.
 - Back returns to the previous screen.
 - Picking a role routes to the right gate.
+- The shell's gates name the screens the enum says they do.
+- Every gated screen builds a view and stays inside the widget budget.
 
 The matrix test is currently weaker than its name: it asserts only the
 two lock-out guarantees and re-asserts `allows` for permitted pairs. It

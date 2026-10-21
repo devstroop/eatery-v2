@@ -8,16 +8,16 @@
 |---|---|---|
 | [G-001](#g-001--first-run-setup-is-new-and-incomplete) | P1 | First-run setup exists in the working tree but has gaps |
 | [G-002](#g-002--no-committed-seed-fixture-or-demo-database) | P2 | Setup has starter data, but no committed fixture/demo database |
-| [G-003](#g-003--35-of-43-screens-have-no-template) | P1 | Waiter, display, confirmation and most admin destinations are blank |
+| [G-003](#g-003--14-of-45-screens-have-no-template) | P1 | Fourteen enum values have no template yet |
 | [G-004](#g-004--payments-are-partial-no-refunds-voids-or-shifts) | P1 | A payment path exists; refunds, voids, shifts and split payments do not |
 | [G-005](#g-005--no-printing) | P1 | No receipt, KOT, printer settings or sidecar |
 | [G-006](#g-006--no-sync) | P1 | No op-log writes, no second device, no conflict handling |
 | [G-007](#g-007--no-reports-or-compliance) | P1 | No X/Z report, tax report, item mix, export or audit |
 | [G-008](#g-008--no-catalog-or-settings-crud) | P1 | Menu, categories, modifiers, discounts and tax are read-only at best |
-| [G-009](#g-009--no-customer-workflow) | P2 | Customers are loaded nowhere and have no UI |
+| [G-009](#g-009--no-customer-workflow) | P2 | The customer list renders, but the data is loaded nowhere |
 | [G-010](#g-010--no-inventory-or-purchasing) | P2 | Tables exist; no stocktake, supplier or purchase flow |
 | [G-011](#g-011--no-floor-or-reservation-management) | P2 | Table board is read-only; no seating, transfer or reservations |
-| [G-012](#g-012--no-employee-management) | P2 | No employee list, PIN reset, role change or deactivation |
+| [G-012](#g-012--no-employee-management) | P2 | The employee list and form exist; no PIN reset, role change or deactivation |
 | [G-013](#g-013--no-order-detail-or-capture) | P1 | No table, customer, note, modifier or delivery data on an order |
 | [G-014](#g-014--no-multi-window-or-kiosk-windows) | P2 | One window; docs describe role-specific windows that do not exist |
 | [G-015](#g-015--no-packaging-backup-or-update-path) | P1 | No signed package, updater, backup/restore or v1 cutover |
@@ -82,21 +82,25 @@ use it in tests and `native dev`. Keep production setup separate.
 
 ---
 
-## G-003 — 35 of 43 screens have no template
+## G-003 — 14 of 45 screens have no template
 
 **Severity:** P1 · **Area:** screens
 
-Eight templates exist; five are mounted in the shell, plus setup, the role
-picker and login. The waiter home (`waiter_tables`), display home
-(`display_board`), order confirmation and every catalog/people/system
-destination render an empty content pane. `order_detail` is allowed for
-kds/display but has no template.
+**Updated 2026-10-21.** Thirty-one templates exist and all of them are
+mounted: twenty-eight behind an ordinal gate, plus setup, the role picker
+and login. The waiter home, the display home, the order confirmation and
+the catalog, people and system destinations all render now. What is left
+is fourteen enum values with no template: `landing`, `wizard`,
+`create_company`, `reset_pin`, `upgrade`, `control_center`, `pos_cart`,
+`payments`, `table_categories`, `floor_plan`, `kitchen_dishes`,
+`inventory_items`, `reports` and `db_inspector`.
 
-**Impact:** two of four roles and most of the back office are dead ends.
+**Impact:** most of the back office is still a dead end, and the enum
+advertises destinations the shell cannot show.
 
 **Next step:** decide the minimum M1/M2 screen set and build those
-templates before adding more enum entries. Add a screen-coverage test
-(G-017) so a new enum entry cannot be silently blank.
+templates before adding more enum entries. The screen-coverage test
+(G-017) exists: the suite builds every gated screen.
 
 ---
 
@@ -172,17 +176,19 @@ query reproducible from the database alone.
 
 **Severity:** P1 · **Area:** admin
 
-Products, categories, tax slabs, modifiers, discounts and settings have
-read paths at best (products/categories read; the rest not even that). No
-screen creates or edits them. `product_category`, `tax_slab`,
-`modifier_group`, `modifier`, `product_modifier` and `discount` are
-unused beyond the menu read.
+**Updated 2026-10-21.** The catalogue list, the product form, the
+employee form and the settings screens (company, currency, tax slabs,
+modifier groups, discounts, printers, data) all render, and the product,
+employee, company and currency write paths work. What is still missing is
+editing a category, a tax slab, a modifier group or a discount - those
+tables are read-only, and `modifier`, `product_modifier` and
+`product_category` are unused beyond the menu read.
 
-**Impact:** a restaurant cannot configure its own menu or tax.
+**Impact:** a restaurant can add a dish and change its price, but cannot
+configure its tax slabs or its modifier groups.
 
-**Next step:** add the minimum catalog editor (product + price + category
-+ tax slab) and a settings screen for company/currency/tax. Do not build
-all 43 screens first.
+**Next step:** the same treatment the product form got, for categories,
+tax slabs and modifier groups. Do not build all 45 screens first.
 
 ---
 
@@ -191,8 +197,9 @@ all 43 screens first.
 **Severity:** P2 · **Area:** customers
 
 `customer`, `customer_loyalty` and `loyalty_transaction` exist; the
-repository and decoder exist but `loadAll` never calls them; no screen
-lists, searches, creates or attaches a customer to an order.
+repository and decoder exist but `loadAll` never calls them; the customer
+list renders, but there is no search, no create and nothing attaches a
+customer to an order.
 
 **Impact:** dine-in tabs are table-only; loyalty and delivery customer
 data cannot be captured.
@@ -238,15 +245,16 @@ drag-and-drop plan.
 
 **Severity:** P2 · **Area:** people
 
-`employee` is read for login only. There is no list, create, edit, PIN
-reset, role change or deactivate. `reset_pin` is an enum entry with no
-template. `shift`/`time_entry` are unused.
+The employee list and the employee form exist, and the form creates and
+edits an employee with a role. What is missing is a PIN reset, a
+deactivate action and the `reset_pin` screen. `shift`/`time_entry` are
+unused.
 
-**Impact:** the owner cannot add a staff member or rotate a PIN without
-SQL.
+**Impact:** the owner can add a staff member, but cannot rotate a PIN
+without SQL.
 
-**Next step:** employee CRUD with a PIN reset that writes a new KDF hash
-(B-027), plus a role selector constrained to the four app roles.
+**Next step:** a PIN reset that writes a new KDF hash (B-027), plus
+deactivation.
 
 ---
 

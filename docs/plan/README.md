@@ -1,7 +1,7 @@
 # Delivery plan
 
 > **Status:** Living document.
-> **Last verified:** 2026-10-20, by source review.
+> **Last verified:** 2026-10-21, by source review and by running the suite.
 > **Upstream:** [`PORT-PLAN.md`](../../../PORT-PLAN.md) §11, adapted to the
 > as-built state.
 
@@ -26,16 +26,16 @@ The current tree is a **vertical slice in progress**, not a release.
 
 | Measure | Count |
 |---|---|
-| Screens named in the `Screen` enum | 43 |
-| Screen templates that compile | 9 |
-| Screens mounted in the shell | 5 |
-| Screens that render at all | 9 |
-| Screen templates with a render test | 3 |
+| Screens named in the `Screen` enum | 45 |
+| Screen templates that compile | 31 |
+| Screens mounted in the shell | 31 (28 gated on the screen ordinal, 3 on their own condition) |
+| Screens that render at all | 31 (a test builds every one of them) |
+| Screen templates with a render test | 31 |
 | Tables in the schema | 43 |
 | Migrations | 11 |
 | Entities with a read + decode path | 8 |
 | Entities with a write path | 6 (order, lines, history, config, setup, payment) |
-| Headless tests | 15 authored (28 reported with the DB suite + one generated) |
+| Headless tests | 49 authored (50 reported with the generated one) |
 | Sidecars | 0 (two README-only directories) |
 | CI workflows | 1 (verify + smoke) |
 
@@ -51,22 +51,21 @@ Full matrix: [`status.md`](status.md).
 | **M4 — Release** | 8 | Signed package, migrated data, CI sale smoke |
 
 M1 is the only milestone that can be demoed to a restaurant. Do not start
-M3 before M1 is honest. The order write is fixed in the working tree
-(uncommitted); M1 is now blocked by the role check
-([B-002](../review/bugs.md#b-002--login-ignores-the-employees-stored-role)),
-the salt race ([B-003](../review/bugs.md#b-003--the-boot-salt-is-accepted-before-the-database-confirms-it))
-and the setup gaps ([G-001](../review/gaps.md#g-001--first-run-setup-is-new-and-incomplete)).
+M3 before M1 is honest. The role check (B-002) and the salt race (B-003)
+were closed on 2026-10-21; what still blocks M1 is the money: tax,
+discount and payment are not implemented (B-014), the order identifier
+scheme collides (B-006), and the setup gaps remain (G-001).
 
 ## Phase board
 
 | Phase | Title | Estimate | Status | Exit criterion met? |
 |---|---|---|---|---|
 | [0](phase-0-toolchain.md) | Toolchain & skeleton | 2 d | Partial | No (scripts and CI exist; no clean-machine proof) |
-| [1](phase-1-foundation.md) | Model, navigation, theme, shell | 4 d | Partial | No (most screens blank, no layout mode) |
-| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (core only, no DB tests) |
-| [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (order writes; no read-back test; no modifiers/tax) |
-| [4](phase-4-kds-display-waiter.md) | KDS, display, waiter | 6 d | Partial | No (KDS only) |
-| [5](phase-5-admin-surfaces.md) | Admin surfaces | 10 d | Planned | No |
+| [1](phase-1-foundation.md) | Model, navigation, theme, shell | 4 d | Partial | No (the shell is there; no responsive layout mode) |
+| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (28 in-memory database tests exist; the read paths are not all written) |
+| [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (the order writes and reads back; no modifiers, no tax, no discount) |
+| [4](phase-4-kds-display-waiter.md) | KDS, display, waiter | 6 d | Partial | No (all three render and the waiter joins a table's order; the waiter cannot pay) |
+| [5](phase-5-admin-surfaces.md) | Admin surfaces | 10 d | Partial | No (the settings screens, the catalogue and the people forms exist; reports do not) |
 | [6](phase-6-sync-sidecar.md) | Sync sidecar | 10 d | Scaffolded | No |
 | [7](phase-7-printing-hardware.md) | Printing & hardware | 8 d | Scaffolded | No |
 | [8](phase-8-packaging-cutover.md) | Packaging & cutover | 5 d | Planned | No |
@@ -77,9 +76,8 @@ unknowns in [`open-questions.md`](open-questions.md), which can move them.
 
 ## Sequencing rules
 
-1. **Fix the build before adding features.** The source currently has a
-   call-site/signature mismatch in `update.zig`/`auth.zig`. No phase exit
-   is meaningful until `native check` and `native test` are green.
+1. **Fix the build before adding features.** The suite is green today;
+   no phase exit is meaningful until `native check` and `native test` are.
 2. **One owner per claim.** A screen is "done" only when it is mounted,
    tested and listed in `status.md`.
 3. **Data before UI.** A screen without a repository is a mock. Prefer
@@ -88,8 +86,9 @@ unknowns in [`open-questions.md`](open-questions.md), which can move them.
    interleave them.
 5. **The Flutter app is the oracle.** Where behaviour is unclear, capture
    it from v1 rather than inventing it.
-6. **No new screens until coverage is honest.** The enum already has 43
-   values and 36 blank panes. Shrink the gap before widening it.
+6. **No new screens until coverage is honest.** The enum has 45 values
+   and 14 of them still have no template. Shrink the gap before widening
+   it.
 
 ## Definition of done (per phase)
 

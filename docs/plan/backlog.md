@@ -1,6 +1,6 @@
 # Screen backlog
 
-**Status:** Living document. 43 screens, tracked one by one.
+**Status:** Living document. 45 screens, tracked one by one.
 **Source of truth:** `apps/eatery/src/core/navigation.zig` (the `Screen`
 enum), `apps/eatery/src/app.native` (the mount gates) and
 `apps/eatery/src/screens/` (the templates).

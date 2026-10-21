@@ -226,9 +226,10 @@ because they are the long poles.
 **Goal.** The admin can set the restaurant up and run it: company, staff,
 menu, floor, payments, reports and settings all render and all write.
 
-**Why here.** 36 of the 43 `Screen` variants are admin surfaces, and three
-of the seven admin rail entries — Catalog, People, System — currently open
-an empty pane. The rail offers a destination the shell cannot render.
+**Why here.** Most of the `Screen` variants are admin surfaces, and the
+admin rail entries — Catalog, People, System — each open a list or a form
+now. What is still missing is the money: the catalogue and the people
+forms write, but nothing takes a payment properly (see [status](status.md)).
 
 **Deliverables — setup.**
 

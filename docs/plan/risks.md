@@ -1,7 +1,7 @@
 # Risk register
 
 > **Status:** Living.
-> **Last reviewed:** 2026-10-20.
+> **Last reviewed:** 2026-10-21.
 > **Legend:** L = likelihood, I = impact, both low / med / high.
 
 The register is ordered by current priority, not by ID. An item with no
@@ -12,17 +12,24 @@ owner is not being managed.
 | # | Risk | L | I | Why now | Mitigation | Owner |
 |---|---|---|---|---|---|---|
 | B0 | Every order write fails | certain | high | `orders.updated_at` is required and never inserted | Add the column to the insert and a DB read-back test (B-001) | Eng |
-| SEC1 | Any employee PIN can open Admin | certain | high | The login query ignores `employee.role` | Filter and verify the role (B-002) | Eng |
-| SEC0 | Provisional-salt race weakens login correctness | med | high | A fast sign-in can hash against a salt that is then replaced | Block sign-in until the salt is confirmed (B-003) | Eng |
-| C1 | Only 7 of 43 screens render | certain | high | The app looks complete in the enum and is blank in use | Coverage test + remove or render every screen | Eng/Product |
-| C2 | Waiter and display roles are unusable | certain | high | Two of four roles cannot do their job | Waiter templates + display board (Phase 1/4) | Eng |
-| C3 | A fresh install cannot log in | certain | high | No setup flow, no company, no employee | Setup/seed path (Phase 5) | Eng/Product |
-| R1 | Zig/Node/SDK toolchain drift | high | high | 0.17 Zig and Node 22 both fail; scripts assume macOS paths | Pin versions; CI; cross-platform bootstrap | Eng |
+| C1 | Only 31 of 45 screens render | certain | high | The app looks complete in the enum and is blank in use | Render every screen or remove it from the enum | Eng/Product |
 | R2 | CI smoke is non-blank only | certain | high | A broken sale path still passes | Extend the smoke through a seeded sale | Eng |
 | P1 | BLE printing has no native path | certain | high | Receipts are core | Accept the sidecar or restrict to LAN (ADR-0008) | Product |
 | S1 | Sync has no transport in-process | certain | high | Multi-device is a product promise | Op-log + sidecar (ADR-0009) | Product/Eng |
 | I1 | Clock-based order IDs collide | high | med | A busy counter can place two orders in a second | Sequence/UUID (ADR-0013) | Eng |
 | M1 | No legacy migration path or decision | high | high | Cutover can lose real data | Decide in-place vs fresh; dry-run on a copy | Product/Eng |
+| SEC2 | A PIN is a fast digest over four digits | certain | med | The database is enough to recover every PIN | Slow hash, per-employee salt, lockout (B-027) | Eng |
+| R1 | Zig/Node/SDK toolchain drift | high | high | 0.17 Zig and Node 22 both fail; scripts assume macOS paths | Pin versions; CI; cross-platform bootstrap | Eng |
+
+### Closed since the last review
+
+| # | Risk | Was | Now |
+|---|---|---|---|
+| SEC1 | Any employee PIN can open Admin | certain / high | FIXED: the sign-in query is scoped to the session's role and the returned row is checked against it (B-002) |
+| SEC0 | Provisional-salt race weakens login correctness | med / high | FIXED: the sign-in waits for the database to confirm the salt, and the setup writes the salt with the operator's hash (B-003) |
+| C2 | Waiter and display roles are unusable | certain / high | The waiter floor, menu, cart and order list render, and the display board shows the order cards. What the waiter still cannot do is pay for a table |
+| C3 | A fresh install cannot log in | certain / high | FIXED: the setup writes the company, the operator, the salt and a starter menu in one transaction |
+| C4 | Two effects shared an effect key | certain / high | FIXED: a second live effect with the same key is refused, so a write could silently never happen. Every key is used once, and a test says so |
 
 ## Delivery and environment
 

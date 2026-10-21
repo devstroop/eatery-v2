@@ -29,15 +29,15 @@ role.
 
 | Item | Detail |
 |---|---|
-| Screen templates | 35 of 43 screens have no template |
-| Mounted screens | Only 5 (`dashboard`, `pos`, `orders`, `dining_tables`, `kds_board`) |
-| Waiter home | `waiter_tables` is allowed but not rendered |
-| Display home | `display_board` is allowed but not rendered |
+| Screen templates | 14 of 45 screens have no template |
+| Mounted screens | 31 of 45 (the phase opened the five below; the rest landed in phases 4 and 5) |
+| Waiter home | `waiter_tables` renders (phase 4) |
+| Display home | `display_board` renders (phase 4) |
 | Layout mode | No wide/narrow computation; no rail↔tabs switch; no table↔card switch |
 | Back affordance | `go_back` exists; nothing dispatches it |
 | Role memory | Every boot starts at the role picker |
 | Exact RBAC test | The matrix test only asserts lock-out guarantees |
-| Screen coverage test | Nothing detects a blank pane |
+| Screen coverage test | DONE: the suite builds every gated screen |
 | Ordinal contract test | Nothing protects the append-only enum |
 | Setup / fresh install | No company or employee creation, so login cannot succeed on a fresh DB |
 

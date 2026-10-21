@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const nav = @import("navigation.zig");
+const domain = @import("../domain/models.zig");
 
 const Role = nav.Role;
 const Screen = nav.Screen;
@@ -61,6 +62,22 @@ pub fn home(role: Role) Screen {
         .waiter => .waiter_tables,
         .kds => .kds_board,
         .display => .display_board,
+    };
+}
+
+/// The stored role an employee must hold to work this operating mode.
+///
+/// The device's mode and the employee's role are two different things: a
+/// till in "Admin" mode needs an employee whose stored role is `admin`.
+/// A sign-in has to agree on both - otherwise a waiter's PIN opens an
+/// admin session, and the permission matrix below stops being a
+/// permission matrix at all.
+pub fn employee_role(role: Role) domain.EmployeeRole {
+    return switch (role) {
+        .admin => .admin,
+        .waiter => .waiter,
+        .kds => .kitchen,
+        .display => .display,
     };
 }
 

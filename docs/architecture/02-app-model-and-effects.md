@@ -32,7 +32,7 @@ passing it by value.
 | Company | `company_id`, `company_name`, `currency_code`, `currency_symbol`, `tax_inclusive` | One company per database |
 | Datasets | seven bump buffers and seven row slices | Products, tables, employees, orders, customers, categories, order lines |
 | POS filters | `selected_category`, `search` | 0 means "all"; search is a `TextBuffer(64)` |
-| Sign-in | `pin`, `pin_salt_buf`, `salt_is_provisional`, `login_hash`, `operator_buf`, `login_error` | Salt is provisional at boot until the database confirms it |
+| Sign-in | `pin`, `pin_salt_buf`, `salt_state`, `login_hash`, `operator_buf`, `login_error` | The salt is only usable once the database has confirmed it |
 | Cart | `cart_buf`, `cart[50]`, `cart_len`, `cart_order_type` | Session state, never persisted until placed |
 | Runtime | `db_ready`, `busy`, `error_text`, `theme_dark` | `error_text` is shown by the shell's dismissable error banner |
 
@@ -149,15 +149,16 @@ Notable arms:
 | Arm | Behaviour |
 |---|---|
 | `pick_role` | Set role; kiosk roles sign in immediately and load data; PIN roles go to login |
-| `submit_login` | Hash PIN with salt, query `employee` by `pin_hash`, wait for `login_checked` |
-| `login_checked` | On a row: set operator, sign in, go home, load data. On no row: "Wrong PIN", clear PIN |
+| `submit_login` | Refuse unless the salt is confirmed; hash the PIN, query `employee` by `pin_hash` **and the session's role**, wait for `login_checked` |
+| `login_checked` | On a row of the session's role: set operator, sign in, go home, load data. On no row, or a row of another role: "Wrong PIN", clear PIN |
 | `open_screen` / `open_section` | Route through `go()`, which checks `rbac.allows` and pushes the stack |
 | `go_back` | Pop; stay put at a root |
 | `place_order` | Build an order from the cart and `dbExec` it |
 | `order_placed` | Clear cart, go to confirmation, reload orders |
 | `advance_order` | Compute next status and write status + history atomically |
 | `*_loaded` | Decode a page into the model's bump buffers |
-| `config_loaded` | Adopt the stored PIN salt, or create one on a fresh install |
+| `config_loaded` | Adopt the stored PIN salt, or mark the salt as "to be installed" on a fresh install |
+| `config_saved` | The salt write came back: confirm the salt, or show the failure and keep it unconfirmed |
 | `db_failed` | Map outcome to operator copy |
 | `tick` | Refresh `now_ms` |
 
@@ -209,6 +210,15 @@ main.zig
                      └──▶ kiosk sign-in ──▶ board ──▶ loadAll
 ```
 
+The salt is the one piece of state a PIN hash cannot be checked without,
+so it has three states rather than a flag:
+
+| State | What it means | What it allows |
+|---|---|---|
+| `unknown` | The database has not answered yet | Nothing may be hashed with the salt |
+| `installing` | The database has no salt: this one will be installed with the operator | The setup may hash the operator's PIN with it |
+| `confirmed` | The database holds this salt | A sign-in may hash with it |
+
 `loadAll` currently loads company, categories, products, tables,
 employees, orders and order lines. It does **not** load customers, even
 though a repository exists. This is a status fact, not a design choice;
@@ -219,20 +229,15 @@ see [`plan/status.md`](../plan/status.md).
 These are documented rather than silently fixed, because the fix is a
 decision:
 
-1. **The provisional salt can still be used before the database confirms
-   it.** `main.zig` sets `pin_salt_len` immediately and `submit_login`
-   checks only that the salt is non-empty, not `salt_is_provisional`.
-   `createSalt` and `config_loaded` clear the flag, but a fast sign-in can
-   race the first config read.
-2. **Order IDs are the wall clock in milliseconds and order numbers are
+1. **Order IDs are the wall clock in milliseconds and order numbers are
    seconds.** Two orders in the same second collide on the `UNIQUE`
    order number. See [ADR-0013](../decisions/0013-clock-based-order-ids.md).
-3. **`busy` is set on write but most read paths do not set it**, so the
+2. **`busy` is set on write but most read paths do not set it**, so the
    UI cannot distinguish "loading" from "empty" for reads.
-4. **`now_ms` is the only clock.** There is no monotonic clock and no
+3. **`now_ms` is the only clock.** There is no monotonic clock and no
    handling for clock jumps backwards.
-5. **`view_unbound` still lists `pending_screen`, which is not a field.**
-   The entry is harmless but stale; remove it or add the field.
+4. **The PIN is a fast digest.** Salted SHA-256 is a storage
+   improvement, not adequate PIN security (B-027).
 
 ## Tests that pin this contract
 
@@ -245,6 +250,11 @@ decision:
 - model reports derived numbers instead of storing them;
 - layout survives a resize;
 - page decoder handles NULL, INTEGER and TEXT;
-- PIN hashing is deterministic and salt-dependent.
+- PIN hashing is deterministic and salt-dependent;
+- a waiter's PIN does not open an admin session;
+- a sign-in waits for the database to confirm the salt, and a failed
+  salt write is not a confirmed salt;
+- the shell gates the screens the enum says it does;
+- every gated screen renders, inside the widget budget.
 
 See [10-testing-and-quality](10-testing-and-quality.md).

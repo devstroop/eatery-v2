@@ -328,6 +328,7 @@ test "a PIN only matches the hash of the salted PIN" {
     // The right PIN finds the operator.
     @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
     harness.model.pin_salt_len = salt.len;
+    harness.model.salt_state = .confirmed;
     harness.model.pin.set("4821");
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(harness.model.signed_in);
@@ -339,10 +340,51 @@ test "a PIN only matches the hash of the salted PIN" {
     defer other.deinit();
     @memcpy(other.model.pin_salt_buf[0..salt.len], salt);
     other.model.pin_salt_len = salt.len;
+    other.model.salt_state = .confirmed;
     other.model.pin.set("9999");
     other.send(Msg{ .submit_login = {} });
     try testing.expect(!other.model.signed_in);
     try testing.expect(other.model.login_failed());
+}
+
+test "an employee's PIN only opens the mode they are stored for" {
+    // A waiter is a waiter. Their PIN must not open an admin session,
+    // however the till is set up.
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    const salt = "a1b2c3d4";
+    var hash: [auth.hex_len]u8 = undefined;
+    auth.hashPin(salt, "4821", &hash);
+
+    harness.fx.dbExec(.{
+        .key = 904,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Ravi', 1, ?1, 1, 0);",
+            .params = &.{.{ .text = &hash }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
+    harness.model.pin_salt_len = salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // The till is in admin mode: a waiter's PIN is refused.
+    harness.send(Msg{ .pick_role = @intFromEnum(nav.Role.admin) });
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+    try testing.expect(harness.model.login_failed());
+
+    // The same PIN in waiter mode signs the waiter in.
+    harness.send(Msg{ .pick_role = @intFromEnum(nav.Role.waiter) });
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+    try testing.expectEqualStrings("Ravi", harness.model.employee_name);
 }
 
 test "a fresh installation gets a salt, stores it, and keeps it" {
@@ -355,13 +397,14 @@ test "a fresh installation gets a salt, stores it, and keeps it" {
     const provisional = "0123456789abcdef";
     @memcpy(harness.model.pin_salt_buf[0..provisional.len], provisional);
     harness.model.pin_salt_len = provisional.len;
+    harness.model.salt_state = .unknown;
 
     // The boot flow reads the settings. A fresh database has no salt
     // yet, so the provisional one is stored.
     repos.loadConfig(harness.fx);
     harness.drain();
     try testing.expect(harness.model.pin_salt().len > 0);
-    try testing.expect(!harness.model.salt_is_provisional);
+    try testing.expectEqual(core.SaltState.confirmed, harness.model.salt_state);
     const made = harness.model.pin_salt();
 
     // The salt is in the database now - a query finds it.
@@ -394,11 +437,47 @@ test "a fresh installation gets a salt, stores it, and keeps it" {
     // And a later run reads the STORED salt instead of making a new
     // one: the model starts empty and the database fills it.
     harness.model.pin_salt_len = 0;
-    harness.model.salt_is_provisional = true;
+    harness.model.salt_state = .unknown;
     repos.loadConfig(harness.fx);
     harness.drain();
     try testing.expectEqualStrings(made, harness.model.pin_salt());
-    try testing.expect(!harness.model.salt_is_provisional);
+    try testing.expectEqual(core.SaltState.confirmed, harness.model.salt_state);
+}
+
+test "a sign-in waits for the database to confirm the salt" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    const salt = "a1b2c3d4";
+    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
+    harness.model.pin_salt_len = salt.len;
+    var hash: [auth.hex_len]u8 = undefined;
+    auth.hashPin(salt, "4821", &hash);
+    harness.fx.dbExec(.{
+        .key = 903,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = &hash }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The salt in the model has not been confirmed by the database: it
+    // is the provisional one made at boot. A hash against it can never
+    // match, so the sign-in is refused rather than attempted.
+    harness.model.salt_state = .unknown;
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+    try testing.expect(harness.model.login_failed());
+
+    // Once the database has confirmed the salt, the same PIN signs in.
+    harness.model.salt_state = .confirmed;
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
 /// The product with this name, or null.
@@ -407,6 +486,35 @@ fn findProduct(model: *const Model, name: []const u8) ?domain.Product {
         if (std.mem.eql(u8, product.name, name)) return product;
     }
     return null;
+}
+
+/// The installation salt in the database, copied into `out`.
+///
+/// The page bytes are drain scratch: the value has to be COPIED before
+/// it is looked at, or the caller reads dead memory.
+fn storedSalt(harness: *Harness, out: []u8) !usize {
+    harness.fx.dbQuery(.{
+        .key = 905,
+        .sql = "SELECT value FROM app_config WHERE key = 'pin_salt';",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                const text = reader.textOf(&values, "value");
+                const length = @min(text.len, out.len);
+                @memcpy(out[0..length], text[0..length]);
+                return length;
+            },
+            else => {},
+        }
+    }
+    return 0;
 }
 
 // -------------------------------------------------------- the setup flow
@@ -477,6 +585,13 @@ test "the setup writes the company, the operator and the starter menu" {
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(!harness.model.signed_in);
     try testing.expect(harness.model.login_failed());
+
+    // The salt the operator's PIN was hashed with is in the database
+    // too, in the same transaction as the hash. A hash without its salt
+    // is a PIN that can never be verified.
+    var stored: [128]u8 = undefined;
+    const stored_len = try storedSalt(&harness, &stored);
+    try testing.expectEqualStrings(salt, stored[0..stored_len]);
 }
 
 test "the setup refuses a PIN that does not match" {

@@ -85,7 +85,7 @@ apps/eatery/src/
 │   ├── repos.zig         the SQL: one named statement per query
 │   ├── page.zig          the reader for the engine's row format
 │   └── auth.zig          PIN hashing
-├── schema/*.sql          the database: ten migrations, all STRICT
+├── schema/*.sql          the database: eleven migrations, all STRICT
 ├── screens/*.native      one template per screen
 └── tests.zig             the rules the app must not break
 ```
@@ -170,12 +170,17 @@ eatery-v2/
 ## Status
 
 The foundation is in place and building: the app model, the permission
-matrix, the design tokens, the schema (43 tables), the repository layer, the
-PIN sign-in, the role picker, first-run setup, the dashboard, the point of sale, the
-order list, the floor and the kitchen board. The order write is fixed in
-the working tree but not committed (see the audit). 15 authored headless
-tests cover the model, navigation and markup basics; the uncommitted
-in-memory suite covers the SQL.
+matrix, the design tokens, the schema (43 tables), the repository layer,
+the PIN sign-in, the role picker, first-run setup, the dashboard, the
+point of sale, the order list, the floor, the kitchen board, the customer
+display, the waiter shell, the settings screens and the catalogue and
+people forms. 49 authored tests cover the model, navigation, markup and
+the SQL against an in-memory database.
+
+The sign-in now checks the employee's stored role and waits for the
+database to confirm the installation salt, and every effect key names
+one effect. What is still missing is the money: tax, discount and
+payment are not implemented, and an order can complete unpaid.
 
 The rest of the product is on the phase board in
 [`docs/plan/README.md`](docs/plan/README.md), with the as-built screen

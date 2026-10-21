@@ -85,7 +85,7 @@ schema trigger or default only if every writer should share it.
 
 ## B-002 — Login ignores the employee's stored role
 
-**Severity:** P0 · **Area:** security / session · **Status:** confirmed by inspection
+**Severity:** P0 · **Area:** security / session · **Status:** FIXED (2026-10-21)
 
 **Evidence**
 
@@ -103,6 +103,13 @@ their own PIN, and receive the full admin session. The database role is
 decorative. A shared PIN (two employees with the same PIN) also selects
 an arbitrary row because of `LIMIT 1`.
 
+**Disposition:** fixed on 2026-10-21 — the sign-in query is scoped to the
+session's role (`AND role = ?2`, with `rbac.employee_role` mapping the
+device's mode onto the stored role), and `login_checked` verifies the role
+of the row that came back before it signs anybody in. The integration test
+"an employee's PIN only opens the mode they are stored for" signs a waiter
+in as a waiter and refuses the same PIN in admin mode.
+
 **Fix**
 
 Add `AND role = ?2` to the login query, filter by the chosen role, and
@@ -114,7 +121,7 @@ admin-PIN-as-waiter.
 
 ## B-003 — The boot salt is accepted before the database confirms it
 
-**Severity:** P0 · **Area:** security / startup · **Status:** confirmed by inspection
+**Severity:** P0 · **Area:** security / startup · **Status:** FIXED (2026-10-21)
 
 **Evidence**
 
@@ -137,6 +144,16 @@ write can make an entire installation's PINs unusable after restart. The
 salt is also regenerated on every launch even when the database already
 has one, widening the race. Setup hashes the first admin PIN with the same
 unconfirmed salt.
+
+**Disposition:** fixed on 2026-10-21 — the boolean became a three-state
+lifecycle (`SaltState`: `unknown`, `installing`, `confirmed`). The
+sign-in is refused unless the state is `confirmed`; the state moves to
+`confirmed` when the database confirms the salt or when the salt write
+comes back successfully, and never before; a failed write leaves the salt
+unconfirmed and shows an error. The setup now writes the salt in the same
+transaction as the operator's PIN hash, so a hash can never land without
+the salt it was hashed with, and the boot-time salt write can never
+overwrite a stored salt (`DO NOTHING`).
 
 **Fix**
 
@@ -943,10 +960,81 @@ payments with a sum check). Add a test that pays twice.
 
 ---
 
+## B-036 — Two effects shared an effect key
+
+**Severity:** P0 · **Area:** data / runtime · **Status:** FIXED (2026-10-21)
+
+**Evidence**
+
+- `src/data/repos.zig` keys three effects twice: `key_save_company` and
+  `key_write_order` are both `20`, `key_printers` and `key_write_product`
+  are both `21`, `key_tax_slabs` and `key_write_table` are both `22`.
+- The file's own comment says the keys live in their own namespace "so a
+  query and a write can never collide". They did.
+- The effects channel refuses a request whose key is already live
+  (`claimDbSlot` returns null, and the request is rejected with the
+  `.rejected` outcome). A query reusing a live query's key replaces it
+  instead: the first result never arrives.
+
+**Impact**
+
+Two live effects sharing a key means the second one never runs. A
+company save (key 20) in flight when an order is placed (key 20) refuses
+the order write, and the order write in flight when a ticket is advanced
+(key 20) refuses the ticket. The operator sees a failure with no
+explanation, on the one screen that must not fail.
+
+**Disposition:** fixed on 2026-10-21 — every key is used once (the write
+keys moved to 33-35, the salt write to 36, the currency write to 37), and
+the test "every effect key names one effect and no two" walks the whole
+table so the next collision fails the suite.
+
+**Fix**
+
+Give every effect its own key, and keep a test that walks the table.
+
+---
+
+## B-037 — Four screens bound a count the model does not have
+
+**Severity:** P1 · **Area:** markup / view · **Status:** FIXED (2026-10-21)
+
+**Evidence**
+
+- `src/screens/screen-customers.native` binds `{customer_count}`,
+  `screen-reservations.native` binds `{reservation_count}`,
+  `screen-suppliers.native` binds `{supplier_count}` and
+  `screen-purchase-orders.native` binds `{purchase_order_count}`.
+- None of the four is a field or a method on `Model`. The markup engine
+  fails the build with "binding does not name a model field", so the
+  screen renders nothing at all.
+
+**Impact**
+
+Four rail destinations - Customers, Reservations, Suppliers and Purchase
+orders - are blank on a device. `native check` did not catch it: it
+validates the markup's syntax, not its bindings against the model, and
+the model contract artifact was not present.
+
+**Disposition:** fixed on 2026-10-21 — the four counts are model methods
+now, and the test "every gated screen renders, and none of them blows the
+widget budget" builds every gated screen, so a screen that cannot render
+fails the suite.
+
+**Fix**
+
+Add the missing model methods, and keep a test that builds every screen.
+
+---
+
 ## Cross-cutting note
 
 The working tree now fixes the order write, nullable FKs and company
 ownership, and adds a first-run setup. The remaining sale blockers are
-identity (B-002), the salt race (B-003), PIN strength (B-027), clock IDs
-(B-006) and money (B-014). The committed `HEAD` still has B-001/B-004/
-B-005; treat the working tree as the candidate, not the release.
+PIN strength (B-027), clock IDs (B-006) and money (B-014). The identity
+blockers are closed: B-002 (the sign-in checks the stored role) and B-003
+(the sign-in waits for the database to confirm the salt) were fixed on
+2026-10-21, together with B-036 (the effect-key collision) and B-037 (the
+four screens that could not render). The committed `HEAD` still has
+B-001/B-004/B-005; treat the working tree as the candidate, not the
+release.

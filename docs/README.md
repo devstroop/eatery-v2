@@ -70,7 +70,7 @@ If you are changing the database, read
 |---|---|---|
 | [01-system-overview](architecture/01-system-overview.md) | Layers, runtime topology, invariants, source map | Implemented core / Planned edges |
 | [02-app-model-and-effects](architecture/02-app-model-and-effects.md) | Model, Msg, update, boot, effects, bump storage | Implemented |
-| [03-navigation-and-rbac](architecture/03-navigation-and-rbac.md) | Roles, 43-screen enum, stack, permission matrix, rail | Implemented core / Partial coverage |
+| [03-navigation-and-rbac](architecture/03-navigation-and-rbac.md) | Roles, 45-screen enum, stack, permission matrix, rail | Implemented core / Partial coverage |
 | [04-data-layer](architecture/04-data-layer.md) | Reads, writes, page format, repositories, ownership | Partial |
 | [05-schema](architecture/05-schema.md) | 43 tables, conventions, migration policy, usage | Scaffolded beyond core |
 | [06-ui-markup-and-theming](architecture/06-ui-markup-and-theming.md) | Markup subset, templates, tokens, layout, a11y | Implemented subset |
