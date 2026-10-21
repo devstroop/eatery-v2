@@ -51,11 +51,13 @@ const migration_sql = [_][]const u8{
     @embedFile("schema/0009_printing.sql"),
     @embedFile("schema/0010_sync.sql"),
     @embedFile("schema/0011_default_tax_slab.sql"),
+    @embedFile("schema/0012_order_sequence.sql"),
 };
 
 const migration_names = [_][]const u8{
     "core", "catalog", "floor", "customers", "orders",
     "inventory", "ops", "compliance", "printing", "sync", "default_tax_slab",
+    "order_sequence",
 };
 
 /// A model, a real database and a real effects channel, together.
@@ -305,6 +307,61 @@ test "an order is written, read back, and its status advances" {
     repos.loadOrders(harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
+}
+
+test "the order number is a sequence" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 2), harness.model.orders.len);
+
+    // The numbers are a sequence, not the clock: they count, and they
+    // count in the order the sales were placed. The list is newest
+    // first, so the second sale holds the higher number.
+    try testing.expectEqualStrings("000002", harness.model.orders[0].order_no);
+    try testing.expectEqualStrings("000001", harness.model.orders[1].order_no);
+}
+
+test "a failed sale does not consume an order number" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    // A product that is not in the database: the line's foreign key
+    // fails, and so does the sale.
+    harness.model.products = &.{
+        .{ .id = 99, .category_id = 1, .name = "Ghost Dish", .food_label = "Veg", .price_minor = 100, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 99 });
+    harness.send(Msg{ .place_order = {} });
+    try testing.expect(harness.model.error_text.len > 0);
+
+    // The number the failed sale would have had is still there: the
+    // sequence and the order are one transaction, so a sale that does
+    // not happen does not take a number with it.
+    harness.send(.{ .clear_cart = {} });
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+    try testing.expectEqualStrings("000001", harness.model.orders[0].order_no);
 }
 
 test "two sales in the same millisecond are two sales" {

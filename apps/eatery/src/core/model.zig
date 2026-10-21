@@ -668,7 +668,15 @@ pub const Model = struct {
     }
 
     /// The order number of the order just placed.
+    /// The number of the order that was just placed.
+    ///
+    /// The number is a sequence the DATABASE assigns, so it is only
+    /// known once the order has been read back. The loaded order is the
+    /// truth; the field is what the sale knew before that.
     pub fn last_order_no(model: *const Model) []const u8 {
+        for (model.orders) |order| {
+            if (order.id == model.last_order_id) return order.order_no;
+        }
         return model.last_order_no_field;
     }
 

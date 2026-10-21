@@ -123,15 +123,11 @@ fn selectTable(model: *Model, fx: *Effects, table_id: i64) void {
         }
     }
 
-    // A free table: open an order for it.
+    // A free table: open an order for it. The order number is a
+    // sequence, and the database assigns it.
     const order_id = nextOrderId(model, fx.wallMs());
-    var number_buffer: [16]u8 = undefined;
-    const number = makeOrderNo(&number_buffer, order_id) orelse {
-        model.error_text = "Could not make the order number - try again";
-        return;
-    };
     model.pending_order_id = order_id;
-    repos.openOrderForTable(fx, repos.key_open_order, table.id, model.employee_id, number, order_id);
+    repos.openOrderForTable(fx, repos.key_open_order, table.id, model.employee_id, order_id);
 }
 
 /// Add a product to the open order the waiter is serving.
@@ -1208,7 +1204,9 @@ fn placeOrder(model: *Model, fx: *Effects) void {
     const order_id = nextOrderId(model, now);
     var order = domain.Order{
         .id = order_id,
-        .order_no = "pending",
+        // The order number is a sequence, and the database assigns it:
+        // the number on the ticket is the number that was stored.
+        .order_no = "",
         .order_type = model.cart_order_type,
         .status = .pending,
         .status_label = domain.OrderStatus.pending.label(),
@@ -1223,15 +1221,6 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         .placed_at = now,
         .notes = "",
     };
-    // The order number is the number on the ticket, and a ticket with
-    // the number "0" on it is worse than no ticket: the sale is
-    // refused rather than written with a number that cannot be traced.
-    var number_buffer: [16]u8 = undefined;
-    const number = makeOrderNo(&number_buffer, order_id) orelse {
-        model.error_text = "Could not make the order number - try again";
-        return;
-    };
-    order.order_no = number;
 
     var lines: [model_mod.max_cart_lines]domain.OrderLine = undefined;
     var count: usize = 0;
@@ -1267,18 +1256,6 @@ fn placeOrder(model: *Model, fx: *Effects) void {
     model.busy = true;
     model.sale_pending = true;
     repos.saveOrder(fx, order, lines[0..count]);
-}
-
-/// The order number. It is the wall clock in MILLISECONDS: unique (the
-/// column is UNIQUE), sortable, and the same value as the order id, so
-/// a number on a ticket is a number you can trace. A per-day sequence
-/// ("1, 2, 3") is nicer on a receipt and is a later change.
-///
-/// Null when the number cannot be made: a sale with a number of "0" on
-/// it is a sale nobody can trace.
-fn makeOrderNo(buffer: *[16]u8, at: i64) ?[]const u8 {
-    const written = std.fmt.bufPrint(buffer, "{d}", .{at}) catch return null;
-    return written[0..written.len];
 }
 
 /// The next order id for this device.
