@@ -277,6 +277,7 @@ pub fn decodeProducts(model: *Model, bytes: []const u8) void {
             .id = reader.intOf(&values, "id", 0),
             .category_id = reader.intOf(&values, "category_id", 0),
             .name = model.products_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .food_label = enumFromInt(domain.FoodType, reader.intOf(&values, "food_type", 0)).label(),
             .price_minor = reader.intOf(&values, "price_minor", 0),
             .product_type = enumFromInt(domain.ProductType, reader.intOf(&values, "product_type", 0)),
             .food_type = enumFromInt(domain.FoodType, reader.intOf(&values, "food_type", 0)),
@@ -342,6 +343,7 @@ pub fn decodeEmployees(model: *Model, bytes: []const u8) void {
             .id = reader.intOf(&values, "id", 0),
             .name = model.employees_buf.dupe(reader.textOf(&values, "name")) orelse "",
             .role = reader.intOf(&values, "role", 0),
+            .role_label = enumFromInt(domain.EmployeeRole, reader.intOf(&values, "role", 0)).label(),
             .active = reader.boolOf(&values, "active"),
         };
     }

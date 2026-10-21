@@ -157,6 +157,8 @@ pub const Employee = struct {
     id: i64,
     name: []const u8,
     role: i64,
+    /// The role, as text.
+    role_label: []const u8,
     active: bool,
 };
 
@@ -170,6 +172,8 @@ pub const Product = struct {
     id: i64,
     category_id: i64,
     name: []const u8,
+    /// The food marking, as text: the markup binds fields, not methods.
+    food_label: []const u8,
     /// Price in minor units (cents, paise, yen...).
     price_minor: i64,
     product_type: ProductType,
@@ -218,6 +222,23 @@ pub const KdsStation = struct {
     id: i64,
     name: []const u8,
     sort_order: i64,
+};
+
+/// The roles an employee can have.
+pub const EmployeeRole = enum(i64) {
+    admin = 0,
+    waiter = 1,
+    kitchen = 2,
+    display = 3,
+
+    pub fn label(self: EmployeeRole) []const u8 {
+        return switch (self) {
+            .admin => "Admin",
+            .waiter => "Waiter",
+            .kitchen => "Kitchen",
+            .display => "Display",
+        };
+    }
 };
 
 /// Which station cooks which product.
