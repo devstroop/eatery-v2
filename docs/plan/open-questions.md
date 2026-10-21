@@ -60,6 +60,7 @@ date before that phase starts.
 | A18 | Which reports does an owner actually open? | Report scope and queries | Usage data + interviews | Product | Open |
 | A19 | What is the day boundary and timezone for reporting? | Epoch-ms is UTC; reports are local | Accountant + product | Product | Open |
 | A20 | What happens when two waiters edit one table? | Shared model and sync | Interviews + pilot | Product | Open |
+| A21 | Can a customer take the goods and settle later, and who may allow it? | An order now closes only when it is paid for, so "pay later" needs an explicit action | Interviews + product | Product | Open |
 
 ## B. Data and migration
 
