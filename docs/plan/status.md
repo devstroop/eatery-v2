@@ -27,7 +27,7 @@
 | Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, payment | `repos.zig` |
 | Effect keys | 36, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 49 authored (50 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
+| Headless tests | 56 authored (57 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
 | Database integration tests | 28, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
@@ -45,7 +45,7 @@
 | Theming | Implemented | Light/dark semantic tokens |
 | Shell layout | Partial | Fixed rail + content; no responsive mode |
 | Dashboard | Implemented | Counts, recent orders, shortcuts; money is hard-coded to 2 decimals (B-013) |
-| POS | Partial | Menu, filter, cart and order types work; the order write now succeeds in the working tree (B-001 fixed, uncommitted); no modifiers, tax, discount or payment |
+| POS | Partial | Menu, filter, cart and order types work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; no modifiers, tax, discount or payment |
 | Orders | Partial | Lists non-voided orders including completed; status advance is not conditional (B-008/B-012) |
 | Kitchen board | Implemented | Tickets, summary, wait time, advance |
 | Floor board | Partial | Read-only table cards |
@@ -111,7 +111,7 @@ a docs change.
 | # | Defect | Where | Impact |
 |---|---|---|---|
 | D1 | ~~Provisional salt installed before the database confirms it; a failed save was marked confirmed~~ | `src/core/update.zig` (`submit_login`, `createSalt`, `config_loaded`) | FIXED: the salt is a three-state lifecycle (`unknown`, `installing`, `confirmed`), the sign-in waits for `confirmed`, and the setup writes the salt with the operator's hash (B-003) |
-| D2 | Order `id` = wall ms, `order_no` = wall seconds | `src/core/update.zig` (`placeOrder`, `allocOrderNo`) | Same-second orders collide on a `UNIQUE` column (B-006) |
+| D2 | ~~Order `id` = wall ms, `order_no` = wall seconds~~ | `src/core/update.zig` (`placeOrder`, `nextOrderId`), `src/data/repos.zig` (`saveOrder`) | FIXED: the number is a sequence the database assigns, the id keeps a per-device floor, and a request key makes a retry the same sale (B-006, [ADR-0014](../decisions/0014-order-identity.md)) |
 | D3 | `loadAll` omits `loadCustomers` | `src/data/repos.zig` (`loadAll`) | Customer data never appears (B-015) |
 | D4 | Shell gates are hard-coded ordinals | `src/app.native` | A test now pins the gated ordinals against the enum, so inserting a screen fails the suite instead of remapping the UI (B-023) |
 | D5 | `orders` header badge says "open" but uses `order_count` (non-voided, including completed) | `src/screens/screen-orders.native` | Misleading count (B-012) |
@@ -134,11 +134,15 @@ a docs change.
 
 B-002 and B-003 are fixed in the working tree of 2026-10-21, with the
 effect-key collision (D21) and the four unrenderable screens (D20) found
-alongside them. The first remaining fixes are B-027 (PIN strength) and
-B-014 (tax, discount and payment); the full order is in the
-[audit](../review/archive/2026-10-20-audit.md). D2 is still the first identifier
-scheme to design away
-(see [ADR-0013](../decisions/0013-clock-based-order-ids.md)).
+alongside them. The order identity was settled the same day: the number
+is a sequence the database assigns, the id keeps a per-device floor, and
+a request key makes a retry the same sale
+([ADR-0014](../decisions/0014-order-identity.md), which supersedes
+[ADR-0013](../decisions/0013-clock-based-order-ids.md)).
+
+The first remaining fixes are B-027 (PIN strength) and B-014 (tax,
+discount and payment); the full order is in the
+[audit](../review/archive/2026-10-20-audit.md).
 
 The compile-time `makeSalt` mismatch and the invisible-error-banner gap
 were fixed earlier; they are no longer current defects. This status page
@@ -155,6 +159,11 @@ now defers detailed evidence to the [review set](../review/README.md).
 | Matrix is total (tautological; see D-007) | RBAC |
 | Back returns | Stack |
 | Cart arithmetic | POS |
+| A second tap in flight does not place a second order | POS |
+| Two sales in the same millisecond are two sales | POS |
+| The order number is a sequence | POS |
+| A failed sale does not consume an order number | POS |
+| A retried write is the same sale | POS |
 | Integer money | Domain |
 | PIN hashing | Auth |
 | A waiter's PIN does not open an admin session | Session |
