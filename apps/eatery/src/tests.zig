@@ -808,7 +808,7 @@ const max_view_widgets = 1024;
 const gated_ordinals = [_]usize{
     4,  5,  6,  8,  9,  10, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24,
     25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
 };
 
 
@@ -836,6 +836,7 @@ const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-control-center", .text = "No other device has been here. A second till or a kitchen display will appear here." },
     .{ .template = "screen-db-inspector", .text = "Database" },
     .{ .template = "screen-modifier-group-form", .text = "The order cannot be prepared without one" },
+    .{ .template = "screen-customer-form", .text = "Customer" },
     .{ .template = "screen-order-detail", .text = "Total" },
     .{ .template = "screen-order-confirmation", .text = "Items" },
     .{ .template = "screen-tables", .text = "Dining tables" },
@@ -1004,6 +1005,7 @@ fn screen_index_of(template: []const u8) usize {
         .{ .template = "screen-control-center", .screen = .control_center },
         .{ .template = "screen-db-inspector", .screen = .db_inspector },
         .{ .template = "screen-modifier-group-form", .screen = .modifier_group_form },
+        .{ .template = "screen-customer-form", .screen = .customer_form },
         .{ .template = "screen-order-detail", .screen = .order_detail },
         .{ .template = "screen-order-confirmation", .screen = .order_confirmation },
         .{ .template = "screen-tables", .screen = .dining_tables },

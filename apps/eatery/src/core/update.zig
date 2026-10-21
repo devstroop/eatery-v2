@@ -821,6 +821,70 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_dashboard => go(model, .admin_dashboard),
 
+        .open_customers => {
+            go(model, .customers);
+            repos.loadCustomers(fx);
+        },
+
+        .new_customer => {
+            model.form_customer_id = 0;
+            model.form_customer_name_buf.set("");
+            model.form_customer_phone_buf.set("");
+            model.form_customer_email_buf.set("");
+            model.form_customer_address_buf.set("");
+            go(model, .customer_form);
+        },
+
+        .edit_customer => |id| {
+            model.form_customer_id = id;
+            model.form_customer_name_buf.set("");
+            model.form_customer_phone_buf.set("");
+            model.form_customer_email_buf.set("");
+            model.form_customer_address_buf.set("");
+            for (model.customers) |customer| {
+                if (customer.id != id) continue;
+                model.form_customer_name_buf.set(customer.name);
+                model.form_customer_phone_buf.set(customer.phone);
+                model.form_customer_email_buf.set(customer.email);
+                break;
+            }
+            go(model, .customer_form);
+        },
+
+        .form_customer_name_edit => |event| model.form_customer_name_buf.apply(event),
+
+        .form_customer_phone_edit => |event| model.form_customer_phone_buf.apply(event),
+
+        .form_customer_email_edit => |event| model.form_customer_email_buf.apply(event),
+
+        .form_customer_address_edit => |event| model.form_customer_address_buf.apply(event),
+
+        .save_customer => {
+            const name = std.mem.trim(u8, model.form_customer_name_buf.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "The customer needs a name";
+                return;
+            }
+            const phone = std.mem.trim(u8, model.form_customer_phone_buf.text(), " ");
+            const email = std.mem.trim(u8, model.form_customer_email_buf.text(), " ");
+            const address = std.mem.trim(u8, model.form_customer_address_buf.text(), " ");
+            const id = if (model.form_customer_id != 0) model.form_customer_id else fx.wallMs();
+            model.busy = true;
+            model.error_text = "";
+            repos.saveCustomer(fx, repos.key_save_customer, id, name, phone, email, address, fx.wallMs());
+        },
+
+        .customer_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The customer could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadCustomers(fx);
+            go(model, .customers);
+        },
+
         .open_modifier_groups => {
             go(model, .settings_modifiers);
             repos.loadModifierGroups(fx);

@@ -80,6 +80,7 @@
     <row gap="8" cross="center">
       <text size="heading" grow="1">Customers</text>
       <text foreground="text_muted">{customer_count}</text>
+      <button size="sm" variant="primary" on-press="new_customer">New</button>
     </row>
 
     <if test="{customer_count == 0}">
@@ -92,7 +93,7 @@
       <column gap="4">
         <for each="customers" key="id" as="customer">
           <row background="surface" radius="md" padding="10" gap="10" cross="center">
-            <column gap="2" grow="1">
+            <column gap="2" grow="1" on-press="edit_customer:{customer.id}">
               <text>{customer.name}</text>
               <text size="sm" foreground="text_muted">{customer.phone}</text>
             </column>
@@ -101,5 +102,51 @@
         </for>
       </column>
     </scroll>
+  </column>
+</template>
+
+<!-- The customer form: who came back. A name, a phone, an email and
+     an address - the things a restaurant needs to send a receipt to
+     someone, and the things it needs to remember. -->
+
+<template name="screen-customer-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Customer</text>
+      <button size="sm" variant="ghost" on-press="open_customers">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_customer_name}"
+          placeholder="Anita Sharma"
+          label="Name"
+          on-input="form_customer_name_edit"
+        />
+        <text-field
+          text="{form_customer_phone}"
+          placeholder="080 4123 4567"
+          label="Phone"
+          on-input="form_customer_phone_edit"
+        />
+        <text-field
+          text="{form_customer_email}"
+          placeholder="anita@example.com"
+          label="Email"
+          on-input="form_customer_email_edit"
+        />
+        <text-field
+          text="{form_customer_address}"
+          placeholder="12 MG Road, Bengaluru"
+          label="Address"
+          on-input="form_customer_address_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_customer">Save</button>
+        </row>
+      </column>
+    </card>
   </column>
 </template>

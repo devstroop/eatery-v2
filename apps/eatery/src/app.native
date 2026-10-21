@@ -70,6 +70,7 @@
         <if test="{screen_index == 9}"><use template="screen-control-center"/></if>
         <if test="{screen_index == 36}"><use template="screen-db-inspector"/></if>
         <if test="{screen_index == 50}"><use template="screen-modifier-group-form"/></if>
+        <if test="{screen_index == 51}"><use template="screen-customer-form"/></if>
         <if test="{screen_index == 49}"><use template="screen-stock-count"/></if>
         <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
         <if test="{screen_index == 16}"><use template="screen-customers"/></if>

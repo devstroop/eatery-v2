@@ -355,6 +355,16 @@ pub const Model = struct {
     form_stock_count_buf: canvas.TextBuffer(16) = .{},
     /// Why the count changed.
     form_stock_reason_buf: canvas.TextBuffer(64) = .{},
+    /// The customer being edited, zero for a new one.
+    form_customer_id: i64 = 0,
+    /// The customer's name.
+    form_customer_name_buf: canvas.TextBuffer(64) = .{},
+    /// The customer's phone.
+    form_customer_phone_buf: canvas.TextBuffer(32) = .{},
+    /// The customer's email.
+    form_customer_email_buf: canvas.TextBuffer(64) = .{},
+    /// The customer's address.
+    form_customer_address_buf: canvas.TextBuffer(128) = .{},
     /// The group being edited, zero for a new one.
     form_modifier_group_id: i64 = 0,
     /// The group's name.
@@ -1196,6 +1206,26 @@ pub const Model = struct {
     /// The tax slabs the menu prices against.
     pub fn tax_slabs(model: *const Model) []const domain.TaxSlab {
         return model.tax_slabs_list;
+    }
+
+    /// The customer being edited, by name.
+    pub fn form_customer_name(model: *const Model) []const u8 {
+        return model.form_customer_name_buf.text();
+    }
+
+    /// The customer's phone.
+    pub fn form_customer_phone(model: *const Model) []const u8 {
+        return model.form_customer_phone_buf.text();
+    }
+
+    /// The customer's email.
+    pub fn form_customer_email(model: *const Model) []const u8 {
+        return model.form_customer_email_buf.text();
+    }
+
+    /// The customer's address.
+    pub fn form_customer_address(model: *const Model) []const u8 {
+        return model.form_customer_address_buf.text();
     }
 
     /// The choices in the group being edited.

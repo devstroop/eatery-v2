@@ -84,6 +84,7 @@ pub const key_save_station = 47;
 pub const key_db_tables = 48;
 pub const key_modifiers = 51;
 pub const key_save_modifier_group = 52;
+pub const key_save_customer = 53;
 pub const key_devices = 49;
 pub const key_sync_state = 50;
 
@@ -791,6 +792,39 @@ pub fn loadModifiers(fx: *Effects) void {
         .key = key_modifiers,
         .sql = modifiers_sql,
         .on_result = Effects.dbMsg(.modifiers_loaded),
+    });
+}
+
+/// Write a customer: a new one, or the one the form is editing.
+pub fn saveCustomer(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    phone: []const u8,
+    email: []const u8,
+    address: []const u8,
+    at: i64,
+) void {
+    var params: [6]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .text = phone },
+        .{ .text = email },
+        .{ .text = address },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO customer (id, name, phone, email, address, loyalty_points, notes, active, created_at)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, 0, '', 1, ?6)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, phone = ?3, email = ?4, address = ?5;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.customer_saved),
     });
 }
 

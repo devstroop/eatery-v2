@@ -1525,6 +1525,49 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
+test "the owner writes a customer" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The owner opens the customers.
+    harness.send(Msg{ .open_customers = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.customers, harness.model.screen());
+
+    // And writes one.
+    harness.send(Msg{ .new_customer = {} });
+    try testing.expectEqual(nav.Screen.customer_form, harness.model.screen());
+    harness.model.form_customer_name_buf.set("Anita Sharma");
+    harness.model.form_customer_phone_buf.set("080 4123 4567");
+    harness.model.form_customer_email_buf.set("anita@example.com");
+    harness.model.form_customer_address_buf.set("12 MG Road, Bengaluru");
+    harness.send(Msg{ .save_customer = {} });
+    harness.drain();
+
+    // The customer is saved, and the owner is back on the list.
+    try testing.expectEqual(nav.Screen.customers, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
+    try testing.expectEqualStrings("Anita Sharma", harness.model.customers[0].name);
+    try testing.expectEqualStrings("080 4123 4567", harness.model.customers[0].phone);
+
+    // And it is in the database.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM customer WHERE name = 'Anita Sharma';", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a customer with no name is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_customer = {} });
+    harness.model.form_customer_name_buf.set("  ");
+    harness.send(Msg{ .save_customer = {} });
+
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM customer;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
 test "the owner writes a modifier group" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

@@ -176,6 +176,24 @@ pub const Msg = union(enum) {
     open_kitchen_dishes,
     /// Open the modifier groups.
     open_modifier_groups,
+    /// Open the customers.
+    open_customers,
+    /// Edit the customer with this id.
+    edit_customer: i64,
+    /// Start a new customer.
+    new_customer,
+    /// The customer's name changed.
+    form_customer_name_edit: canvas.TextInputEvent,
+    /// The customer's phone changed.
+    form_customer_phone_edit: canvas.TextInputEvent,
+    /// The customer's email changed.
+    form_customer_email_edit: canvas.TextInputEvent,
+    /// The customer's address changed.
+    form_customer_address_edit: canvas.TextInputEvent,
+    /// Save the customer.
+    save_customer,
+    /// The customer was saved.
+    customer_saved: native_sdk.EffectDbResult,
     /// Edit the modifier group with this id.
     edit_modifier_group: i64,
     /// Start a new modifier group.
@@ -401,6 +419,7 @@ pub const Msg = union(enum) {
         "stock_saved",
         "dish_assigned",
         "modifier_group_saved",
+        "customer_saved",
         "modifiers_loaded",
         "db_tables_loaded",
         "devices_loaded",
