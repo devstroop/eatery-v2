@@ -245,6 +245,93 @@ test "a PIN is hashed, never stored" {
     try testing.expect(!auth.equal(&hash_a, &hash_c));
 }
 
+test "a failed salt write does not make the salt look confirmed" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    // The app made a provisional salt at boot. The database has not
+    // confirmed it, so a sign-in may not use it.
+    model.salt_state = .unknown;
+
+    // The write fails.
+    main.update(&model, .{ .config_saved = .{
+        .key = 1,
+        .kind = .exec,
+        .outcome = .io_failed,
+    } }, &fx);
+
+    // The salt is still unconfirmed: a sign-in hashed against it could
+    // never be verified, and the operator would be locked out of the
+    // till with nothing to show for it. The failure is visible.
+    try testing.expectEqual(core.SaltState.unknown, model.salt_state);
+    try testing.expect(model.error_text.len > 0);
+}
+
+test "the sign-in query is scoped to the session's role" {
+    // The device's mode and the employee's role are two different
+    // things, and the sign-in has to agree on both.
+    try testing.expectEqual(domain.EmployeeRole.admin, rbac.employee_role(nav.Role.admin));
+    try testing.expectEqual(domain.EmployeeRole.waiter, rbac.employee_role(nav.Role.waiter));
+    try testing.expectEqual(domain.EmployeeRole.kitchen, rbac.employee_role(nav.Role.kds));
+    try testing.expectEqual(domain.EmployeeRole.display, rbac.employee_role(nav.Role.display));
+
+    // The query asks the database for that role, rather than taking
+    // whatever employee the PIN belongs to.
+    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?2") != null);
+}
+
+test "every effect key names one effect and no two" {
+    // A key is an effect's identity in the channel. Two live effects
+    // cannot share one: the second is REFUSED, and a refused write is
+    // a write that never happens - a sale that does not land, with no
+    // error the operator can see.
+    const keys = [_]u64{
+        repos.key_products,
+        repos.key_tables,
+        repos.key_employees,
+        repos.key_orders,
+        repos.key_customers,
+        repos.key_categories,
+        repos.key_company,
+        repos.key_login,
+        repos.key_order_lines,
+        repos.key_config,
+        repos.key_setup,
+        repos.key_payment,
+        repos.key_watch_orders,
+        repos.key_open_order,
+        repos.key_add_line,
+        repos.key_stations,
+        repos.key_chime,
+        repos.key_product_stations,
+        repos.key_board_refresh,
+        repos.key_save_company,
+        repos.key_printers,
+        repos.key_tax_slabs,
+        repos.key_modifier_groups,
+        repos.key_discounts,
+        repos.key_save_product,
+        repos.key_save_employee,
+        repos.key_save_printer,
+        repos.key_reservations,
+        repos.key_suppliers,
+        repos.key_purchase_orders,
+        repos.key_inventory,
+        repos.key_write_order,
+        repos.key_write_product,
+        repos.key_write_table,
+        repos.key_save_salt,
+        repos.key_save_currency,
+    };
+    for (keys, 0..) |key, index| {
+        for (keys, 0..) |other, other_index| {
+            if (index == other_index) continue;
+            try testing.expect(key != other);
+        }
+    }
+}
+
 test "the page decoder reads the engine's dialect" {
     // Build a page by hand: two columns, two rows, one text and one
     // integer each - exactly the shape the engine delivers.
@@ -360,6 +447,123 @@ test "the layout survives a resize" {
     var nodes: [512]canvas.WidgetLayoutNode = undefined;
     const layout = try canvas.layoutWidgetTree(tree.root, native_sdk.geometry.RectF.init(0, 0, 1280, 800), &nodes);
     try testing.expect(layout.nodes.len > 0);
+}
+
+/// The retained widget budget for one view. The runtime's own cap is
+/// `canvas_limits.max_canvas_widget_nodes_per_view`; the markup engine
+/// enforces it, and this test asserts against the same number.
+const max_view_widgets = 1024;
+
+/// The screen ordinals the shell gates, in the order `app.native` uses
+/// them.
+///
+/// The `Screen` enum is append-only, and this list is that contract made
+/// executable: inserting a screen in the middle would move these
+/// numbers, and the markup would mount the wrong screen. A test that
+/// fails here means "append, do not insert".
+const gated_ordinals = [_]usize{
+    8,  10, 12, 13, 14, 16, 17, 20, 23, 24, 25,
+    26, 28, 29, 30, 31, 32, 33, 34, 35, 37, 38,
+    39, 40, 41, 42, 43, 44,
+};
+
+/// The widgets in a tree, the tree itself included.
+fn countWidgets(widget: canvas.Widget) usize {
+    var total: usize = 1;
+    for (widget.children) |child| total += countWidgets(child);
+    return total;
+}
+
+/// The screen ordinals the shell gates, read out of the markup itself.
+fn markupGates(arena: std.mem.Allocator) ![]usize {
+    var out: std.ArrayList(usize) = .empty;
+    errdefer out.deinit(arena);
+    const needle = "screen_index == ";
+    var rest: []const u8 = main.app_markup;
+    while (std.mem.indexOf(u8, rest, needle)) |at| {
+        rest = rest[at + needle.len ..];
+        var digits: usize = 0;
+        while (digits < rest.len and std.ascii.isDigit(rest[digits])) digits += 1;
+        if (digits == 0) break;
+        const ordinal = std.fmt.parseInt(usize, rest[0..digits], 10) catch break;
+        try out.append(arena, ordinal);
+        rest = rest[digits..];
+    }
+    return out.toOwnedSlice(arena);
+}
+
+test "the shell gates the screens the enum says it does" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const gates = try markupGates(arena);
+    // The order the gates appear in is cosmetic - only one of them can
+    // match a screen - so the comparison is over the set.
+    std.mem.sort(usize, gates, {}, std.sort.asc(usize));
+    try testing.expectEqualSlices(usize, &gated_ordinals, gates);
+
+    // Every gate names a screen that exists.
+    for (gates) |ordinal| {
+        if (std.enums.fromInt(nav.Screen, ordinal) == null) {
+            std.debug.print("app.native gates screen {d}, which is not in the enum\n", .{ordinal});
+            return error.UnknownScreenOrdinal;
+        }
+    }
+}
+
+test "every gated screen renders, and none of them blows the widget budget" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.role_chosen = true;
+    model.signed_in = true;
+
+    // The shell with no screen mounted: the title bar, the rail and the
+    // status bar. A screen that mounts nothing is indistinguishable
+    // from this, which is exactly how a blank pane used to hide.
+    model.screen_index = 999;
+    const shell = try buildTree(arena, &model);
+    const shell_nodes = countWidgets(shell.root);
+
+    for (gated_ordinals) |ordinal| {
+        const screen = std.enums.fromInt(nav.Screen, ordinal) orelse return error.UnknownScreenOrdinal;
+        model.screen_index = ordinal;
+        const tree = try buildTree(arena, &model);
+        const nodes = countWidgets(tree.root);
+        if (nodes <= shell_nodes) {
+            std.debug.print("screen {d} ({s}) mounted nothing\n", .{ ordinal, screen.title() });
+            return error.ScreenMountedNothing;
+        }
+        if (nodes > max_view_widgets) {
+            std.debug.print("screen {d} ({s}) built {d} widgets, over the {d} budget\n", .{ ordinal, screen.title(), nodes, max_view_widgets });
+            return error.ScreenOverBudget;
+        }
+    }
+}
+
+test "every screen builds a view inside the budget" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.role_chosen = true;
+    model.signed_in = true;
+
+    // Every screen in the enum, not only the gated ones: a template
+    // with a broken binding has to fail HERE, not on the till.
+    for (std.enums.values(nav.Screen)) |screen| {
+        model.screen_index = screen.index();
+        const tree = try buildTree(arena, &model);
+        const nodes = countWidgets(tree.root);
+        if (nodes > max_view_widgets) {
+            std.debug.print("screen {d} ({s}) built {d} widgets, over the {d} budget\n", .{ screen.index(), screen.title(), nodes, max_view_widgets });
+            return error.ScreenOverBudget;
+        }
+    }
 }
 
 // ---------------------------------------------------------- page bytes

@@ -346,25 +346,22 @@ fn submitSetup(model: *Model, fx: *Effects) void {
         if (symbol.len == 0) "$" else symbol,
         admin,
         &hash,
+        model.pin_salt(),
         fx.wallMs(),
     );
 }
 
 /// A fresh installation keeps the salt made at boot and writes it once.
-/// The PIN hashes are useless without it, so it is persisted before the
-/// first sign-in is possible.
+///
+/// The salt is NOT marked as confirmed here: the write has not happened
+/// yet. A failed write that still cleared the flag would leave the app
+/// hashing PINs against a salt that is not in the database - the
+/// operator signs in, the next boot makes a different salt, and nobody
+/// can ever sign in again. The state moves to `.confirmed` when the
+/// write comes back, in `config_saved`.
 fn createSalt(model: *Model, fx: *Effects) void {
-    model.salt_is_provisional = false;
-    repos.saveConfigValue(fx, repos.key_config, "pin_salt", model.pin_salt(), fx.wallMs());
+    repos.saveSalt(fx, repos.key_save_salt, model.pin_salt(), fx.wallMs());
 }
-
-/// The SQL behind a sign-in attempt. The PIN is hashed before it gets
-/// here - the database never sees a plaintext PIN.
-pub const login_sql =
-    \\SELECT id, name, role FROM employee
-    \\WHERE pin_hash = ?1 AND active = 1
-    \\LIMIT 1;
-;
 
 pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
     switch (msg) {
@@ -406,7 +403,12 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .pin_edit => |event| model.pin.apply(event),
 
         .submit_login => {
-            if (model.pin_salt().len == 0) {
+            // The salt has to be the salt the DATABASE holds, or the
+            // hash this sign-in computes cannot match the hash the
+            // database stored. Until the database has confirmed the
+            // salt, there is nothing to hash with that could ever
+            // match - so the sign-in waits rather than guessing.
+            if (model.pin_salt().len == 0 or model.salt_state != .confirmed) {
                 model.login_error = "Still starting up - try again in a moment";
                 return;
             }
@@ -417,8 +419,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash);
             fx.dbQuery(.{
                 .key = repos.key_login,
-                .sql = login_sql,
-                .params = &.{.{ .text = model.login_hash[0..] }},
+                // The query carries the session's role: the sign-in is
+                // for ONE operating mode, and only an employee whose
+                // stored role matches it may hold it.
+                .sql = repos.login_sql,
+                .params = &.{
+                    .{ .text = model.login_hash[0..] },
+                    .{ .integer = @intFromEnum(rbac.employee_role(model.role)) },
+                },
                 .on_result = Effects.dbMsg(.login_checked),
             });
         },
@@ -432,6 +440,16 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             var reader = page.Reader.init(result.bytes);
             var values: [page.max_columns]page.Value = undefined;
             if (!reader.readHeader() or !reader.nextRow(&values)) {
+                model.login_error = "Wrong PIN";
+                model.pin.set("");
+                return;
+            }
+            // The row that came back has to be an employee of THIS
+            // mode. The query already asks for that; this is the check
+            // that says so, and it is what keeps the permission matrix
+            // from being decoration.
+            const stored_role = reader.intOf(&values, "role", -1);
+            if (stored_role != @intFromEnum(rbac.employee_role(model.role))) {
                 model.login_error = "Wrong PIN";
                 model.pin.set("");
                 return;
@@ -499,6 +517,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.stack.resetTo(.admin_dashboard);
             model.screen_index = Screen.admin_dashboard.index();
             model.nav_section = 0;
+            // The setup wrote the salt in the same transaction as the
+            // operator's PIN hash, so the salt in the model is now the
+            // salt in the database. A sign-in may use it.
+            model.salt_state = .confirmed;
             repos.loadAll(fx);
         },
 
@@ -727,7 +749,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.busy = true;
-            repos.saveCurrency(fx, repos.key_save_company, code, if (symbol.len == 0) "$" else symbol);
+            repos.saveCurrency(fx, repos.key_save_currency, code, if (symbol.len == 0) "$" else symbol);
         },
 
         .currency_saved => |result| {
@@ -956,34 +978,69 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         .config_loaded => |result| {
-            if (result.outcome != .ok) return;
+            if (result.outcome != .ok) {
+                model.error_text = switch (result.outcome) {
+                    .busy => "The database is busy - try again",
+                    .corrupt => "The database is damaged",
+                    else => "Could not read the installation settings",
+                };
+                return;
+            }
             switch (result.kind) {
                 .page => {
                     var reader = page.Reader.init(result.bytes);
                     var values: [page.max_columns]page.Value = undefined;
-                    if (!reader.readHeader() or !reader.nextRow(&values)) return;
+                    if (!reader.readHeader()) return;
+                    if (!reader.nextRow(&values)) {
+                        // The database has NO salt: this is a fresh
+                        // installation, and the salt in the model is
+                        // the one it will use. The setup writes it with
+                        // the operator's hash.
+                        model.salt_state = .installing;
+                        return;
+                    }
                     const salt = reader.textOf(&values, "value");
-                    if (salt.len == 0) return;
+                    if (salt.len == 0) {
+                        model.salt_state = .installing;
+                        return;
+                    }
                     const copied = model.pin_salt_buf[0..];
                     const length = @min(salt.len, copied.len);
                     @memcpy(copied[0..length], salt[0..length]);
                     model.pin_salt_len = length;
-                    // The database has the salt now: it is not the
-                    // provisional one any more.
-                    model.salt_is_provisional = false;
+                    // The database has the salt now: it is the salt a
+                    // sign-in has to use.
+                    model.salt_state = .confirmed;
                 },
                 .done => {
                     // The settings query finished. If the database had
                     // no salt, this is a fresh installation and the
                     // provisional salt the app made at boot is the one
                     // that counts - so store it.
-                    if (model.salt_is_provisional) createSalt(model, fx);
+                    if (model.salt_state == .installing) createSalt(model, fx);
                 },
                 .exec => {},
             }
         },
 
-        .config_saved => {},
+        .config_saved => |result| {
+            if (result.outcome == .ok) {
+                // The salt is in the database now, so it is the salt a
+                // sign-in has to use.
+                model.salt_state = .confirmed;
+                return;
+            }
+            // The salt did not land. The model keeps the provisional
+            // salt, and a sign-in stays refused until the write works -
+            // a sign-in against a salt that is not stored can never be
+            // verified, and the operator would be locked out with no
+            // way to tell why.
+            model.error_text = switch (result.outcome) {
+                .busy => "The database is busy - try again",
+                .constraint => "The installation settings could not be saved",
+                else => "Could not save the installation settings",
+            };
+        },
 
         .company_loaded => |result| {
             if (result.outcome != .ok) return;
