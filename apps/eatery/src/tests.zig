@@ -268,6 +268,37 @@ test "a PIN is hashed, never stored" {
     try testing.expect(!auth.equal(&hash_a, &hash_c));
 }
 
+test "the tax is rounded half up, and an inclusive price keeps it inside" {
+    var model = main.initialModel();
+    model.tax_slabs_list = &.{
+        .{ .id = 1, .name = "Half", .rate_bps = 5000, .inclusive = false, .active = true, .tax_label = "Exclusive" },
+        .{ .id = 2, .name = "Just under half", .rate_bps = 4999, .inclusive = false, .active = true, .tax_label = "Exclusive" },
+        .{ .id = 3, .name = "Inclusive", .rate_bps = 1800, .inclusive = false, .active = true, .tax_label = "Inclusive" },
+    };
+    model.products = &.{
+        .{ .id = 1, .category_id = 0, .name = "Half", .food_label = "Veg", .price_minor = 1, .product_type = .dish, .food_type = .veg, .tax_slab_id = 1, .stock_qty = 0, .active = true },
+        .{ .id = 2, .category_id = 0, .name = "Just under", .food_label = "Veg", .price_minor = 1, .product_type = .dish, .food_type = .veg, .tax_slab_id = 2, .stock_qty = 0, .active = true },
+        .{ .id = 3, .category_id = 0, .name = "Inclusive", .food_label = "Veg", .price_minor = 100, .product_type = .dish, .food_type = .veg, .tax_slab_id = 3, .stock_qty = 0, .active = true },
+    };
+
+    // One minor unit at fifty percent is half a minor unit, and half
+    // up is one: the restaurant is not short-changed by a fraction.
+    try testing.expectEqual(@as(i64, 1), model.line_tax(1, 1));
+    // Just under half is still under half.
+    try testing.expectEqual(@as(i64, 0), model.line_tax(2, 1));
+
+    // An exclusive price does not carry its tax: it is added on top.
+    try testing.expectEqual(@as(i64, 18), model.line_tax(3, 100));
+
+    // An inclusive price does: the tax is what is left once the net
+    // is taken out. 100.00 at eighteen percent holds 84.75 and 15.25.
+    model.tax_inclusive = true;
+    try testing.expectEqual(@as(i64, 15), model.line_tax(3, 100));
+
+    // A product with no slab is not taxed.
+    try testing.expectEqual(@as(i64, 0), model.line_tax(99, 100));
+}
+
 test "a failed salt write does not make the salt look confirmed" {
     var fx = try fakeFx();
     defer fx.deinit();
@@ -302,6 +333,27 @@ test "the sign-in query is scoped to the session's role" {
     // The query asks the database for that role, rather than taking
     // whatever employee the PIN belongs to.
     try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?2") != null);
+}
+
+test "a second tap while the ticket is moving does not move it twice" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    model.orders = &.{
+        .{ .id = 1, .order_no = "000001", .order_type = .dine_in, .status = .pending, .status_label = "Pending", .type_label = "Dine in", .dining_table_id = 0, .customer_id = 0, .employee_id = 0, .subtotal_minor = 0, .tax_minor = 0, .discount_minor = 0, .total_minor = 0, .placed_at = 0, .notes = "" },
+    };
+
+    // The kitchen advances the ticket. The write is in flight: the
+    // fake effects channel never answers it.
+    main.update(&model, .{ .advance_order = 1 }, &fx);
+    try testing.expect(model.advancing());
+
+    // The second tap is refused: a move computed from a model that has
+    // not caught up yet would skip a state on the way.
+    main.update(&model, .{ .advance_order = 1 }, &fx);
+    try testing.expect(model.error_text.len > 0);
+    try testing.expectEqual(domain.OrderStatus.pending, model.orders[0].status);
 }
 
 test "every effect key names one effect and no two" {

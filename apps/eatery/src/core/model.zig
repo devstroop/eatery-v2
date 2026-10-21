@@ -68,6 +68,24 @@ pub const SaltState = enum {
     confirmed,
 };
 
+/// The tax on a price, in minor units.
+///
+/// `rate_bps` is in basis points, so 500 is five percent. An inclusive
+/// price already carries the tax - 100.00 at eighteen percent holds
+/// 84.75 of price and 15.25 of tax - so the tax is what is LEFT once
+/// the net is taken out. An exclusive price does not, so the tax is
+/// added on top.
+///
+/// The rounding is half up in both cases.
+fn taxOn(price_minor: i64, rate_bps: i64, inclusive: bool) i64 {
+    if (price_minor <= 0 or rate_bps <= 0) return 0;
+    if (inclusive) {
+        const divisor = 10000 + rate_bps;
+        return @divTrunc(price_minor * rate_bps + @divTrunc(divisor, 2), divisor);
+    }
+    return @divTrunc(price_minor * rate_bps + 5000, 10000);
+}
+
 pub const Model = struct {
     /// Fields the view never binds directly. Keep this list honest:
     /// it is the boundary between "the model" and the interface.
@@ -80,6 +98,7 @@ pub const Model = struct {
         "theme_dark",
         "salt_state",
         "last_issued_order_id",
+        "advance_order_id",
     };
 
     // ------------------------------------------------------------ session
@@ -241,6 +260,14 @@ pub const Model = struct {
 
     // ------------------------------------------------------- the sale
 
+    /// True while a payment is on its way to the database. The view
+    /// binds it: the button that takes the money is disabled while it
+    /// holds, so a second tap cannot take the money twice.
+    payment_pending: bool = false,
+    /// The order whose status is on its way to the database, zero when
+    /// there is none. The board's button is disabled while it holds, so
+    /// a second tap cannot move the order twice.
+    advance_order_id: i64 = 0,
     /// The order that was just placed: the confirmation screen shows
     /// it and the payment is taken against it.
     active_table_name_field: []const u8 = "",
@@ -318,6 +345,10 @@ pub const Model = struct {
     cart_len: usize = 0,
     /// The order type of the open cart.
     cart_order_type: domain.OrderType = .dine_in,
+    /// The discount the cashier has applied to the cart, zero for none.
+    /// The view binds it: the discount that is chosen is the one that
+    /// is highlighted.
+    cart_discount_id: i64 = 0,
 
     // ------------------------------------------------------- app runtime
 
@@ -426,6 +457,120 @@ pub const Model = struct {
     /// The station the board is filtered by.
     pub fn station_filter(model: *const Model) i64 {
         return model.station_filter_field;
+    }
+
+    /// The tax on a line, in minor units.
+    ///
+    /// The RATE comes from the product's own tax slab: a restaurant
+    /// that taxes its food at one rate and its drinks at another has a
+    /// slab per product, and the rate is part of the price the customer
+    /// was quoted.
+    ///
+    /// The MODE - whether the price already carries the tax - is the
+    /// business's, not the slab's: a restaurant is either inclusive or
+    /// it is not, and its menu says so.
+    ///
+    /// The rounding is half up. A fraction of a minor unit is not a
+    /// fraction of a rupee, and the restaurant is not short-changed by
+    /// one.
+    pub fn line_tax(model: *const Model, product_id: i64, price_minor: i64) i64 {
+        const product = model.find_product(product_id) orelse return 0;
+        const slab = model.tax_slab(product.tax_slab_id) orelse return 0;
+        return taxOn(price_minor, slab.rate_bps, model.tax_inclusive);
+    }
+
+    /// The rate a product is taxed at, in basis points. Zero for a
+    /// product with no slab.
+    pub fn product_tax_bps(model: *const Model, product_id: i64) i64 {
+        const product = model.find_product(product_id) orelse return 0;
+        const slab = model.tax_slab(product.tax_slab_id) orelse return 0;
+        return slab.rate_bps;
+    }
+
+    /// The product with this id, or null.
+    pub fn find_product(model: *const Model, product_id: i64) ?domain.Product {
+        for (model.products) |product| {
+            if (product.id == product_id) return product;
+        }
+        return null;
+    }
+
+    /// The tax slab with this id, or null.
+    pub fn tax_slab(model: *const Model, slab_id: i64) ?domain.TaxSlab {
+        if (slab_id == 0) return null;
+        for (model.tax_slabs_list) |slab| {
+            if (slab.id == slab_id) return slab;
+        }
+        return null;
+    }
+
+    /// The tax on an amount, at a rate, in the business's mode.
+    pub fn tax_on(model: *const Model, amount_minor: i64, rate_bps: i64) i64 {
+        return taxOn(amount_minor, rate_bps, model.tax_inclusive);
+    }
+
+    /// The discount on the cart, in minor units.
+    ///
+    /// A percentage discount is a share of the cart; a fixed amount is
+    /// itself. The discount is never more than the cart is worth.
+    pub fn cart_discount_total(model: *const Model) i64 {
+        if (model.cart_discount_id == 0) return 0;
+        const subtotal = model.cart_total_minor();
+        if (subtotal <= 0) return 0;
+        for (model.discounts_list) |discount| {
+            if (discount.id != model.cart_discount_id) continue;
+            if (!discount.active) return 0;
+            if (discount.percent_bps > 0) {
+                return @min(@divTrunc(subtotal * discount.percent_bps, 10000), subtotal);
+            }
+            return @min(discount.amount_minor, subtotal);
+        }
+        return 0;
+    }
+
+    /// The discount that lands on the cart line at `index`.
+    ///
+    /// The discount is spread across the lines in proportion to what
+    /// they are worth, and the LAST line takes the remainder, so the
+    /// parts add up to the discount exactly and the arithmetic stays
+    /// whole numbers. The tax is worked out on what is left of each
+    /// line, which is what the customer actually pays for it.
+    pub fn cart_discount_share(model: *const Model, index: usize) i64 {
+        const total = model.cart_discount_total();
+        if (total <= 0) return 0;
+        if (index >= model.cart_len) return 0;
+        const subtotal = model.cart_total_minor();
+        if (subtotal <= 0) return 0;
+        var allocated: i64 = 0;
+        for (model.cart[0..index]) |line| {
+            allocated += @divTrunc(total * line.price_minor * line.qty, subtotal);
+        }
+        const remaining = total - allocated;
+        if (remaining <= 0) return 0;
+        if (index + 1 == model.cart_len) return remaining;
+        const line = model.cart[index];
+        return @min(@divTrunc(total * line.price_minor * line.qty, subtotal), remaining);
+    }
+
+    /// The tax on the cart, in minor units.
+    pub fn cart_tax_minor(model: *const Model) i64 {
+        var tax: i64 = 0;
+        for (model.cart[0..model.cart_len], 0..) |line, index| {
+            const taxable = line.price_minor * line.qty - model.cart_discount_share(index);
+            tax += model.tax_on(taxable, model.product_tax_bps(line.product_id));
+        }
+        return tax;
+    }
+
+    /// What the customer pays for the cart.
+    ///
+    /// An exclusive price does not carry its tax, so the tax is added;
+    /// an inclusive one does, so the tax is a memo and the price is
+    /// the total. The discount comes off either way.
+    pub fn cart_amount_due(model: *const Model) i64 {
+        const tax = model.cart_tax_minor();
+        const on_top = if (model.tax_inclusive) 0 else tax;
+        return model.cart_total_minor() + on_top - model.cart_discount_total();
     }
 
     /// The lines of the open order the waiter is serving.
@@ -1022,6 +1167,13 @@ pub const Model = struct {
             }
         }
         return count;
+    }
+
+    /// True while an order's status is on its way to the database. The
+    /// board's button is disabled while it holds: a second tap would
+    /// move the order from a status the model has not caught up with.
+    pub fn advancing(model: *const Model) bool {
+        return model.advance_order_id != 0;
     }
 };
 

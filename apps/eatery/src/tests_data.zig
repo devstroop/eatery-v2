@@ -53,12 +53,13 @@ const migration_sql = [_][]const u8{
     @embedFile("schema/0011_default_tax_slab.sql"),
     @embedFile("schema/0012_order_sequence.sql"),
     @embedFile("schema/0013_order_request_key.sql"),
+    @embedFile("schema/0014_payment_once.sql"),
 };
 
 const migration_names = [_][]const u8{
     "core", "catalog", "floor", "customers", "orders",
     "inventory", "ops", "compliance", "printing", "sync", "default_tax_slab",
-    "order_sequence", "order_request_key",
+    "order_sequence", "order_request_key", "payment_once",
 };
 
 /// A model, a real database and a real effects channel, together.
@@ -315,6 +316,318 @@ test "an order is written, read back, and its status advances" {
     repos.loadOrders(harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
+}
+
+/// The number of rows a query returns, read straight from the channel.
+///
+/// The count comes back as a page, and the page bytes are drain
+/// scratch: they are read inside the loop, before the next message
+/// takes the memory.
+fn countRows(harness: *Harness, sql: []const u8, params: []const native_sdk.EffectDbValue) !i64 {
+    harness.fx.dbQuery(.{
+        .key = 907,
+        .sql = sql,
+        .params = params,
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                return reader.intOf(&values, "n", -1);
+            },
+            else => {},
+        }
+    }
+    return -1;
+}
+
+test "advancing an order twice writes one history row" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+    try testing.expectEqual(domain.OrderStatus.pending, order.status);
+
+    // The kitchen advances the ticket.
+    harness.send(.{ .advance_order = order.id });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
+
+    // A second tap, from a model that still says the ticket is
+    // pending - the kind of double tap a fast kitchen produces. The
+    // move does not apply, because the ticket has already moved on.
+    repos.setOrderStatus(harness.fx, order.id, domain.OrderStatus.pending, domain.OrderStatus.preparing, 1_700_000_000_000);
+    harness.drain();
+
+    // One history row, not two: the timeline is the record of what
+    // happened, and the ticket only happened once.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = ?1;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a move that does not apply leaves the order where it is" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+
+    // A move from a status the order is not in: the order does not
+    // move, and nothing is written.
+    repos.setOrderStatus(harness.fx, order.id, domain.OrderStatus.ready, domain.OrderStatus.served, 1_700_000_000_000);
+    harness.drain();
+
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.pending, harness.model.orders[0].status);
+
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = ?1;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
+test "the tax is worked out line by line, from the product's own slab" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A slab at five percent, and a dish that is taxed at it. The
+    // drink stays on the "no tax" slab.
+    harness.fx.dbExec(.{
+        .key = 908,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 5%', 500, 0, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "UPDATE product SET tax_slab_id = 2 WHERE id = 1;",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    // 245.00 at five percent is 12.25, and the 40.00 drink is not
+    // taxed at all.
+    try testing.expectEqual(@as(i64, 24500 + 4000), order.subtotal_minor);
+    try testing.expectEqual(@as(i64, 1225), order.tax_minor);
+    try testing.expectEqual(@as(i64, 24500 + 4000 + 1225), order.total_minor);
+
+    // The rate is a snapshot on the line: a slab that changes tomorrow
+    // must not rewrite the bill of yesterday.
+    repos.loadOrderLines(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(i64, 500), harness.model.order_lines[0].tax_bps);
+    try testing.expectEqual(@as(i64, 0), harness.model.order_lines[1].tax_bps);
+}
+
+test "an inclusive price already carries its tax" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A restaurant whose menu shows the price with the tax inside.
+    harness.fx.dbExec(.{
+        .key = 909,
+        .statements = &.{.{
+            .sql = "UPDATE company SET tax_inclusive = 1 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadCompany(harness.fx);
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.tax_inclusive);
+
+    harness.fx.dbExec(.{
+        .key = 910,
+        .statements = &.{.{
+            .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 18%', 1800, 0, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    harness.fx.dbExec(.{
+        .key = 911,
+        .statements = &.{.{
+            .sql = "UPDATE product SET tax_slab_id = 2 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    // 245.00 at eighteen percent holds 207.63 of price and 37.37 of
+    // tax. The customer pays the 245.00 that was on the menu.
+    try testing.expectEqual(@as(i64, 24500), order.subtotal_minor);
+    try testing.expectEqual(@as(i64, 3737), order.tax_minor);
+    try testing.expectEqual(@as(i64, 24500), order.total_minor);
+}
+
+/// A restaurant with a slab at five percent, a dish taxed at it, a
+/// drink that is not taxed, and the discounts the cashier can pick.
+fn with_tax_and_discounts(harness: *Harness) !void {
+    harness.fx.dbExec(.{
+        .key = 912,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 5%', 500, 0, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "UPDATE product SET tax_slab_id = 2 WHERE id = 1;",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO discount (id, name, percent_bps, amount_minor, active, created_at) VALUES (3, 'Staff 10%', 1000, 0, 1, 0), (4, 'Five off', 0, 500, 1, 0);",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+}
+
+test "a discount comes off the bill, and the tax follows it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+    try with_tax_and_discounts(&harness);
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(.{ .apply_discount = 3 });
+
+    // Ten percent off 285.00 is 28.50.
+    try testing.expectEqual(@as(i64, 2850), harness.model.cart_discount_total());
+    // It lands on the lines in proportion to what they are worth.
+    try testing.expectEqual(@as(i64, 2450), harness.model.cart_discount_share(0));
+    try testing.expectEqual(@as(i64, 400), harness.model.cart_discount_share(1));
+
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    try testing.expectEqual(@as(i64, 28500), order.subtotal_minor);
+    try testing.expectEqual(@as(i64, 2850), order.discount_minor);
+    // The tax is on what is left: 220.50 at five percent is 11.025,
+    // and half up is 11.03. The drink is not taxed.
+    try testing.expectEqual(@as(i64, 1103), order.tax_minor);
+    try testing.expectEqual(@as(i64, 28500 + 1103 - 2850), order.total_minor);
+}
+
+test "a fixed discount is spread over the lines and the last one takes the rest" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+    try with_tax_and_discounts(&harness);
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(.{ .apply_discount = 4 });
+
+    // Five off 285.00: the first line takes its share and the last
+    // line takes the rest, so the parts add up to the discount.
+    try testing.expectEqual(@as(i64, 500), harness.model.cart_discount_total());
+    try testing.expectEqual(@as(i64, 429), harness.model.cart_discount_share(0));
+    try testing.expectEqual(@as(i64, 71), harness.model.cart_discount_share(1));
+
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    try testing.expectEqual(@as(i64, 500), order.discount_minor);
+    // The tax is on 240.71 at five percent: 12.035, and half up.
+    try testing.expectEqual(@as(i64, 1204), order.tax_minor);
+    try testing.expectEqual(@as(i64, 28500 + 1204 - 500), order.total_minor);
+}
+
+test "a payment is taken once" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+
+    // The money is taken.
+    harness.send(Msg{ .take_payment = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.completed, harness.model.orders[0].status);
+
+    // A second tap, from a model that still says the order is open.
+    // The customer pays once, whatever the till does.
+    repos.takePayment(harness.fx, repos.key_payment, order.id, domain.OrderStatus.pending, domain.PaymentMode.cash, order.total_minor, 1_700_000_000_000);
+    harness.drain();
+
+    // And the second tap is not an error: the order was already
+    // closed, so there was nothing to do. The cashier sees a closed
+    // order, not a failure.
+    try testing.expectEqualStrings("", harness.model.payment_error);
+
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM payment WHERE order_id = ?1;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 1), rows);
+
+    // And the order closed once: one history row for the close.
+    const history = try countRows(&harness, "SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = ?1 AND status = 4;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 1), history);
 }
 
 test "the order number is a sequence" {

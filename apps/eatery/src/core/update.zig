@@ -42,6 +42,10 @@ pub fn boot(model: *Model, fx: *Effects) void {
     // installation, and the app opens on the setup screen.
     repos.loadConfig(fx);
     repos.loadCompany(fx);
+    // The tax slabs are read with the rest of the business's settings:
+    // a sale's tax is worked out from them, and a sale that is placed
+    // before they arrive would be taxed at nothing.
+    repos.loadTaxSlabs(fx);
 }
 
 /// A new order on the board gets a sound. The kitchen hears the sale
@@ -291,15 +295,30 @@ fn takePayment(model: *Model, fx: *Effects) void {
         model.payment_error = "There is no order to pay for";
         return;
     }
+    // One payment at a time: a second tap would take the money twice.
+    if (model.payment_pending) {
+        model.payment_error = "The payment is still being taken";
+        return;
+    }
+    const order = findOrder(model, model.last_order_id) orelse {
+        model.payment_error = "That order is no longer on the board";
+        return;
+    };
+    if (order.status == .completed) {
+        model.payment_error = "This order is already paid";
+        return;
+    }
     const mode = std.enums.fromInt(domain.PaymentMode, model.payment_mode_field) orelse domain.PaymentMode.cash;
     model.busy = true;
+    model.payment_pending = true;
     model.payment_error = "";
     repos.takePayment(
         fx,
         repos.key_payment,
-        model.last_order_id,
+        order.id,
+        order.status,
         mode,
-        model.last_order_total_minor,
+        order.total_minor,
         fx.wallMs(),
     );
 }
@@ -636,6 +655,21 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.cart_order_type = std.enums.fromInt(domain.OrderType, index) orelse return;
         },
 
+        .apply_discount => |discount_id| {
+            for (model.discounts_list) |discount| {
+                if (discount.id != discount_id) continue;
+                if (!discount.active) break;
+                model.cart_discount_id = discount_id;
+                model.error_text = "";
+                return;
+            }
+            model.error_text = "That discount is not one you can use";
+        },
+
+        .clear_discount => {
+            model.cart_discount_id = 0;
+        },
+
         .clear_cart => {
             model.cart_len = 0;
             model.cart_buf.reset();
@@ -728,6 +762,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .payment_taken => |result| {
             model.busy = false;
+            model.payment_pending = false;
             if (result.outcome != .ok) {
                 model.payment_error = switch (result.outcome) {
                     .constraint => "The payment broke a data rule",
@@ -915,17 +950,33 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         .advance_order => |order_id| {
-            const order = findOrder(model, order_id) orelse return;
+            // One move at a time. A second tap would compute the next
+            // status from a model that has not caught up yet, and skip a
+            // state on the way.
+            if (model.advance_order_id != 0) {
+                model.error_text = "The order is still being updated";
+                return;
+            }
+            const order = findOrder(model, order_id) orelse {
+                model.error_text = "That order is no longer on the board";
+                return;
+            };
             const next = nextStatus(order.status);
-            repos.setOrderStatus(fx, order_id, next, fx.wallMs());
+            model.advance_order_id = order_id;
+            model.busy = true;
+            repos.setOrderStatus(fx, order_id, order.status, next, fx.wallMs());
         },
 
         .order_status_saved => |result| {
             model.busy = false;
             if (result.outcome != .ok) {
+                model.advance_order_id = 0;
                 model.error_text = "Could not update the order";
                 return;
             }
+            // The orders come back with the status the DATABASE has,
+            // not the one the model guessed: the board shows the truth
+            // and the next move is computed from it.
             repos.loadOrders(fx);
         },
 
@@ -976,6 +1027,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.kind == .page) {
                 repos.decodeOrders(model, result.bytes);
                 announceNewOrder(model, fx);
+            }
+            // The order we were moving is not on the board any more. It
+            // was deleted, or the database was reset under us, and the
+            // operator is told so instead of watching a ticket vanish.
+            if (model.advance_order_id != 0) {
+                if (findOrder(model, model.advance_order_id) == null) {
+                    model.error_text = "That order is no longer on the board";
+                }
+                model.advance_order_id = 0;
             }
         },
 
@@ -1213,6 +1273,20 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         model.cart_attempt_id = nextOrderId(model, now);
     }
     const order_id = model.cart_attempt_id;
+
+    // The tax, worked out line by line from each product's own slab,
+    // and on what is left of each line after the discount. It is
+    // worked out before the order is built, because the order carries
+    // it.
+    var tax_minor: i64 = 0;
+    var discount_minor: i64 = 0;
+    for (model.cart[0..model.cart_len], 0..) |line, index| {
+        const share = model.cart_discount_share(index);
+        discount_minor += share;
+        const taxable = line.price_minor * line.qty - share;
+        tax_minor += model.tax_on(taxable, model.product_tax_bps(line.product_id));
+    }
+
     var order = domain.Order{
         .id = order_id,
         // The order number is a sequence, and the database assigns it:
@@ -1226,9 +1300,12 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         .customer_id = 0,
         .employee_id = model.employee_id,
         .subtotal_minor = model.cart_total_minor(),
-        .tax_minor = 0,
-        .discount_minor = 0,
-        .total_minor = model.cart_total_minor(),
+        .tax_minor = tax_minor,
+        .discount_minor = discount_minor,
+        // The total is what the customer pays. An exclusive price does
+        // not carry its tax, so the tax is added; an inclusive one
+        // does, so the tax is a memo and the price is the total.
+        .total_minor = model.cart_total_minor() + (if (model.tax_inclusive) 0 else tax_minor) - discount_minor,
         .placed_at = now,
         .notes = "",
     };
@@ -1246,7 +1323,9 @@ fn placeOrder(model: *Model, fx: *Effects) void {
             .product_name = line.name,
             .qty = line.qty,
             .unit_price_minor = line.price_minor,
-            .tax_bps = 0,
+            // The rate is a snapshot: a slab that changes tomorrow must
+            // not rewrite the bill of yesterday.
+            .tax_bps = model.product_tax_bps(line.product_id),
             .notes = "",
         };
         count += 1;

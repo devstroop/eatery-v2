@@ -66,9 +66,32 @@
       </scroll>
 
       <separator/>
+      <row gap="4" cross="center">
+        <text size="sm" foreground="text_muted" grow="1">Discount</text>
+        <toggle-button selected="{cart_discount_id == 0}" on-toggle="clear_discount">None</toggle-button>
+        <for each="discounts" key="id" as="discount">
+          <toggle-button selected="{discount.id == cart_discount_id}" on-toggle="apply_discount:{discount.id}">{discount.name}</toggle-button>
+        </for>
+      </row>
+      <row cross="center">
+        <text grow="1">Subtotal</text>
+        <text>{currency_symbol}{fixed(cart_total_minor / 100, 2)}</text>
+      </row>
+      <if test="{cart_tax_minor > 0}">
+        <row cross="center">
+          <text grow="1">Tax</text>
+          <text>{currency_symbol}{fixed(cart_tax_minor / 100, 2)}</text>
+        </row>
+      </if>
+      <if test="{cart_discount_total > 0}">
+        <row cross="center">
+          <text grow="1">Discount</text>
+          <text>{currency_symbol}{fixed(cart_discount_total / 100, 2)}</text>
+        </row>
+      </if>
       <row cross="center">
         <text grow="1">Total</text>
-        <text size="lg">{currency_symbol}{fixed(cart_total_minor / 100, 2)}</text>
+        <text size="lg">{currency_symbol}{fixed(cart_amount_due / 100, 2)}</text>
       </row>
       <row gap="8">
         <button variant="ghost" on-press="clear_cart">Clear</button>

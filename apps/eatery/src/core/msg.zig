@@ -74,6 +74,10 @@ pub const Msg = union(enum) {
     set_order_type: u8,
     /// Clear the cart.
     clear_cart,
+    /// Apply a discount to the cart (the discount's id).
+    apply_discount: i64,
+    /// Take the discount off the cart.
+    clear_discount,
     /// Turn the cart into an order.
     place_order,
     /// The order write came back.

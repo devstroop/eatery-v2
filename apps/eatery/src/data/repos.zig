@@ -358,6 +358,7 @@ pub fn loadForScreen(fx: *Effects, screen: nav.Screen) void {
         .settings_modifiers => loadModifierGroups(fx),
         .settings_discounts => loadDiscounts(fx),
         .customers => loadCustomers(fx),
+        .pos => loadDiscounts(fx),
         .reservations => loadReservations(fx),
         .suppliers => loadSuppliers(fx),
         .purchase_orders => loadPurchaseOrders(fx),
@@ -1045,45 +1046,69 @@ pub fn saveCurrency(fx: *Effects, key: u64, code: []const u8, symbol: []const u8
 /// Take the payment for an order and close it. ONE transaction: the
 /// money and the closed order land together, or neither does. A paid
 /// order that is still open is a cashier's worst day.
-pub fn takePayment(fx: *Effects, key: u64, order_id: i64, mode: domain.PaymentMode, amount_minor: i64, at: i64) void {
+pub fn takePayment(
+    fx: *Effects,
+    key: u64,
+    order_id: i64,
+    from_status: domain.OrderStatus,
+    mode: domain.PaymentMode,
+    amount_minor: i64,
+    at: i64,
+) void {
     // Each statement carries its OWN parameters: the engine checks that
     // a statement's parameter count matches the placeholders it uses,
     // and one shared array for three different statements never does.
-    var payment_params: [5]native_sdk.EffectDbValue = .{
-        .{ .integer = at },
+    //
+    // The payment, the history and the close are all CONDITIONAL on the
+    // order being where it should be. A second tap finds the order
+    // closed, writes nothing, and the customer is charged once.
+    var payment_params: [6]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
         .{ .integer = order_id },
         .{ .integer = @intFromEnum(mode) },
         .{ .integer = amount_minor },
         .{ .integer = at },
+        .{ .integer = @intFromEnum(from_status) },
     };
-    var order_params: [3]native_sdk.EffectDbValue = .{
+    var order_params: [4]native_sdk.EffectDbValue = .{
         .{ .integer = order_id },
         .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
         .{ .integer = at },
+        .{ .integer = @intFromEnum(from_status) },
     };
-    var history_params: [3]native_sdk.EffectDbValue = .{
+    var history_params: [4]native_sdk.EffectDbValue = .{
         .{ .integer = order_id },
         .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
         .{ .integer = at },
+        .{ .integer = @intFromEnum(from_status) },
     };
 
     fx.dbExec(.{
         .key = key,
         .statements = &.{
             .{
+                // The history first: it says the order closed, and it
+                // is only true if the order was still open.
+                .sql =
+                \\INSERT INTO order_status_history (order_id, status, changed_at)
+                \\SELECT ?1, ?2, ?3
+                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
+                ,
+                .params = &history_params,
+            },
+            .{
+                // The payment, for the same reason: one order, one
+                // payment. The index on the table says so too.
                 .sql =
                 \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
-                \\VALUES (?1, ?2, ?3, ?4, '', ?5, ?5);
+                \\SELECT ?1, ?2, ?3, ?4, '', ?5, ?5
+                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2 AND status = ?6);
                 ,
                 .params = &payment_params,
             },
             .{
-                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1;",
+                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
                 .params = &order_params,
-            },
-            .{
-                .sql = "INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?1, ?2, ?3);",
-                .params = &history_params,
             },
         },
         .on_result = Effects.dbMsg(.payment_taken),
@@ -1396,20 +1421,51 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
 /// Move an order along its lifecycle. The status history is written in
 /// the same transaction, so the timeline can never disagree with the
 /// order's current status.
-pub fn setOrderStatus(fx: *Effects, order_id: i64, status: domain.OrderStatus, at: i64) void {
+///
+/// The move is CONDITIONAL: it happens only from the status the order
+/// is in now, and the history row is written only when the order was
+/// really there. A second tap - a double click, or two devices - finds
+/// the order already moved on, writes nothing, and leaves the history
+/// with one row instead of two.
+///
+/// The order's status is the model's, not the database's, because the
+/// model read it a moment ago; the database is the one that decides
+/// whether the move still applies.
+pub fn setOrderStatus(
+    fx: *Effects,
+    order_id: i64,
+    from_status: domain.OrderStatus,
+    to_status: domain.OrderStatus,
+    at: i64,
+) void {
     fx.dbExec(.{
         .key = key_write_order,
         .statements = &.{
             .{
-                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1;",
-                .params = &.{ .{ .integer = order_id }, .{ .integer = @intFromEnum(status) }, .{ .integer = at } },
-            },
-            .{
+                // The history first, and only for an order that is
+                // where the move expects it: the row says the order
+                // BECAME this status, and it is only true if it was
+                // not already.
                 .sql =
                 \\INSERT INTO order_status_history (order_id, status, changed_at)
-                \\VALUES (?1, ?2, ?3);
+                \\SELECT ?1, ?2, ?3
+                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
                 ,
-                .params = &.{ .{ .integer = order_id }, .{ .integer = @intFromEnum(status) }, .{ .integer = at } },
+                .params = &.{
+                    .{ .integer = order_id },
+                    .{ .integer = @intFromEnum(to_status) },
+                    .{ .integer = at },
+                    .{ .integer = @intFromEnum(from_status) },
+                },
+            },
+            .{
+                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
+                .params = &.{
+                    .{ .integer = order_id },
+                    .{ .integer = @intFromEnum(to_status) },
+                    .{ .integer = at },
+                    .{ .integer = @intFromEnum(from_status) },
+                },
             },
         },
         .on_result = Effects.dbMsg(.order_status_saved),
