@@ -437,6 +437,27 @@ test "the tax is rounded half up, and an inclusive price keeps it inside" {
     try testing.expectEqual(@as(i64, 0), model.line_tax(99, 100));
 }
 
+test "a currency's decimals are its own" {
+    var model = main.initialModel();
+
+    // The yen has no decimals, the dinar has three, and most have two.
+    try testing.expectEqual(@as(i64, 0), core.decimalsForCurrency("JPY"));
+    try testing.expectEqual(@as(i64, 3), core.decimalsForCurrency("KWD"));
+    try testing.expectEqual(@as(i64, 2), core.decimalsForCurrency("USD"));
+    // A currency nobody has heard of is assumed to have two, which is
+    // the safe guess: a restaurant that meant three would set it.
+    try testing.expectEqual(@as(i64, 2), core.decimalsForCurrency("XYZ"));
+
+    // And the divisor is what the decimals mean: a hundred for most,
+    // one for the yen, a thousand for the dinar.
+    model.currency_decimals = 0;
+    try testing.expectEqual(@as(i64, 1), model.currency_divisor());
+    model.currency_decimals = 2;
+    try testing.expectEqual(@as(i64, 100), model.currency_divisor());
+    model.currency_decimals = 3;
+    try testing.expectEqual(@as(i64, 1000), model.currency_divisor());
+}
+
 test "a failed salt write does not make the salt look confirmed" {
     var fx = try fakeFx();
     defer fx.deinit();

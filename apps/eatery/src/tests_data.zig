@@ -58,12 +58,13 @@ const migration_sql = [_][]const u8{
     @embedFile("schema/0012_order_sequence.sql"),
     @embedFile("schema/0013_order_request_key.sql"),
     @embedFile("schema/0014_payment_once.sql"),
+    @embedFile("schema/0015_currency_decimals.sql"),
 };
 
 const migration_names = [_][]const u8{
     "core", "catalog", "floor", "customers", "orders",
     "inventory", "ops", "compliance", "printing", "sync", "default_tax_slab",
-    "order_sequence", "order_request_key", "payment_once",
+    "order_sequence", "order_request_key", "payment_once", "currency_decimals",
 };
 
 /// A model, a real database and a real effects channel, together.
@@ -1608,6 +1609,28 @@ test "an employee is saved and can sign in" {
     try testing.expectEqualStrings("Waiter", ravi.role_label);
 }
 
+test "the company carries the currency's decimals" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // A restaurant that trades in yen.
+    harness.fx.dbExec(.{
+        .key = 924,
+        .statements = &.{.{
+            .sql = "INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive, created_at, currency_decimals) VALUES (1, 'Tokyo Diner', 'JPY', 'Y', 0, 1, 0);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadCompany(harness.fx);
+    harness.drain();
+
+    try testing.expectEqualStrings("JPY", harness.model.currency_code);
+    try testing.expectEqual(@as(i64, 0), harness.model.currency_decimals);
+    try testing.expectEqual(@as(i64, 1), harness.model.currency_divisor());
+}
+
 test "the currency is saved" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
@@ -1621,6 +1644,18 @@ test "the currency is saved" {
     harness.drain();
     try testing.expectEqualStrings("EUR", harness.model.currency_code);
     try testing.expectEqualStrings("€", harness.model.currency_symbol);
+    // The decimals come with the currency: a restaurant that trades in
+    // yen has no decimals to show.
+    try testing.expectEqual(@as(i64, 2), harness.model.currency_decimals);
+
+    harness.model.form_currency_code_buf.set("JPY");
+    harness.model.form_currency_symbol_buf.set("Y");
+    harness.send(Msg{ .save_currency = {} });
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("JPY", harness.model.currency_code);
+    try testing.expectEqual(@as(i64, 0), harness.model.currency_decimals);
+    try testing.expectEqual(@as(i64, 1), harness.model.currency_divisor());
 }
 
 test "the settings data loads: printers, tax slabs, groups and discounts" {

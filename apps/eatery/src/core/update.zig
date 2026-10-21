@@ -360,15 +360,17 @@ fn submitSetup(model: *Model, fx: *Effects) void {
 
     model.busy = true;
     model.setup_error = "";
+    const currency = if (code.len == 0) "USD" else code;
     repos.setupCompany(
         fx,
         repos.key_setup,
         name,
-        if (code.len == 0) "USD" else code,
+        currency,
         if (symbol.len == 0) "$" else symbol,
         admin,
         hashed,
         model.pin_salt(),
+        model_mod.decimalsForCurrency(currency),
         fx.wallMs(),
     );
 }
@@ -831,7 +833,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.busy = true;
-            repos.saveCurrency(fx, repos.key_save_currency, code, if (symbol.len == 0) "$" else symbol);
+            repos.saveCurrency(
+                fx,
+                repos.key_save_currency,
+                code,
+                if (symbol.len == 0) "$" else symbol,
+                model_mod.decimalsForCurrency(code),
+            );
         },
 
         .currency_saved => |result| {

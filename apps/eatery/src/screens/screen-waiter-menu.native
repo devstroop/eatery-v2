@@ -23,7 +23,7 @@
           <card padding="8" on-press="add_to_order:{product.id}">
             <column gap="2">
               <text wrap="true">{product.name}</text>
-              <text size="sm" foreground="text_muted">{currency_symbol}{fixed(product.price_minor / 100, 2)}</text>
+              <text size="sm" foreground="text_muted">{currency_symbol}{fixed(product.price_minor / currency_divisor, currency_decimal_count)}</text>
             </column>
           </card>
         </for>

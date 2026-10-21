@@ -14,7 +14,7 @@
         <for each="tax_slabs" key="id" as="slab">
           <row background="surface" radius="md" padding="10" gap="10" cross="center">
             <text grow="1">{slab.name}</text>
-            <text>{fixed(slab.rate_bps / 100, 2)}%</text>
+            <text>{fixed(slab.rate_bps / currency_divisor, currency_decimal_count)}%</text>
             <badge>{slab.tax_label}</badge>
           </row>
         </for>

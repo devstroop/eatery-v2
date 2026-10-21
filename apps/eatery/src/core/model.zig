@@ -55,6 +55,47 @@ pub const max_login_failures = 5;
 /// How long the till stops taking PINs for, in milliseconds.
 pub const login_lockout_ms = 60_000;
 
+/// The decimals of a currency code, for the currencies a restaurant is
+/// likely to trade in.
+///
+/// The company's own exponent is the authority - this is how a code
+/// becomes one. A code nobody has heard of is assumed to have two
+/// decimals, which is the safe guess: a restaurant that meant three
+/// would set it.
+pub fn decimalsForCurrency(code: []const u8) i64 {
+    const known = [_]struct { code: []const u8, decimals: i64 }{
+        .{ .code = "USD", .decimals = 2 },
+        .{ .code = "EUR", .decimals = 2 },
+        .{ .code = "GBP", .decimals = 2 },
+        .{ .code = "INR", .decimals = 2 },
+        .{ .code = "AED", .decimals = 2 },
+        .{ .code = "SAR", .decimals = 2 },
+        .{ .code = "QAR", .decimals = 2 },
+        .{ .code = "ZAR", .decimals = 2 },
+        .{ .code = "JPY", .decimals = 0 },
+        .{ .code = "KRW", .decimals = 0 },
+        .{ .code = "VND", .decimals = 0 },
+        .{ .code = "KWD", .decimals = 3 },
+        .{ .code = "BHD", .decimals = 3 },
+        .{ .code = "OMR", .decimals = 3 },
+        .{ .code = "JOD", .decimals = 3 },
+    };
+    for (known) |entry| {
+        if (std.mem.eql(u8, entry.code, code)) return entry.decimals;
+    }
+    return 2;
+}
+
+/// Ten to the power of a small exponent: the divisor a currency's
+/// decimals mean.
+fn tenTo(exponent: i64) i64 {
+    if (exponent <= 0) return 1;
+    var value: i64 = 1;
+    var index: i64 = 0;
+    while (index < exponent) : (index += 1) value *= 10;
+    return value;
+}
+
 /// Where the installation salt stands.
 ///
 /// The salt is the one piece of state a PIN hash cannot be checked
@@ -153,6 +194,9 @@ pub const Model = struct {
     currency_symbol: []const u8 = "$",
     /// True when the menu's prices already include tax.
     tax_inclusive: bool = false,
+    /// How many decimals this company's currency has. The yen has none,
+    /// the dinar has three, and most have two.
+    currency_decimals: i64 = 2,
 
     // ----------------------------------------------------------- datasets
 
@@ -524,6 +568,18 @@ pub const Model = struct {
             if (slab.id == slab_id) return slab;
         }
         return null;
+    }
+
+    /// The number to divide a minor-unit amount by to get the units a
+    /// person reads: a hundred for most currencies, one for the yen, a
+    /// thousand for the dinar.
+    pub fn currency_divisor(model: *const Model) i64 {
+        return tenTo(model.currency_decimals);
+    }
+
+    /// How many decimals this company's currency has.
+    pub fn currency_decimal_count(model: *const Model) i64 {
+        return model.currency_decimals;
     }
 
     /// The tax on an amount, at a rate, in the business's mode.
