@@ -26,11 +26,11 @@
 | `Msg` variants | 178 | `src/core/msg.zig` |
 | Tables | 44 | `src/schema/*.sql` |
 | Migrations | 15 | `migrations.lock.json` version 15 |
-| Read queries | 26 | `src/data/repos.zig` (one named constant each) |
+| Read queries | 27 | `src/data/repos.zig` (one named constant each, and one place that says the app is loading) |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, employee PIN, employee removal, customer, category, tax slab, discount, modifier group, dish station, stock count, payment | `repos.zig` |
 | Effect keys | 53, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 110, green | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 75, green | `src/tests_data.zig` |
+| Headless tests | 115, green | `src/tests.zig`, `src/tests_data.zig` |
+| Database integration tests | 78, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -45,7 +45,7 @@
 | RBAC and navigation | Implemented core | 45 screens, 4 roles, one guard, a session-scoped stack ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
 | Screen coverage | Partial | 47 of 52 screens are mounted and render; five have no template: `landing`, `upgrade`, `pos_cart`, `table_categories`, `floor_plan` - the last two are floor features the app has not built |
 | Theming | Implemented | Light/dark semantic tokens; every text pair is asserted against WCAG AA |
-| Shell layout | Partial | Fixed rail + content; no responsive mode |
+| Shell layout | Partial | Fixed rail + content; no responsive mode. The shell says "Loading..." while a read is on its way, and a failed read replaces the screen with the reason and a way to try again |
 | Dashboard | Implemented | Counts, recent orders, shortcuts; money is hard-coded to 2 decimals (B-013) |
 | POS | Partial | Menu, filter, cart, order types and discounts work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; the tax is worked out line by line from each product's slab. No modifiers, and the currency's decimals are still two |
 | Orders | Partial | Lists non-voided orders including completed; status advance is not conditional (B-008/B-012) |
@@ -61,7 +61,7 @@
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 110 tests pass (35 markup and model, 75 against the database); no sale smoke through the UI |
+| Testing | Partial | 115 tests pass (37 markup and model, 78 against the database); no sale smoke through the UI |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -112,9 +112,12 @@ cite the committed build as able to sell.
 10. **The trading day.** The report's day is the calendar day. An order
     has no accounting date of its own, and the policy for a trading
     day is not settled (B-036, V1-G-027).
-11. **Loading and retry.** A read does not say it is loading, and a
-    failed read says so in the banner but offers no retry (B-021,
-    E-004).
+11. ~~**Loading and retry.**~~ FIXED: every read goes through one
+    place, the shell says "Loading..." while one is on its way, and a
+    read that failed is remembered with the screen it failed for. The
+    screen is replaced with the reason and a "Try again" button, so a
+    failed read never leaves a screen saying there is nothing there
+    (B-021, E-004).
 
 ## Known source defects
 
@@ -130,7 +133,7 @@ a docs change.
 | D5 | `orders` header badge says "open" but uses `order_count` (non-voided, including completed) | `src/screens/screen-orders.native` | Misleading count (B-012) |
 | D6 | `auth.equal` is tested but unused by the login path | `src/data/auth.zig` | Constant-time compare is not actually protecting login (B-027) |
 | D7 | `app.json` declares a 960×600 minimum and restore policy; `main.zig` shell config does not | `app.json`, `src/main.zig` | `native dev` can open an unsupported window (B-024) |
-| D8 | `busy` is set on write, not on read | `src/core/update.zig` | No loading state (B-021) |
+| D8 | ~~`busy` is set on write, not on read~~ | `src/core/update.zig` | FIXED: every read goes through `repos.query`, so the app knows it is loading, and a failed read is remembered with the screen it failed for (B-021, E-004) |
 | D9 | ~~No screen-coverage test~~ | `src/tests.zig` | FIXED: a test builds every gated screen and every screen in the enum, and asserts the widget budget. It found four screens that could never render (D20) |
 | D10 | CI smoke asserts only a non-blank canvas | `.github/workflows/ci.yml` | A blank or broken shell can still pass (G-018) |
 | D11 | No `build.zig` / `build.zig.zon` in the app | app root | Fine while managed; blocks linking a C library until `native eject` |
@@ -159,6 +162,8 @@ a docs change.
 | D32 | The owner could not see what the restaurant took, and could not count the stock | `src/screens/screen-overview.native`, `src/screens/screen-catalog.native` | FIXED: the payments, the report, the stock count and the dishes' stations are all screens the owner can write to |
 | D33 | An owner could not write a customer or a modifier group | `src/screens/screen-floor.native`, `src/screens/screen-settings.native` | FIXED: both have a form, and a group with no name is refused |
 | D34 | The database inspector counted the tables in a list the app kept, and the list could drift from the schema | `src/data/repos.zig` (`table_counts_sql`) | FIXED: a test compares the list with what SQLite says, so a table the schema adds and the inspector forgets is a failing test |
+| D35 | The walk-through was mounted inside the shell, which is only drawn when somebody is signed in | `src/app.native` | FIXED: the walk-through is a session screen, mounted beside the setup rather than inside the shell. It was never on the pane at all, and the tests drove the model, not the view |
+| D36 | A failed read left a screen saying there was nothing there | `src/app.native`, `src/core/update.zig` | FIXED: a failed read replaces the screen with the reason and a way to try again, and the failure belongs to the screen that asked for the data |
 
 B-002 and B-003 are fixed in the working tree of 2026-10-21, with the
 effect-key collision (D21) and the four unrenderable screens (D20) found
@@ -242,6 +247,11 @@ now defers detailed evidence to the [review set](../review/README.md).
 | A customer with no name is refused | Customers |
 | The owner writes a modifier group | Catalog |
 | A modifier group with no name is refused | Catalog |
+| The app says it is loading while a read is on its way | Shell |
+| A read that fails is something the operator can try again | Shell |
+| A failure belongs to the screen that asked, not to the pane | Shell |
+| Every session screen renders, inside the widget budget | Markup |
+| A fresh installation shows the walk-through, not the quick setup | Setup |
 
 Not covered: every decoder except the generic page reader and the
 company decoder, timer, error arms, the sidecars, and a sale through the
