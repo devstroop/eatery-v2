@@ -1302,7 +1302,7 @@ pub const max_order_lines = 64;
 /// No allocator is needed: `dbExec` executes the statements
 /// synchronously, so the parameters can live on the stack for the
 /// duration of the call.
-pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderLine) void {
+pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderLine, request_key: []const u8) void {
     var statements: [2 + max_order_lines]native_sdk.EffectDbStatement = undefined;
     var line_params: [max_order_lines][9]native_sdk.EffectDbValue = undefined;
 
@@ -1310,16 +1310,26 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
     // statement that takes the next number and the statement that
     // stores the order are one transaction, so a sale that fails does
     // not consume a number and a number is never stored twice.
-    var sequence_params: [1]native_sdk.EffectDbValue = .{.{ .integer = order.placed_at }};
+    //
+    // The bump is conditional on the request key being new: a RETRY is
+    // the same sale, and it must not take a second number with it. The
+    // gap a naive bump would leave is exactly the kind of thing a
+    // jurisdiction asks about.
+    var sequence_params: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = order.placed_at },
+        .{ .text = request_key },
+    };
     statements[0] = .{
         .sql =
-        \\INSERT INTO sequence (name, value, updated_at) VALUES ('order_no', 1, ?1)
+        \\INSERT INTO sequence (name, value, updated_at)
+        \\SELECT 'order_no', 1, ?1
+        \\WHERE NOT EXISTS (SELECT 1 FROM orders WHERE request_key = ?2)
         \\ON CONFLICT(name) DO UPDATE SET value = value + 1, updated_at = ?1;
         ,
         .params = &sequence_params,
     };
 
-    var order_params: [12]native_sdk.EffectDbValue = .{
+    var order_params: [13]native_sdk.EffectDbValue = .{
         .{ .integer = order.id },
         .{ .integer = @intFromEnum(order.order_type) },
         .{ .integer = @intFromEnum(order.status) },
@@ -1335,14 +1345,16 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
         .{ .integer = order.total_minor },
         .{ .integer = order.placed_at },
         .{ .text = order.notes },
+        .{ .text = request_key },
     };
     statements[1] = .{
         .sql =
         \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
         \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
-        \\  total_minor, placed_at, notes, created_at, updated_at)
+        \\  total_minor, placed_at, notes, created_at, updated_at, request_key)
         \\VALUES (?1, (SELECT printf('%06d', value) FROM sequence WHERE name = 'order_no'),
-        \\  ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11, ?11);
+        \\  ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11, ?11, ?13)
+        \\ON CONFLICT(request_key) DO NOTHING;
         ,
         .params = &order_params,
     };
@@ -1366,7 +1378,8 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
             .sql =
             \\INSERT INTO order_line (id, order_id, product_id, product_name, qty,
             \\  unit_price_minor, tax_bps, notes, created_at)
-            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            \\ON CONFLICT(id) DO NOTHING;
             ,
             .params = &line_params[slot],
         };

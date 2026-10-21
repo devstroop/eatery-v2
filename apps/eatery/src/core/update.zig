@@ -666,6 +666,9 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.sale_pending = false;
             model.cart_len = 0;
             model.cart_buf.reset();
+            // The sale landed: the next sale is a new attempt, with its
+            // own id and its own request key.
+            model.cart_attempt_id = 0;
             go(model, .order_confirmation);
             repos.loadOrders(fx);
         },
@@ -1197,11 +1200,19 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         return;
     }
     const now = fx.wallMs();
-    // The order id is the wall clock, but a clock is not a sequence:
-    // two sales in the same millisecond would want the same id, and
-    // the second one would land on the first. The floor keeps the ids
-    // unique without a round trip.
-    const order_id = nextOrderId(model, now);
+    // The sale is an attempt, and the attempt keeps its identity until
+    // it lands. The order id is the wall clock, but a clock is not a
+    // sequence: two sales in the same millisecond would want the same
+    // id, and the second one would land on the first. The floor keeps
+    // the ids unique without a round trip.
+    //
+    // A retry is the SAME sale, so a retry keeps the id and the request
+    // key the first attempt had. The database is what decides that two
+    // writes are the same sale.
+    if (model.cart_attempt_id == 0) {
+        model.cart_attempt_id = nextOrderId(model, now);
+    }
+    const order_id = model.cart_attempt_id;
     var order = domain.Order{
         .id = order_id,
         // The order number is a sequence, and the database assigns it:
@@ -1255,7 +1266,34 @@ fn placeOrder(model: *Model, fx: *Effects) void {
 
     model.busy = true;
     model.sale_pending = true;
-    repos.saveOrder(fx, order, lines[0..count]);
+    // The request key: this device's token and the attempt's id. It is
+    // what makes a retry the same sale rather than a second one.
+    var key_buffer: [64]u8 = undefined;
+    const request_key = makeRequestKey(model, order_id, &key_buffer) orelse {
+        model.busy = false;
+        model.sale_pending = false;
+        model.error_text = "Could not make the request key - try again";
+        return;
+    };
+    repos.saveOrder(fx, order, lines[0..count], request_key);
+}
+
+/// The request key: this device's token, a dash, and the attempt's id.
+///
+/// It is the name of one sale attempt, and it is what the database
+/// compares when a write comes in: a key it has already seen is a
+/// retry, and the order that is already there stays.
+///
+/// The token is the device's namespace. A model without one still makes
+/// a key - the attempt's id is in it, and the attempt's id is unique
+/// within the device - so a sale is never blocked by a missing token.
+fn makeRequestKey(model: *Model, attempt_id: i64, buffer: *[64]u8) ?[]const u8 {
+    const token = model.device_token_buf[0..model.device_token_len];
+    const written = if (token.len == 0)
+        std.fmt.bufPrint(buffer, "{d}", .{attempt_id}) catch return null
+    else
+        std.fmt.bufPrint(buffer, "{s}-{d}", .{ token, attempt_id }) catch return null;
+    return written[0..written.len];
 }
 
 /// The next order id for this device.

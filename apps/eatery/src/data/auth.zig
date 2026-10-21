@@ -47,6 +47,25 @@ pub fn makeSalt(io: std.Io, out: *[hex_len]u8) void {
     }
 }
 
+/// The length of a device token in hex characters.
+pub const token_len = 16;
+
+/// Generate a token that names THIS installation.
+///
+/// The token is not a secret - the salt is - it is a name. It gives
+/// every request key this device makes a namespace of its own, so two
+/// devices writing to the same database cannot take the same key and
+/// mistake each other's sale for a retry of their own.
+pub fn makeToken(io: std.Io, out: *[token_len]u8) void {
+    var raw: [token_len / 2]u8 = undefined;
+    std.Io.random(io, &raw);
+    const alphabet = "0123456789abcdef";
+    for (raw, 0..) |byte, index| {
+        out[index * 2] = alphabet[byte >> 4];
+        out[index * 2 + 1] = alphabet[byte & 0x0f];
+    }
+}
+
 /// Compare two hashes without an early exit - a constant-time compare
 /// keeps the check honest even though the attacker controls neither
 /// side's timing in a meaningful way here.

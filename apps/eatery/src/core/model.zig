@@ -28,6 +28,7 @@ const nav = @import("navigation.zig");
 const rbac = @import("rbac.zig");
 const domain = @import("../domain/models.zig");
 const bump = @import("bump.zig");
+const auth = @import("../data/auth.zig");
 
 const canvas = native_sdk.canvas;
 
@@ -289,6 +290,17 @@ pub const Model = struct {
     pin_salt_len: usize = 0,
     /// Where the installation salt stands.
     salt_state: SaltState = .unknown,
+    /// This installation's token, hex. It is a name, not a secret: it
+    /// gives the request keys this device makes a namespace of their
+    /// own, so two devices cannot mistake each other's sale for a
+    /// retry of their own.
+    device_token_buf: [auth.token_len]u8 = undefined,
+    device_token_len: usize = 0,
+    /// The order id of the sale the cart is waiting to become. Zero
+    /// until the cart is submitted; after that it belongs to the sale
+    /// until the sale lands, so a retry is the same sale and not a
+    /// second one.
+    cart_attempt_id: i64 = 0,
     /// The hash of the PIN being checked. Lives in the model so the
     /// query parameter has a stable home.
     login_hash: [64]u8 = undefined,

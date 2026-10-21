@@ -52,12 +52,13 @@ const migration_sql = [_][]const u8{
     @embedFile("schema/0010_sync.sql"),
     @embedFile("schema/0011_default_tax_slab.sql"),
     @embedFile("schema/0012_order_sequence.sql"),
+    @embedFile("schema/0013_order_request_key.sql"),
 };
 
 const migration_names = [_][]const u8{
     "core", "catalog", "floor", "customers", "orders",
     "inventory", "ops", "compliance", "printing", "sync", "default_tax_slab",
-    "order_sequence",
+    "order_sequence", "order_request_key",
 };
 
 /// A model, a real database and a real effects channel, together.
@@ -102,10 +103,17 @@ const Harness = struct {
         // real SQL.
         fx.bindRelationalStore(database.binding());
 
+        var model = main.initialModel();
+        // The device token is made at boot, where the app has an `Io`
+        // and therefore randomness. The harness has neither, so it
+        // names the device itself.
+        @memcpy(model.device_token_buf[0..6], "test01");
+        model.device_token_len = 6;
+
         return .{
             .database = database,
             .fx = fx,
-            .model = main.initialModel(),
+            .model = model,
             .allocator = allocator,
         };
     }
@@ -362,6 +370,74 @@ test "a failed sale does not consume an order number" {
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
     try testing.expectEqualStrings("000001", harness.model.orders[0].order_no);
+}
+
+test "a retried write is the same sale" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The sale the cashier submits twice: the write lands, the answer
+    // is lost, and the cashier taps again.
+    const order = domain.Order{
+        .id = 1_700_000_000_000,
+        .order_no = "",
+        .order_type = .dine_in,
+        .status = .pending,
+        .status_label = "Pending",
+        .type_label = "Dine in",
+        .dining_table_id = 0,
+        .customer_id = 0,
+        .employee_id = 7,
+        .subtotal_minor = 24500,
+        .tax_minor = 0,
+        .discount_minor = 0,
+        .total_minor = 24500,
+        .placed_at = 1_700_000_000_000,
+        .notes = "",
+    };
+    const lines = [_]domain.OrderLine{.{
+        .id = 1_700_000_000_000,
+        .order_id = order.id,
+        .product_id = 1,
+        .station_id = 0,
+        .product_name = "Paneer Tikka",
+        .qty = 1,
+        .unit_price_minor = 24500,
+        .tax_bps = 0,
+        .notes = "",
+    }};
+    const key = "test01-1700000000000";
+
+    repos.saveOrder(harness.fx, order, &lines, key);
+    harness.drain();
+    // The same sale, submitted again.
+    repos.saveOrder(harness.fx, order, &lines, key);
+    harness.drain();
+
+    // One sale, one number, one set of lines - and the number the
+    // retry would have taken is still there for the next sale.
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+    try testing.expectEqualStrings("000001", harness.model.orders[0].order_no);
+
+    repos.loadOrderLines(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.order_lines.len);
+
+    // And the number the retry would have taken is still there: the
+    // next sale is 000002, not 000003.
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 2), harness.model.orders.len);
+    try testing.expectEqualStrings("000002", harness.model.orders[0].order_no);
 }
 
 test "two sales in the same millisecond are two sales" {
