@@ -61,7 +61,7 @@
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 119 tests pass (36 markup and model, 83 against the database); no sale smoke through the UI |
+| Testing | Partial | 120 tests pass (36 markup and model, 83 against the database, one generated); no sale smoke through the UI |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
