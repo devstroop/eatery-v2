@@ -702,6 +702,70 @@ test "an old PIN is rewritten in the modern form the next time it signs in" {
     try testing.expect(!auth.verifyPin(test_salt, "4822", stored));
 }
 
+test "a PIN shorter than six digits is refused" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("4821");
+    harness.model.setup_pin2.set("4821");
+
+    // Four digits is ten thousand guesses, and a stolen database is
+    // worth ten thousand guesses: the hash can be slow, but it cannot
+    // be slow enough to make a small space safe.
+    try testing.expect(!harness.model.setup_can_submit());
+    try testing.expect(!harness.model.pin_is_acceptable("4821"));
+    try testing.expect(!harness.model.pin_is_acceptable("48215a"));
+    try testing.expect(harness.model.pin_is_acceptable("482155"));
+
+    // And the setup says why.
+    harness.send(Msg{ .setup_submit = {} });
+    try testing.expect(harness.model.setup_error.len > 0);
+    try testing.expect(!harness.model.signed_in);
+}
+
+test "the till stops taking PINs after too many wrong ones" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // An employee whose PIN is not the one being typed.
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "482155", &hash) orelse return error.NoHash;
+    harness.fx.dbExec(.{
+        .key = 922,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = hashed }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+    harness.model.now_ms = 1_700_000_000_000;
+
+    // The wrong PIN, five times.
+    for (0..core.max_login_failures) |_| {
+        harness.model.pin.set("000000");
+        harness.send(Msg{ .submit_login = {} });
+        try testing.expect(!harness.model.signed_in);
+    }
+
+    // And now the till has stopped taking them.
+    try testing.expect(harness.model.login_locked());
+    try testing.expect(harness.model.login_locked_seconds() > 0);
+
+    // Even the RIGHT PIN is refused while the till is locked: the
+    // point is to stop the guessing, not to annoy the cashier.
+    harness.model.pin.set("482155");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+    try testing.expect(harness.model.login_locked());
+}
+
 test "the order number is a sequence" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
@@ -1168,11 +1232,12 @@ test "the setup writes the company, the operator and the starter menu" {
 
     @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
     harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
 
     harness.model.setup_company_name.set("Sharma Restaurant");
     harness.model.setup_admin_name.set("Anita");
-    harness.model.setup_pin.set("4821");
-    harness.model.setup_pin2.set("4821");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
     try testing.expect(harness.model.setup_can_submit());
 
     harness.send(Msg{ .setup_submit = {} });
@@ -1197,10 +1262,10 @@ test "the setup writes the company, the operator and the starter menu" {
     try testing.expectEqual(@as(usize, 6), harness.model.tables.len);
 
     // And the operator can sign in with the PIN they just chose: the
-    // database holds the salted hash, never the plaintext.
+    // database holds the hashed PIN, never the plaintext.
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
-    harness.model.pin.set("4821");
+    harness.model.pin.set("482155");
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(harness.model.signed_in);
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
@@ -1228,8 +1293,8 @@ test "the setup refuses a PIN that does not match" {
 
     harness.model.setup_company_name.set("Sharma Restaurant");
     harness.model.setup_admin_name.set("Anita");
-    harness.model.setup_pin.set("4821");
-    harness.model.setup_pin2.set("9999");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("999911");
     try testing.expect(!harness.model.setup_can_submit());
 
     harness.send(Msg{ .setup_submit = {} });
@@ -1242,8 +1307,8 @@ test "the setup refuses an empty restaurant name" {
     defer harness.deinit();
 
     harness.model.setup_admin_name.set("Anita");
-    harness.model.setup_pin.set("4821");
-    harness.model.setup_pin2.set("4821");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
     harness.send(Msg{ .setup_submit = {} });
     try testing.expect(harness.model.setup_failed());
     try testing.expect(!harness.model.signed_in);

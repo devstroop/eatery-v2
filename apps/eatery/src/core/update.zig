@@ -431,6 +431,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.login_error = "Still starting up - try again in a moment";
                 return;
             }
+            // The till stops guessing. A PIN is short, and a short PIN
+            // is found by trying every one of them; the till is where
+            // that trying happens, so the till is where it stops.
+            if (model.login_locked()) {
+                model.login_error = "Too many wrong PINs - try again in a moment";
+                return;
+            }
             if (model.pin.text().len == 0) {
                 model.login_error = "Enter your PIN";
                 return;
@@ -464,6 +471,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .login_checked => |result| {
             if (result.kind != .page or result.outcome != .ok) {
+                noteLoginFailure(model);
                 model.login_error = "Sign-in failed - try again";
                 model.pin.set("");
                 return;
@@ -471,6 +479,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             var reader = page.Reader.init(result.bytes);
             var values: [page.max_columns]page.Value = undefined;
             if (!reader.readHeader() or !reader.nextRow(&values)) {
+                noteLoginFailure(model);
                 model.login_error = "Wrong PIN";
                 model.pin.set("");
                 return;
@@ -503,6 +512,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.employee_name = model.operator_buf.dupe(employee_name) orelse "";
             model.signed_in = true;
             model.role_chosen = true;
+            // The counter of wrong PINs starts again: the cashier is
+            // in, and the till is not holding a grudge.
+            model.login_failures = 0;
+            model.login_locked_until = 0;
             repos.loadAll(fx);
             // A hash from before bcrypt is rewritten in the modern
             // form, so the next sign-in of this employee is a slow
@@ -1353,6 +1366,21 @@ fn nextStatus(status: domain.OrderStatus) domain.OrderStatus {
         .served => .completed,
         .completed, .voided => status,
     };
+}
+
+/// Count a wrong PIN, and lock the till when there have been too
+/// many.
+///
+/// A PIN is short, and a short PIN is found by trying every one of
+/// them. The till is where that trying happens, so the till is where it
+/// stops: after a few wrong guesses it refuses for a while, and a
+/// shoulder-surfing guesser gets one attempt rather than five.
+fn noteLoginFailure(model: *Model) void {
+    model.login_failures += 1;
+    if (model.login_failures < model_mod.max_login_failures) return;
+    model.login_failures = 0;
+    model.login_locked_until = model.now_ms + model_mod.login_lockout_ms;
+    model.login_error = "Too many wrong PINs - try again in a moment";
 }
 
 /// Turn the cart into an order and write it.

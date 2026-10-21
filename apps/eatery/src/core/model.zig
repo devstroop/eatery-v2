@@ -49,6 +49,12 @@ pub const company_buffer = 1024;
 /// The most lines one cart may carry.
 pub const max_cart_lines = 50;
 
+/// How many wrong PINs the till takes before it stops taking them.
+pub const max_login_failures = 5;
+
+/// How long the till stops taking PINs for, in milliseconds.
+pub const login_lockout_ms = 60_000;
+
 /// Where the installation salt stands.
 ///
 /// The salt is the one piece of state a PIN hash cannot be checked
@@ -346,6 +352,11 @@ pub const Model = struct {
     operator_buf: bump.Bump(1024) = .{},
     /// Why the last sign-in failed, or empty.
     login_error: []const u8 = "",
+    /// How many wrong PINs this session has seen.
+    login_failures: i64 = 0,
+    /// The moment the till stops accepting PINs, in epoch
+    /// milliseconds. Zero when it is not locked.
+    login_locked_until: i64 = 0,
 
     // -------------------------------------------------------------- cart
 
@@ -947,8 +958,34 @@ pub const Model = struct {
         const admin = std.mem.trim(u8, model.setup_admin_name.text(), " ");
         const pin = model.setup_pin.text();
         const pin2 = model.setup_pin2.text();
-        if (name.len == 0 or admin.len == 0 or pin.len == 0) return false;
+        if (name.len == 0 or admin.len == 0) return false;
+        if (!model.pin_is_acceptable(pin)) return false;
         return std.mem.eql(u8, pin, pin2);
+    }
+
+    /// True when a PIN is worth accepting.
+    ///
+    /// Six digits or more, and digits only. A four-digit PIN is ten
+    /// thousand guesses, and a stolen database is worth ten thousand
+    /// guesses: the hash can be slow, but it cannot be slow enough to
+    /// make a small space safe.
+    pub fn pin_is_acceptable(_: *const Model, pin: []const u8) bool {
+        if (pin.len < auth.min_pin_len) return false;
+        for (pin) |digit| {
+            if (digit < '0' or digit > '9') return false;
+        }
+        return true;
+    }
+
+    /// True when the till is refusing PINs for a while.
+    pub fn login_locked(model: *const Model) bool {
+        return model.login_locked_until > model.now_ms;
+    }
+
+    /// How many seconds the till is locked for, or zero.
+    pub fn login_locked_seconds(model: *const Model) i64 {
+        if (!model.login_locked()) return 0;
+        return @divTrunc(model.login_locked_until - model.now_ms, 1000);
     }
 
     /// True when the last sign-in attempt failed.
