@@ -147,7 +147,7 @@ anchor.
 | I6 | An order and its lines are written atomically. | `repos.saveOrder` single `dbExec` |
 | I7 | The `Screen` enum is append-only. | `src/core/navigation.zig:47`; markup compares indices |
 | I8 | Every imported template is in `app_sources.zig`. | `src/app_sources.zig`; import fails loudly |
-| I9 | A denied navigation never leaves a dead stack frame. | `Stack.push` returns false at depth 32 |
+| I9 | A navigation is never refused because the stack is full. | `Stack.push` is a no-op on the current screen and drops the oldest entry at depth 32 ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
 
 ## Current boundary of the system
 
@@ -160,7 +160,7 @@ Implemented end to end today:
 - floor table board (read-only);
 - kitchen board with lifecycle advance;
 - 43-table schema, 11 migrations, core repositories;
-- 49 authored headless tests, of which 28 run against an in-memory database.
+- 69 authored headless tests, of which 41 run against an in-memory database.
 
 Not implemented, despite appearing as types or tables:
 

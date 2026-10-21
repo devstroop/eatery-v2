@@ -199,8 +199,8 @@ no allocator to hand out.
 /// The navigation stack. A fixed-capacity array, because the model must
 /// be default-constructible and `update` has no allocator to hand out.
 ///
-/// The stack holds the FULL history with the current screen on top, so
-/// `back` is always "drop the top and show the new top".
+/// The stack holds the session's history with the current screen on top,
+/// so `back` is always "drop the top and show the new top".
 pub const max_depth = 32;
 
 pub const Stack = struct {
@@ -210,15 +210,16 @@ pub const Stack = struct {
 
 | Operation | Behaviour | Bound |
 |---|---|---|
-| `push(screen)` | Appends. Returns `false` and changes nothing at depth 32 | `max_depth = 32` |
+| `push(screen)` | No-op when the screen is already on top; at depth 32 drops the oldest entry and appends | `max_depth = 32` |
 | `pop()` | Drops the top, returns the new top. Returns `null` at a root | — |
 | `resetTo(screen)` | Discards the history, lands on one screen | — |
 | `current()` | The screen on top, `null` when empty | — |
 | `peek()` | The screen under the top, `null` at a root | — |
 
-The depth bound is not a soft limit. `push` refuses, and the refusal is
-meaningful: the caller keeps the current screen rather than losing the
-way back.
+The depth bound is history length, not a refusal: a full stack drops
+its OLDEST entry, so a busy service can keep navigating. `go` refuses
+only for permissions. See
+[ADR-0015](../decisions/0015-session-scoped-navigation.md).
 
 ### The one writer
 
@@ -232,11 +233,7 @@ fn go(model: *Model, screen: Screen) void {
         model.error_text = "This role cannot open that screen";
         return;
     }
-    if (!model.stack.push(screen)) {
-        // The history is full: keep the current screen rather than
-        // losing the way back.
-        return;
-    }
+    model.stack.push(screen);
     model.screen_index = screen.index();
     model.nav_section = sectionIndex(screen);
 }
@@ -247,25 +244,30 @@ Three properties of `go` are load-bearing:
 1. **The permission check comes first.** A refused navigation does not
    touch the stack, so the history cannot contain a screen the role may
    not see.
-2. **The push comes before the index write.** If the push is refused, the
-   index is never updated, so the stack and the index cannot disagree.
+2. **The push and the index write happen together.** A full stack drops
+   its oldest entry rather than refusing, so the stack and the index
+   cannot disagree.
 3. **The nav section is derived from the screen**, not set by the
    caller, so the rail's highlight can never point at a section the
    current screen is not in.
 
-The only other writers of `screen_index` are the session transitions
-(`pick_role_again`, `sign_out`), which deliberately reset the history
-with `stack.resetTo(...)` in the same breath:
+The only other writers of `screen_index` are the session transitions,
+which go through `resetSession(model, gate)` and `resetNavigation` in
+`src/core/update.zig`. The reset clears the operator, cart, filters,
+waiter state, last sale, forms, errors and history, then lands on the
+gate:
 
 ```zig
-.sign_out => {
-    model.signed_in = false;
-    model.employee_id = 0;
-    model.employee_name = "";
-    model.stack.resetTo(.login);
-    model.screen_index = Screen.login.index();
-},
+fn resetNavigation(model: *Model, gate: Screen) void {
+    model.stack.resetTo(gate);
+    model.screen_index = gate.index();
+    model.nav_section = sectionIndex(gate);
+}
 ```
+
+A PIN role's sign-out resets to `login`; a kiosk role's sign-out resets
+to the role picker. A successful sign-in resets to the role's home, so
+the sign-in screen is never behind the first screen of the session.
 
 ### How the stack is reached from the markup
 
