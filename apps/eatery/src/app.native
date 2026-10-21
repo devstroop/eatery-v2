@@ -11,38 +11,17 @@
      That enum is append-only: adding a screen means appending it, so
      the numbers here stay true. -->
 
-<import src="screens/screen-setup.native"/>
-<import src="screens/screen-role-picker.native"/>
-<import src="screens/screen-login.native"/>
-<import src="screens/screen-dashboard.native"/>
-<import src="screens/screen-pos.native"/>
-<import src="screens/screen-order-detail.native"/>
+
+<import src="screens/screen-session.native"/>
+<import src="screens/screen-overview.native"/>
+<import src="screens/screen-sell.native"/>
 <import src="screens/screen-orders.native"/>
-<import src="screens/screen-customers.native"/>
-<import src="screens/screen-reservations.native"/>
-<import src="screens/screen-suppliers.native"/>
-<import src="screens/screen-purchase-orders.native"/>
-<import src="screens/screen-tables.native"/>
-<import src="screens/screen-kitchen.native"/>
-<import src="screens/screen-order-confirmation.native"/>
-<import src="screens/screen-display.native"/>
+<import src="screens/screen-floor.native"/>
+<import src="screens/screen-catalog.native"/>
+<import src="screens/screen-people.native"/>
 <import src="screens/screen-settings.native"/>
-<import src="screens/screen-settings-printers.native"/>
-<import src="screens/screen-settings-tax.native"/>
-<import src="screens/screen-setting-forms.native"/>
-<import src="screens/screen-settings-modifiers.native"/>
-<import src="screens/screen-settings-discounts.native"/>
-<import src="screens/screen-settings-currency.native"/>
-<import src="screens/screen-settings-data.native"/>
-<import src="screens/screen-catalogue-list.native"/>
-<import src="screens/screen-employees-list.native"/>
-<import src="screens/screen-product-form.native"/>
-<import src="screens/screen-employee-form.native"/>
-<import src="screens/screen-settings-company.native"/>
-<import src="screens/screen-waiter-tables.native"/>
-<import src="screens/screen-waiter-menu.native"/>
-<import src="screens/screen-waiter-cart.native"/>
-<import src="screens/screen-waiter-orders.native"/>
+<import src="screens/screen-service.native"/>
+<import src="screens/screen-kitchen.native"/>
 
 <column grow="1" background="background">
   <row padding="12" gap="8" cross="center" background="surface">

@@ -1,0 +1,135 @@
+<!-- The the service: the waiter's floor, menu, cart and orders.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
+<!-- The waiter's floor. Every table, with who is sitting at it. A free
+     table opens a new order; a table that is taken joins the order
+     that is already on it. The order of the cards is the order of the
+     tables, not of the service. -->
+
+<template name="screen-waiter-tables">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Tables</text>
+      <text foreground="text_muted">{occupied_table_count} busy of {table_count}</text>
+    </row>
+
+    <if test="{table_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No tables yet. Add them in the setup.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <grid columns="4" gap="8">
+        <for each="tables" key="id" as="table">
+          <card padding="12" on-press="select_table:{table.id}">
+            <column gap="4">
+              <text size="lg">{table.name}</text>
+              <badge>{table.status_label}</badge>
+              <text size="sm" foreground="text_muted">{table.seats} seats</text>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
+  </column>
+</template>
+
+<!-- The waiter's menu, for the table they are serving. The header says
+     which table it is, so a waiter with two tables open cannot lose
+     track of which order the tap is going to. -->
+
+<template name="screen-waiter-menu">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{active_table}</text>
+      <button size="sm" variant="ghost" on-press="go_waiter_tables">Tables</button>
+      <button size="sm" variant="secondary" on-press="go_waiter_cart">Order ({active_order_item_count})</button>
+    </row>
+
+    <row gap="4" cross="center">
+      <toggle-button selected="{selected_category == 0}" on-toggle="set_category_all">All</toggle-button>
+      <for each="categories" key="id" as="category">
+        <toggle-button selected="{category.id == selected_category}" on-toggle="set_category:{category.id}">{category.name}</toggle-button>
+      </for>
+    </row>
+
+    <scroll grow="1">
+      <grid columns="4" gap="8">
+        <for each="visible_products" key="id" as="product">
+          <card padding="8" on-press="add_to_order:{product.id}">
+            <column gap="2">
+              <text wrap="true">{product.name}</text>
+              <text size="sm" foreground="text_muted">{currency_symbol}{fixed(product.price_minor / currency_divisor, currency_decimal_count)}</text>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
+  </column>
+</template>
+
+<!-- The open order on the waiter's table. The lines are the order as
+     the kitchen sees it; the total is what the customer will pay. -->
+
+<template name="screen-waiter-cart">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{active_table}</text>
+      <button size="sm" variant="ghost" on-press="go_waiter_menu">Add more</button>
+    </row>
+
+    <if test="{active_order_item_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing on this table yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="active_order_lines" key="id" as="line">
+          <row background="surface" radius="md" padding="8" gap="8" cross="center">
+            <text grow="1">{line.product_name}</text>
+            <text>{line.qty}</text>
+            <text>{currency_symbol}{fixed(line.unit_price_minor * line.qty / 100, 2)}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+
+    <row cross="center">
+      <text grow="1" size="lg">Total</text>
+      <text size="lg">{currency_symbol}{fixed(active_order_total / currency_divisor, currency_decimal_count)}</text>
+    </row>
+  </column>
+</template>
+
+<!-- The waiter's open orders: every table that is waiting on food. -->
+
+<template name="screen-waiter-orders">
+  <column grow="1" gap="12" padding="16" background="background">
+    <text size="heading">Open orders</text>
+
+    <if test="{order_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No open orders.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="orders" key="id" as="order">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1">{order.order_no}</text>
+            <badge>{order.status_label}</badge>
+            <text>{currency_symbol}{fixed(order.total_minor / currency_divisor, currency_decimal_count)}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

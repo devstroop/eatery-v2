@@ -1,3 +1,10 @@
+<!-- The the kitchen and the customer: the board, and the display across the room.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
 <!-- The kitchen board. One card per ticket the kitchen is working
      through, oldest first, with a one-tap "next" that walks the order
      along its lifecycle. The ticket rows are a derived binding: the
@@ -37,6 +44,43 @@
               <row gap="8">
                 <button size="sm" variant="primary" disabled="{advancing}" on-press="advance_order:{ticket.id}">Next</button>
                 <text size="sm" foreground="text_muted">{ticket.waiting_label}</text>
+              </row>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
+  </column>
+</template>
+
+<!-- The customer display: what the room is waiting for. It is the one
+     screen nobody touches, so it has no controls at all - just the
+     orders in progress, big enough to read from across a restaurant.
+     The kitchen role signs in by device; the display does the same. -->
+
+<template name="screen-display">
+  <column grow="1" gap="16" padding="24" background="background">
+    <row gap="12" cross="center">
+      <text size="heading" grow="1">{company_label}</text>
+      <badge>{order_count} in progress</badge>
+    </row>
+
+    <if test="{order_count == 0}">
+      <column grow="1" gap="8" main="center" cross="center">
+        <text size="display">No orders</text>
+        <text foreground="text_muted">Your order will appear here.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <grid columns="3" gap="12">
+        <for each="display_cards" key="order_no" as="card">
+          <card padding="16">
+            <column gap="8">
+              <text size="display">{card.label}</text>
+              <row gap="8" cross="center">
+                <badge>{card.status_label}</badge>
+                <text size="sm" foreground="text_muted">{card.type_label}</text>
               </row>
             </column>
           </card>

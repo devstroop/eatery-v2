@@ -1,0 +1,70 @@
+<!-- The the catalogue's trade: suppliers and what was ordered from them.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
+<!-- The suppliers the restaurant buys from. -->
+
+<template name="screen-suppliers">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Suppliers</text>
+      <text foreground="text_muted">{supplier_count}</text>
+    </row>
+
+    <if test="{supplier_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No suppliers yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="suppliers" key="id" as="supplier">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <column gap="2" grow="1">
+              <text>{supplier.name}</text>
+              <text size="sm" foreground="text_muted">{supplier.phone}</text>
+            </column>
+            <text size="sm" foreground="text_muted">{supplier.gstin}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The purchase orders: what has been ordered from a supplier, and
+     what is still on its way. -->
+
+<template name="screen-purchase-orders">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Purchase orders</text>
+      <text foreground="text_muted">{purchase_order_count}</text>
+    </row>
+
+    <if test="{purchase_order_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing ordered yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="purchase_orders" key="id" as="purchase">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <column gap="2" grow="1">
+              <text>{purchase.order_no}</text>
+              <text size="sm" foreground="text_muted">{date(purchase.ordered_seconds)}</text>
+            </column>
+            <text>{currency_symbol}{fixed(purchase.total_minor / currency_divisor, currency_decimal_count)}</text>
+            <badge>{purchase.status_label}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

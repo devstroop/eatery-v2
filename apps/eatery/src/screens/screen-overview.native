@@ -1,3 +1,10 @@
+<!-- The the overview: what the day looks like.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
 <!-- The dashboard: what the restaurant looks like right now. Four
      numbers, the open orders, and the shortcuts an owner reaches for.
      Every number is a derived binding - the dashboard stores nothing. -->
