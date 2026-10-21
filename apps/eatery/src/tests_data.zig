@@ -359,8 +359,25 @@ fn storedPinHash(harness: *Harness, employee_id: i64, out: []u8) ![]const u8 {
 /// The count comes back as a page, and the page bytes are drain
 /// scratch: they are read inside the loop, before the next message
 /// takes the memory.
-/// Every row a query returns, as raw values.
-fn rowsOf(harness: *Harness, sql: []const u8) ![]const []repos.page.Value {
+/// Every row a query returns, as raw values, with the text copied out
+/// of the page's scratch bytes.
+const Rows = struct {
+    allocator: std.mem.Allocator,
+    rows: []const []repos.page.Value,
+
+    fn deinit(self: Rows) void {
+        for (self.rows) |row| {
+            for (row) |value| switch (value) {
+                .text => |text| self.allocator.free(text),
+                else => {},
+            };
+            self.allocator.free(row);
+        }
+        self.allocator.free(self.rows);
+    }
+};
+
+fn rowsOf(harness: *Harness, sql: []const u8) !Rows {
     var out: std.ArrayList([]repos.page.Value) = .empty;
     errdefer out.deinit(harness.allocator);
     harness.fx.dbQuery(.{
@@ -397,7 +414,7 @@ fn rowsOf(harness: *Harness, sql: []const u8) ![]const []repos.page.Value {
             else => {},
         }
     }
-    return out.toOwnedSlice(harness.allocator);
+    return .{ .allocator = harness.allocator, .rows = try out.toOwnedSlice(harness.allocator) };
 }
 
 fn countRows(harness: *Harness, sql: []const u8, params: []const native_sdk.EffectDbValue) !i64 {
@@ -1508,6 +1525,76 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
+test "the inspector counts every table the schema creates" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // What SQLite really has.
+    const real = try rowsOf(&harness, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;");
+    defer real.deinit();
+
+    // What the inspector says it has.
+    harness.send(Msg{ .open_db_inspector = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.db_inspector, harness.model.screen());
+    const counted = harness.model.table_counts();
+
+    // The two agree: the inspector does not miss a table, and it does
+    // not count one twice. A table the schema adds and the inspector
+    // forgets would show the owner a database that is not there.
+    try testing.expectEqual(real.rows.len, counted.len);
+    for (real.rows) |row| {
+        const name = row[0].asText();
+        var found = false;
+        for (counted) |table| {
+            if (!std.mem.eql(u8, table.name, name)) continue;
+            found = true;
+            break;
+        }
+        try testing.expect(found);
+    }
+}
+
+test "the inspector counts the rows that are really there" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .open_db_inspector = {} });
+    harness.drain();
+
+    // One company, two products, one employee.
+    var company_rows: i64 = -1;
+    var product_rows: i64 = -1;
+    for (harness.model.table_counts()) |table| {
+        if (std.mem.eql(u8, table.name, "company")) company_rows = table.rows;
+        if (std.mem.eql(u8, table.name, "product")) product_rows = table.rows;
+    }
+    try testing.expectEqual(@as(i64, 1), company_rows);
+    try testing.expectEqual(@as(i64, 2), product_rows);
+}
+
+test "the control centre shows the devices and the sync state" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 947,
+        .statements = &.{.{
+            .sql = "INSERT INTO device (id, name, role, last_seen_at, created_at) VALUES ('dev-1', 'Till 1', 'admin', 1700000000000, 1700000000000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    harness.send(Msg{ .open_control_center = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.control_center, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.device_count());
+    try testing.expectEqualStrings("Till 1", harness.model.devices()[0].name);
+    try testing.expectEqualStrings("admin", harness.model.devices()[0].role);
+}
+
 test "the owner says which station cooks which dish" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
@@ -1595,19 +1682,10 @@ test "the owner counts the stock, and the count says why it moved" {
     const rows = try rowsOf(&harness,
         "SELECT delta, reason FROM stock_adjustment WHERE product_id = 1;",
     );
-    // The rows are freed after the outer list, so the list is still
-    // readable when its rows are handed back.
-    defer harness.allocator.free(rows);
-    defer for (rows) |row| {
-        for (row) |value| switch (value) {
-            .text => |text| harness.allocator.free(text),
-            else => {},
-        };
-        harness.allocator.free(row);
-    };
-    try testing.expectEqual(@as(usize, 1), rows.len);
-    try testing.expectEqual(@as(i64, -2), rows[0][0].int());
-    try testing.expectEqualStrings("two broke", rows[0][1].asText());
+    defer rows.deinit();
+    try testing.expectEqual(@as(usize, 1), rows.rows.len);
+    try testing.expectEqual(@as(i64, -2), rows.rows[0][0].int());
+    try testing.expectEqualStrings("two broke", rows.rows[0][1].asText());
 }
 
 test "a count without a reason is refused" {

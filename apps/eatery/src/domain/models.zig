@@ -417,6 +417,26 @@ pub const StockItem = struct {
     stock_qty: i64,
 };
 
+/// A device that has been in this restaurant.
+pub const Device = struct {
+    id: []const u8,
+    name: []const u8,
+    role: []const u8,
+    last_seen_at: i64,
+};
+
+/// One piece of the sync sidecar's state.
+pub const SyncState = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
+/// One table in the database, and how many rows it holds.
+pub const TableCount = struct {
+    name: []const u8,
+    rows: i64,
+};
+
 /// One line of the POS cart. The cart is session state, not database
 /// state: it lives in the model until the order is placed.
 pub const CartLine = struct {

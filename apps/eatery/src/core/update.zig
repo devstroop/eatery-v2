@@ -826,6 +826,17 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadStock(fx);
         },
 
+        .open_db_inspector => {
+            go(model, .db_inspector);
+            repos.loadTableCounts(fx);
+        },
+
+        .open_control_center => {
+            go(model, .control_center);
+            repos.loadDevices(fx);
+            repos.loadSyncState(fx);
+        },
+
         .open_kitchen_dishes => {
             go(model, .kitchen_dishes);
             repos.loadProducts(fx);
@@ -847,6 +858,25 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.busy = true;
             model.error_text = "";
             repos.saveDishStation(fx, repos.key_save_station, model.selected_dish_id, station_id);
+        },
+
+        .db_tables_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The tables could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeTableCounts(model, result.bytes);
+        },
+
+        .devices_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeDevices(model, result.bytes);
+        },
+
+        .sync_state_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeSyncState(model, result.bytes);
         },
 
         .dish_assigned => |result| {

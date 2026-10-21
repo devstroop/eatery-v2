@@ -67,6 +67,8 @@
         <if test="{screen_index == 27}"><use template="screen-reports"/></if>
         <if test="{screen_index == 22}"><use template="screen-inventory-items"/></if>
         <if test="{screen_index == 21}"><use template="screen-kitchen-dishes"/></if>
+        <if test="{screen_index == 9}"><use template="screen-control-center"/></if>
+        <if test="{screen_index == 36}"><use template="screen-db-inspector"/></if>
         <if test="{screen_index == 49}"><use template="screen-stock-count"/></if>
         <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
         <if test="{screen_index == 16}"><use template="screen-customers"/></if>

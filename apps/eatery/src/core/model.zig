@@ -288,6 +288,9 @@ pub const Model = struct {
     payments_list: []const domain.Payment = &.{},
     report_modes_list: []const domain.ReportMode = &.{},
     stock_items_list: []const domain.StockItem = &.{},
+    table_counts_list: []const domain.TableCount = &.{},
+    devices_list: []const domain.Device = &.{},
+    sync_state_list: []const domain.SyncState = &.{},
     purchase_orders_list: []const domain.PurchaseOrder = &.{},
 
     /// Storage for the settings rows the screens show.
@@ -300,6 +303,9 @@ pub const Model = struct {
     payments_buf: bump.Bump(16384) = .{},
     report_modes_buf: bump.Bump(2048) = .{},
     stock_buf: bump.Bump(8192) = .{},
+    table_counts_buf: bump.Bump(4096) = .{},
+    devices_buf: bump.Bump(4096) = .{},
+    sync_state_buf: bump.Bump(4096) = .{},
     purchase_orders_buf: bump.Bump(8192) = .{},
 
     // ------------------------------------------------- the company form
@@ -480,6 +486,36 @@ pub const Model = struct {
     // ---------------------------------------------------- derived values
     //
     // Everything below is a METHOD: computed on rebuild, never stored.
+
+    /// The devices that have been in this restaurant.
+    pub fn devices(model: *const Model) []const domain.Device {
+        return model.devices_list;
+    }
+
+    /// How many pieces of sync state there are.
+    pub fn sync_state_count(model: *const Model) usize {
+        return model.sync_state_list.len;
+    }
+
+    /// How many devices have been in this restaurant.
+    pub fn device_count(model: *const Model) usize {
+        return model.devices_list.len;
+    }
+
+    /// What the sync sidecar has left behind.
+    pub fn sync_state(model: *const Model) []const domain.SyncState {
+        return model.sync_state_list;
+    }
+
+    /// The tables in the database, and how many rows each holds.
+    pub fn table_counts(model: *const Model) []const domain.TableCount {
+        return model.table_counts_list;
+    }
+
+    /// How many tables the database has.
+    pub fn db_table_count(model: *const Model) usize {
+        return model.table_counts_list.len;
+    }
 
     /// The screen the app is showing.
     pub fn screen(model: *const Model) Screen {
@@ -1672,6 +1708,8 @@ const settings_menu = [_]SettingsItem{
     .{ .id = @intFromEnum(Screen.settings_modifiers), .title = "Modifier groups", .detail = "The choices on a dish" },
     .{ .id = @intFromEnum(Screen.settings_discounts), .title = "Discounts", .detail = "Percent and fixed discounts" },
     .{ .id = @intFromEnum(Screen.data_management), .title = "Data", .detail = "Import, export and backup" },
+    .{ .id = @intFromEnum(Screen.control_center), .title = "Control centre", .detail = "The devices and the sync" },
+    .{ .id = @intFromEnum(Screen.db_inspector), .title = "Database", .detail = "Every table, and what is in it" },
 };
 
 /// One card on the customer display.

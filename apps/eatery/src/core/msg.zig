@@ -174,6 +174,16 @@ pub const Msg = union(enum) {
     open_inventory,
     /// Open the dishes and the stations that cook them.
     open_kitchen_dishes,
+    /// Open the database inspector.
+    open_db_inspector,
+    /// Open the control centre.
+    open_control_center,
+    /// The tables in the database.
+    db_tables_loaded: native_sdk.EffectDbResult,
+    /// The devices that have been here.
+    devices_loaded: native_sdk.EffectDbResult,
+    /// The sync state.
+    sync_state_loaded: native_sdk.EffectDbResult,
     /// Choose the dish to assign a station to.
     select_dish: i64,
     /// Send the chosen dish to the station with this id.
@@ -372,6 +382,9 @@ pub const Msg = union(enum) {
         "stock_loaded",
         "stock_saved",
         "dish_assigned",
+        "db_tables_loaded",
+        "devices_loaded",
+        "sync_state_loaded",
         "report_modes_loaded",
         "order_opened",
         "order_line_added",

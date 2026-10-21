@@ -81,6 +81,9 @@ pub const key_report_modes = 44;
 pub const key_stock = 45;
 pub const key_save_stock = 46;
 pub const key_save_station = 47;
+pub const key_db_tables = 48;
+pub const key_devices = 49;
+pub const key_sync_state = 50;
 
 // ------------------------------------------------------------ queries
 
@@ -248,6 +251,75 @@ pub const stock_sql =
     \\ORDER BY name;
 ;
 
+/// The tables in the database, and how many rows each holds.
+///
+/// The list is written out here rather than read from SQLite's own
+/// catalogue, because SQLite cannot count the rows of a table it only
+/// knows the NAME of. A test proves the two agree: every table the
+/// schema creates is counted here, and no table is counted twice.
+///
+/// The names are in single quotes, and that matters: in SQL a double
+/// quote means an IDENTIFIER, so `SELECT "company"` asks for a column
+/// called company and the statement does not even prepare. The name is
+/// text here, and single quotes say so.
+pub const table_counts_sql =
+    \\SELECT 'app_config' AS name, (SELECT COUNT(*) FROM app_config) AS n
+    \\UNION ALL SELECT 'auto_print' AS name, (SELECT COUNT(*) FROM auto_print) AS n
+    \\UNION ALL SELECT 'business_hours' AS name, (SELECT COUNT(*) FROM business_hours) AS n
+    \\UNION ALL SELECT 'company' AS name, (SELECT COUNT(*) FROM company) AS n
+    \\UNION ALL SELECT 'compliance_report' AS name, (SELECT COUNT(*) FROM compliance_report) AS n
+    \\UNION ALL SELECT 'currency' AS name, (SELECT COUNT(*) FROM currency) AS n
+    \\UNION ALL SELECT 'customer' AS name, (SELECT COUNT(*) FROM customer) AS n
+    \\UNION ALL SELECT 'customer_loyalty' AS name, (SELECT COUNT(*) FROM customer_loyalty) AS n
+    \\UNION ALL SELECT 'device' AS name, (SELECT COUNT(*) FROM device) AS n
+    \\UNION ALL SELECT 'dining_table' AS name, (SELECT COUNT(*) FROM dining_table) AS n
+    \\UNION ALL SELECT 'dining_table_category' AS name, (SELECT COUNT(*) FROM dining_table_category) AS n
+    \\UNION ALL SELECT 'discount' AS name, (SELECT COUNT(*) FROM discount) AS n
+    \\UNION ALL SELECT 'employee' AS name, (SELECT COUNT(*) FROM employee) AS n
+    \\UNION ALL SELECT 'expense' AS name, (SELECT COUNT(*) FROM expense) AS n
+    \\UNION ALL SELECT 'expense_category' AS name, (SELECT COUNT(*) FROM expense_category) AS n
+    \\UNION ALL SELECT 'holiday_hours' AS name, (SELECT COUNT(*) FROM holiday_hours) AS n
+    \\UNION ALL SELECT 'kds_station' AS name, (SELECT COUNT(*) FROM kds_station) AS n
+    \\UNION ALL SELECT 'loyalty_transaction' AS name, (SELECT COUNT(*) FROM loyalty_transaction) AS n
+    \\UNION ALL SELECT 'modifier' AS name, (SELECT COUNT(*) FROM modifier) AS n
+    \\UNION ALL SELECT 'modifier_group' AS name, (SELECT COUNT(*) FROM modifier_group) AS n
+    \\UNION ALL SELECT 'op_log' AS name, (SELECT COUNT(*) FROM op_log) AS n
+    \\UNION ALL SELECT 'order_discount' AS name, (SELECT COUNT(*) FROM order_discount) AS n
+    \\UNION ALL SELECT 'order_line' AS name, (SELECT COUNT(*) FROM order_line) AS n
+    \\UNION ALL SELECT 'order_line_modifier' AS name, (SELECT COUNT(*) FROM order_line_modifier) AS n
+    \\UNION ALL SELECT 'order_status_history' AS name, (SELECT COUNT(*) FROM order_status_history) AS n
+    \\UNION ALL SELECT 'orders' AS name, (SELECT COUNT(*) FROM orders) AS n
+    \\UNION ALL SELECT 'payment' AS name, (SELECT COUNT(*) FROM payment) AS n
+    \\UNION ALL SELECT 'printer' AS name, (SELECT COUNT(*) FROM printer) AS n
+    \\UNION ALL SELECT 'product' AS name, (SELECT COUNT(*) FROM product) AS n
+    \\UNION ALL SELECT 'product_category' AS name, (SELECT COUNT(*) FROM product_category) AS n
+    \\UNION ALL SELECT 'product_modifier' AS name, (SELECT COUNT(*) FROM product_modifier) AS n
+    \\UNION ALL SELECT 'product_station' AS name, (SELECT COUNT(*) FROM product_station) AS n
+    \\UNION ALL SELECT 'purchase_order' AS name, (SELECT COUNT(*) FROM purchase_order) AS n
+    \\UNION ALL SELECT 'purchase_order_item' AS name, (SELECT COUNT(*) FROM purchase_order_item) AS n
+    \\UNION ALL SELECT 'reservation' AS name, (SELECT COUNT(*) FROM reservation) AS n
+    \\UNION ALL SELECT 'sequence' AS name, (SELECT COUNT(*) FROM sequence) AS n
+    \\UNION ALL SELECT 'shift' AS name, (SELECT COUNT(*) FROM shift) AS n
+    \\UNION ALL SELECT 'stock_adjustment' AS name, (SELECT COUNT(*) FROM stock_adjustment) AS n
+    \\UNION ALL SELECT 'subscription' AS name, (SELECT COUNT(*) FROM subscription) AS n
+    \\UNION ALL SELECT 'supplier' AS name, (SELECT COUNT(*) FROM supplier) AS n
+    \\UNION ALL SELECT 'sync_state' AS name, (SELECT COUNT(*) FROM sync_state) AS n
+    \\UNION ALL SELECT 'tax_slab' AS name, (SELECT COUNT(*) FROM tax_slab) AS n
+    \\UNION ALL SELECT 'time_entry' AS name, (SELECT COUNT(*) FROM time_entry) AS n
+    \\UNION ALL SELECT 'void_log_entry' AS name, (SELECT COUNT(*) FROM void_log_entry) AS n
+;
+
+
+/// The devices that have been in this restaurant.
+pub const devices_sql =
+    \\SELECT id, name, role, last_seen_at FROM device ORDER BY name, id;
+;
+
+/// What the sync sidecar has left behind.
+pub const sync_state_sql =
+    \\SELECT key, value FROM sync_state ORDER BY key;
+;
+
 /// The printers the restaurant has.
 pub const printers_sql =
     \\SELECT id, name, kind, transport, address, job, active FROM printer ORDER BY name;
@@ -295,11 +367,21 @@ pub fn loadCategories(fx: *Effects) void {
     });
 }
 
+/// Load the dining tables.
 pub fn loadTables(fx: *Effects) void {
     fx.dbQuery(.{
         .key = key_tables,
         .sql = tables_sql,
         .on_result = Effects.dbMsg(.tables_loaded),
+    });
+}
+
+/// Load the tables in the DATABASE, and the row count of each.
+pub fn loadTableCounts(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_db_tables,
+        .sql = table_counts_sql,
+        .on_result = Effects.dbMsg(.db_tables_loaded),
     });
 }
 
@@ -358,6 +440,24 @@ pub fn saveDishStation(fx: *Effects, key: u64, product_id: i64, station_id: i64)
             },
         },
         .on_result = Effects.dbMsg(.dish_assigned),
+    });
+}
+
+/// Load the devices and the sync state, for the control centre.
+
+pub fn loadDevices(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_devices,
+        .sql = devices_sql,
+        .on_result = Effects.dbMsg(.devices_loaded),
+    });
+}
+
+pub fn loadSyncState(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_sync_state,
+        .sql = sync_state_sql,
+        .on_result = Effects.dbMsg(.sync_state_loaded),
     });
 }
 
@@ -939,6 +1039,63 @@ pub fn decodeReservations(model: *Model, bytes: []const u8) void {
         };
     }
     model.reservations_list = list[0..index];
+}
+
+/// Decode the devices that have been in this restaurant.
+pub fn decodeDevices(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.devices_buf.reset();
+    const count = reader.rows_left;
+    const list = model.devices_buf.allocSlice(domain.Device, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = model.devices_buf.dupe(reader.textOf(&values, "id")) orelse "",
+            .name = model.devices_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .role = model.devices_buf.dupe(reader.textOf(&values, "role")) orelse "",
+            .last_seen_at = reader.intOf(&values, "last_seen_at", 0),
+        };
+    }
+    model.devices_list = list[0..index];
+}
+
+/// Decode what the sync sidecar has left behind.
+pub fn decodeSyncState(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.sync_state_buf.reset();
+    const count = reader.rows_left;
+    const list = model.sync_state_buf.allocSlice(domain.SyncState, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .key = model.sync_state_buf.dupe(reader.textOf(&values, "key")) orelse "",
+            .value = model.sync_state_buf.dupe(reader.textOf(&values, "value")) orelse "",
+        };
+    }
+    model.sync_state_list = list[0..index];
+}
+
+/// Decode the tables in the database.
+/// Decode the tables in the DATABASE, and the row count of each.
+pub fn decodeTableCounts(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.table_counts_buf.reset();
+    const count = reader.rows_left;
+    const list = model.table_counts_buf.allocSlice(domain.TableCount, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .name = model.table_counts_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .rows = reader.intOf(&values, "n", 0),
+        };
+    }
+    model.table_counts_list = list[0..index];
 }
 
 /// Decode the stock on the shelf.

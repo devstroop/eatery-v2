@@ -328,3 +328,80 @@
     </card>
   </column>
 </template>
+
+<!-- The control centre: the state of the app itself, rather than of
+     the restaurant. Which devices have been here, and what the sync
+     sidecar has left behind. Both are empty for a single till, and
+     that is the truth, not a gap. -->
+
+<template name="screen-control-center">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Control centre</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <text size="lg">Devices</text>
+    <if test="{device_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No other device has been here. A second till or a kitchen display will appear here.</text>
+      </column>
+    </if>
+    <if test="{device_count > 0}">
+      <card padding="16" width="480">
+        <column gap="6">
+          <for each="devices" key="id" as="device">
+            <row cross="center">
+              <text grow="1">{device.name}</text>
+              <text foreground="text_muted">{device.role}</text>
+            </row>
+          </for>
+        </column>
+      </card>
+    </if>
+
+    <text size="lg">Sync</text>
+    <if test="{sync_state_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing to sync yet. The sync sidecar is not built.</text>
+      </column>
+    </if>
+    <if test="{sync_state_count > 0}">
+      <card padding="16" width="480">
+        <column gap="6">
+          <for each="sync_state" key="key" as="entry">
+            <row cross="center">
+              <text grow="1">{entry.key}</text>
+              <text>{entry.value}</text>
+            </row>
+          </for>
+        </column>
+      </card>
+    </if>
+  </column>
+</template>
+
+<!-- The database inspector: every table, and how many rows it holds.
+     An owner who wants to know what the app really keeps looks here,
+     and an owner who wants to know the app is honest looks here too. -->
+
+<template name="screen-db-inspector">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Database</text>
+      <text foreground="text_muted">{db_table_count} tables</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <scroll grow="1">
+      <column gap="2">
+        <for each="table_counts" key="name" as="table">
+          <row background="surface" radius="md" padding="6" gap="10" cross="center">
+            <text grow="1">{table.name}</text>
+            <text foreground="text_muted">{table.rows}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
