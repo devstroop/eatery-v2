@@ -128,6 +128,7 @@
         </if>
         <button variant="primary" on-press="submit_login">Sign in</button>
         <button variant="ghost" on-press="pick_role_again">Change role</button>
+        <button variant="ghost" on-press="open_landing">About Eatery</button>
       </column>
     </card>
   </column>
@@ -233,5 +234,30 @@
     </card>
 
     <text size="sm" foreground="text_muted">A starter menu and six tables are created with it. Edit them from the menu any time.</text>
+  </column>
+</template>
+
+<!-- The upgrade. The database was made by a newer version of Eatery,
+     and this version must not write to it: a write the newer app
+     would understand differently is a write that spoils the data. So
+     the app says so, and stops. -->
+
+<template name="screen-upgrade">
+  <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
+    <text size="heading">This database is newer than Eatery</text>
+    <text foreground="text_muted">It has {database_table_count} tables and this app knows {expected_table_count}.</text>
+    <text foreground="text_muted">Update Eatery and try again. Nothing has been written.</text>
+  </column>
+</template>
+
+<!-- The landing: what the app is, and which restaurant it is for.
+     An owner who needs to tell a support agent what they are running
+     needs one screen that says it. -->
+
+<template name="screen-landing">
+  <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
+    <text size="heading">Eatery</text>
+    <text foreground="text_muted">{company_label}</text>
+    <text size="sm" foreground="text_muted">A restaurant operating system: point of sale, kitchen display, customer display and back office.</text>
   </column>
 </template>

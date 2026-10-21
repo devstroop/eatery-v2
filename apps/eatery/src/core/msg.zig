@@ -182,6 +182,8 @@ pub const Msg = union(enum) {
     open_table_categories,
     /// Open the plan of the room.
     open_floor_plan,
+    /// Open the landing.
+    open_landing,
     /// Edit the category of tables with this id.
     edit_table_category: i64,
     /// Start a new category of tables.
@@ -194,6 +196,8 @@ pub const Msg = union(enum) {
     table_category_saved: native_sdk.EffectDbResult,
     /// The categories of tables.
     table_categories_loaded: native_sdk.EffectDbResult,
+    /// How many tables the database really has.
+    db_table_count_loaded: native_sdk.EffectDbResult,
     /// Open the customers.
     open_customers,
     /// Edit the customer with this id.
@@ -481,6 +485,7 @@ pub const Msg = union(enum) {
         "modifier_group_saved",
         "table_category_saved",
         "table_categories_loaded",
+        "db_table_count_loaded",
         "customer_saved",
         "modifiers_loaded",
         "db_tables_loaded",

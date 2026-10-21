@@ -357,6 +357,8 @@ pub const Model = struct {
     form_stock_count_buf: canvas.TextBuffer(16) = .{},
     /// Why the count changed.
     form_stock_reason_buf: canvas.TextBuffer(64) = .{},
+    /// How many tables the database really has.
+    db_table_count_field: i64 = 0,
     /// The category being edited, zero for a new one.
     form_table_category_id: i64 = 0,
     /// Its name.
@@ -1283,6 +1285,37 @@ pub const Model = struct {
         return model.form_customer_address_buf.text();
     }
 
+    /// True when the app is showing the upgrade notice.
+    pub fn show_upgrade(model: *const Model) bool {
+        return model.screen() == .upgrade;
+    }
+
+    /// True when the app is showing the landing.
+    pub fn show_landing(model: *const Model) bool {
+        return model.screen() == .landing;
+    }
+
+    /// How many tables the database really has, as the database counts
+    /// them - which is not the same as how many this app knows.
+    pub fn database_table_count(model: *const Model) i64 {
+        return model.db_table_count_field;
+    }
+
+    /// How many tables this app's schema creates.
+    pub fn expected_table_count(_: *const Model) i64 {
+        return known_table_count;
+    }
+
+    /// True when the database is newer than this app.
+    ///
+    /// The app knows how many tables its own schema creates. A
+    /// database with more is one this version does not understand, and
+    /// this version must not write to it.
+    pub fn db_is_newer(model: *const Model) bool {
+        if (model.db_table_count_field == 0) return false;
+        return model.db_table_count_field > known_table_count;
+    }
+
     /// The categories the tables are grouped into.
     pub fn table_categories(model: *const Model) []const domain.TableCategory {
         return model.table_categories_list;
@@ -1816,6 +1849,14 @@ pub const KitchenDish = struct {
     /// fields, so the name is resolved here.
     station_name: []const u8,
 };
+
+/// How many tables this app's schema creates.
+///
+/// A database with more tables than this was made by a newer version
+/// of the app, and this version must not write to it. A test counts
+/// the tables in the migrations and says when the two disagree, so a
+/// new migration that adds a table cannot slip past.
+pub const known_table_count: i64 = 44;
 
 /// One food marking, as the product form offers it.
 pub const FoodTypeOption = struct {

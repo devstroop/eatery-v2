@@ -46,6 +46,10 @@ pub fn boot(model: *Model, fx: *Effects) void {
     // a sale's tax is worked out from them, and a sale that is placed
     // before they arrive would be taxed at nothing.
     repos.loadTaxSlabs(model, fx);
+    // And the number of tables the database really has. A database
+    // from a newer app is one this version must not write to, and the
+    // only way to know is to count what is there.
+    repos.loadDbTableCount(model, fx);
 }
 
 /// A new order on the board gets a sound. The kitchen hears the sale
@@ -921,6 +925,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadTableCategories(model, fx);
         },
 
+        .open_landing => go(model, .landing),
+
         .open_floor_plan => {
             go(model, .floor_plan);
             repos.loadTables(model, fx);
@@ -966,6 +972,21 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.error_text = "";
             repos.loadTableCategories(model, fx);
             go(model, .table_categories);
+        },
+
+        .db_table_count_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind != .page) return;
+            var reader = repos.page.Reader.init(result.bytes);
+            var values: [repos.page.max_columns]repos.page.Value = undefined;
+            if (!reader.readHeader() or !reader.nextRow(&values)) return;
+            model.db_table_count_field = reader.intOf(&values, "n", 0);
+            // A database from a newer app: this one must not write to
+            // it, so it says so instead of pretending to work.
+            if (model.db_is_newer()) {
+                model.error_text = "";
+                go(model, .upgrade);
+            }
         },
 
         .table_categories_loaded => |result| {

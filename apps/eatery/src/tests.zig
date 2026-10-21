@@ -891,6 +891,8 @@ const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-categories", .text = "Categories" },
     .{ .template = "screen-wizard", .text = "Who is the owner?" },
     .{ .template = "screen-create-company", .text = "Step one of two. You can change any of it later." },
+    .{ .template = "screen-upgrade", .text = "This database is newer than Eatery" },
+    .{ .template = "screen-landing", .text = "A restaurant operating system: point of sale, kitchen display, customer display and back office." },
     .{ .template = "screen-reset-pin", .text = "The old PIN stops working the moment this is written." },
 };
 
@@ -1115,6 +1117,8 @@ fn screen_index_of(template: []const u8) usize {
         .{ .template = "screen-categories", .screen = .categories },
         .{ .template = "screen-wizard", .screen = .wizard },
         .{ .template = "screen-create-company", .screen = .create_company },
+        .{ .template = "screen-upgrade", .screen = .upgrade },
+        .{ .template = "screen-landing", .screen = .landing },
         .{ .template = "screen-reset-pin", .screen = .reset_pin },
     };
     for (names) |entry| {

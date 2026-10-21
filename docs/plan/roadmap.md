@@ -304,12 +304,12 @@ PLANNED), each imported by the screens that use it and listed in
       headless suite builds the same tree and counts the same widgets.
 - [x] A test builds the tree for every admin screen and finds a landmark
       text in it.
-- [ ] The screen-coverage test passes: every screen `rbac.allows` for the
-      admin is mounted. Five are not, and the enum still advertises them:
-      `landing`, `upgrade`, `pos_cart`, `table_categories` and
-      `floor_plan`. Two are features the app has not built (the categories
-      of tables, and the plan of the room), and three are variants of
-      screens that exist.
+- [x] The screen-coverage test passes: every screen `rbac.allows` for the
+      admin is mounted. All fifty-three are: forty-six on their ordinal
+      gate, and the seven session screens - the role picker, the sign-in,
+      the landing, the quick setup, the walk-through's two steps and the
+      upgrade - on their own condition, because they are shown before
+      anybody is signed in and the shell is not drawn yet.
 - [ ] A new product price appears in the POS without a restart, and the
       old order lines still show the price they were sold at.
 - [ ] An X report can be generated from the database alone and matches the

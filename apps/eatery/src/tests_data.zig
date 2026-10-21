@@ -1667,6 +1667,53 @@ test "the last admin cannot be removed" {
     try testing.expectEqual(@as(i64, 1), rows);
 }
 
+test "the app knows how many tables its schema creates" {
+    // The constant the upgrade check leans on. A migration that adds a
+    // table must change it, and this test is what says so.
+    var tables: i64 = 0;
+    for (migration_sql) |sql| {
+        var rest = sql;
+        while (std.mem.indexOf(u8, rest, "CREATE TABLE")) |at| {
+            tables += 1;
+            rest = rest[at + "CREATE TABLE".len ..];
+        }
+    }
+    try testing.expectEqual(core.known_table_count, tables);
+}
+
+test "a database from a newer app stops the app before it writes" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A table this app does not know: the database is newer.
+    harness.fx.dbExec(.{
+        .key = 998,
+        .statements = &.{.{
+            .sql = "CREATE TABLE table_from_the_future (id INTEGER PRIMARY KEY);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The app counts what is there, and stops.
+    harness.send(Msg{ .open_dashboard = {} });
+    repos.loadDbTableCount(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.db_is_newer());
+    try testing.expectEqual(nav.Screen.upgrade, harness.model.screen());
+    try testing.expect(harness.model.show_upgrade());
+}
+
+test "a database this app knows is not a reason to stop" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    repos.loadDbTableCount(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expect(!harness.model.db_is_newer());
+}
+
 test "the owner writes a category of tables" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

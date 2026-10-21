@@ -54,6 +54,14 @@
     <use template="screen-create-company"/>
   </if>
 
+  <if test="{show_upgrade}">
+    <use template="screen-upgrade"/>
+  </if>
+
+  <if test="{show_landing}">
+    <use template="screen-landing"/>
+  </if>
+
   <if test="{show_wizard}">
     <use template="screen-wizard"/>
   </if>

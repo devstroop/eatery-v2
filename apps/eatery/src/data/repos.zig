@@ -85,6 +85,7 @@ pub const key_db_tables = 48;
 pub const key_modifiers = 51;
 pub const key_save_modifier_group = 52;
 pub const key_table_categories = 55;
+pub const key_db_table_count = 57;
 pub const key_save_table_category = 56;
 pub const key_save_customer = 53;
 pub const key_deactivate_employee = 54;
@@ -117,6 +118,17 @@ pub const tables_sql =
     \\FROM dining_table
     \\WHERE active = 1
     \\ORDER BY name;
+;
+
+/// How many tables the database really has.
+///
+/// The app knows how many tables its own schema creates. A database
+/// with MORE tables than that was made by a newer version of the app,
+/// and this version must not write to it: a write that a newer app
+/// would understand differently is a write that corrupts.
+pub const db_table_count_sql =
+    \\SELECT COUNT(*) AS n FROM sqlite_master
+    \\WHERE type = 'table' AND name NOT LIKE 'sqlite_%';
 ;
 
 /// The categories the tables are grouped into.
@@ -458,6 +470,11 @@ pub fn saveDishStation(fx: *Effects, key: u64, product_id: i64, station_id: i64)
         },
         .on_result = Effects.dbMsg(.dish_assigned),
     });
+}
+
+/// Load the number of tables the database really has.
+pub fn loadDbTableCount(model: *Model, fx: *Effects) void {
+    query(model, fx, key_db_table_count, db_table_count_sql, &.{}, Effects.dbMsg(.db_table_count_loaded));
 }
 
 /// Load the categories of tables.
