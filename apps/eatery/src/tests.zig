@@ -304,6 +304,27 @@ test "the sign-in query is scoped to the session's role" {
     try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?2") != null);
 }
 
+test "a second tap while the ticket is moving does not move it twice" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    model.orders = &.{
+        .{ .id = 1, .order_no = "000001", .order_type = .dine_in, .status = .pending, .status_label = "Pending", .type_label = "Dine in", .dining_table_id = 0, .customer_id = 0, .employee_id = 0, .subtotal_minor = 0, .tax_minor = 0, .discount_minor = 0, .total_minor = 0, .placed_at = 0, .notes = "" },
+    };
+
+    // The kitchen advances the ticket. The write is in flight: the
+    // fake effects channel never answers it.
+    main.update(&model, .{ .advance_order = 1 }, &fx);
+    try testing.expect(model.advancing());
+
+    // The second tap is refused: a move computed from a model that has
+    // not caught up yet would skip a state on the way.
+    main.update(&model, .{ .advance_order = 1 }, &fx);
+    try testing.expect(model.error_text.len > 0);
+    try testing.expectEqual(domain.OrderStatus.pending, model.orders[0].status);
+}
+
 test "every effect key names one effect and no two" {
     // A key is an effect's identity in the channel. Two live effects
     // cannot share one: the second is REFUSED, and a refused write is

@@ -80,6 +80,7 @@ pub const Model = struct {
         "theme_dark",
         "salt_state",
         "last_issued_order_id",
+        "advance_order_id",
     };
 
     // ------------------------------------------------------------ session
@@ -241,6 +242,10 @@ pub const Model = struct {
 
     // ------------------------------------------------------- the sale
 
+    /// The order whose status is on its way to the database, zero when
+    /// there is none. The board's button is disabled while it holds, so
+    /// a second tap cannot move the order twice.
+    advance_order_id: i64 = 0,
     /// The order that was just placed: the confirmation screen shows
     /// it and the payment is taken against it.
     active_table_name_field: []const u8 = "",
@@ -1022,6 +1027,13 @@ pub const Model = struct {
             }
         }
         return count;
+    }
+
+    /// True while an order's status is on its way to the database. The
+    /// board's button is disabled while it holds: a second tap would
+    /// move the order from a status the model has not caught up with.
+    pub fn advancing(model: *const Model) bool {
+        return model.advance_order_id != 0;
     }
 };
 

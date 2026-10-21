@@ -915,17 +915,33 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         .advance_order => |order_id| {
-            const order = findOrder(model, order_id) orelse return;
+            // One move at a time. A second tap would compute the next
+            // status from a model that has not caught up yet, and skip a
+            // state on the way.
+            if (model.advance_order_id != 0) {
+                model.error_text = "The order is still being updated";
+                return;
+            }
+            const order = findOrder(model, order_id) orelse {
+                model.error_text = "That order is no longer on the board";
+                return;
+            };
             const next = nextStatus(order.status);
-            repos.setOrderStatus(fx, order_id, next, fx.wallMs());
+            model.advance_order_id = order_id;
+            model.busy = true;
+            repos.setOrderStatus(fx, order_id, order.status, next, fx.wallMs());
         },
 
         .order_status_saved => |result| {
             model.busy = false;
             if (result.outcome != .ok) {
+                model.advance_order_id = 0;
                 model.error_text = "Could not update the order";
                 return;
             }
+            // The orders come back with the status the DATABASE has,
+            // not the one the model guessed: the board shows the truth
+            // and the next move is computed from it.
             repos.loadOrders(fx);
         },
 
@@ -976,6 +992,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.kind == .page) {
                 repos.decodeOrders(model, result.bytes);
                 announceNewOrder(model, fx);
+            }
+            // The order we were moving is not on the board any more. It
+            // was deleted, or the database was reset under us, and the
+            // operator is told so instead of watching a ticket vanish.
+            if (model.advance_order_id != 0) {
+                if (findOrder(model, model.advance_order_id) == null) {
+                    model.error_text = "That order is no longer on the board";
+                }
+                model.advance_order_id = 0;
             }
         },
 

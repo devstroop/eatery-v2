@@ -317,6 +317,93 @@ test "an order is written, read back, and its status advances" {
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
 }
 
+/// The number of rows a query returns, read straight from the channel.
+///
+/// The count comes back as a page, and the page bytes are drain
+/// scratch: they are read inside the loop, before the next message
+/// takes the memory.
+fn countRows(harness: *Harness, sql: []const u8, params: []const native_sdk.EffectDbValue) !i64 {
+    harness.fx.dbQuery(.{
+        .key = 907,
+        .sql = sql,
+        .params = params,
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                return reader.intOf(&values, "n", -1);
+            },
+            else => {},
+        }
+    }
+    return -1;
+}
+
+test "advancing an order twice writes one history row" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+    try testing.expectEqual(domain.OrderStatus.pending, order.status);
+
+    // The kitchen advances the ticket.
+    harness.send(.{ .advance_order = order.id });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
+
+    // A second tap, from a model that still says the ticket is
+    // pending - the kind of double tap a fast kitchen produces. The
+    // move does not apply, because the ticket has already moved on.
+    repos.setOrderStatus(harness.fx, order.id, domain.OrderStatus.pending, domain.OrderStatus.preparing, 1_700_000_000_000);
+    harness.drain();
+
+    // One history row, not two: the timeline is the record of what
+    // happened, and the ticket only happened once.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = ?1;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a move that does not apply leaves the order where it is" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+
+    // A move from a status the order is not in: the order does not
+    // move, and nothing is written.
+    repos.setOrderStatus(harness.fx, order.id, domain.OrderStatus.ready, domain.OrderStatus.served, 1_700_000_000_000);
+    harness.drain();
+
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.pending, harness.model.orders[0].status);
+
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = ?1;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
 test "the order number is a sequence" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

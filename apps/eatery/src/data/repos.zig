@@ -1396,20 +1396,51 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
 /// Move an order along its lifecycle. The status history is written in
 /// the same transaction, so the timeline can never disagree with the
 /// order's current status.
-pub fn setOrderStatus(fx: *Effects, order_id: i64, status: domain.OrderStatus, at: i64) void {
+///
+/// The move is CONDITIONAL: it happens only from the status the order
+/// is in now, and the history row is written only when the order was
+/// really there. A second tap - a double click, or two devices - finds
+/// the order already moved on, writes nothing, and leaves the history
+/// with one row instead of two.
+///
+/// The order's status is the model's, not the database's, because the
+/// model read it a moment ago; the database is the one that decides
+/// whether the move still applies.
+pub fn setOrderStatus(
+    fx: *Effects,
+    order_id: i64,
+    from_status: domain.OrderStatus,
+    to_status: domain.OrderStatus,
+    at: i64,
+) void {
     fx.dbExec(.{
         .key = key_write_order,
         .statements = &.{
             .{
-                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1;",
-                .params = &.{ .{ .integer = order_id }, .{ .integer = @intFromEnum(status) }, .{ .integer = at } },
-            },
-            .{
+                // The history first, and only for an order that is
+                // where the move expects it: the row says the order
+                // BECAME this status, and it is only true if it was
+                // not already.
                 .sql =
                 \\INSERT INTO order_status_history (order_id, status, changed_at)
-                \\VALUES (?1, ?2, ?3);
+                \\SELECT ?1, ?2, ?3
+                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
                 ,
-                .params = &.{ .{ .integer = order_id }, .{ .integer = @intFromEnum(status) }, .{ .integer = at } },
+                .params = &.{
+                    .{ .integer = order_id },
+                    .{ .integer = @intFromEnum(to_status) },
+                    .{ .integer = at },
+                    .{ .integer = @intFromEnum(from_status) },
+                },
+            },
+            .{
+                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
+                .params = &.{
+                    .{ .integer = order_id },
+                    .{ .integer = @intFromEnum(to_status) },
+                    .{ .integer = at },
+                    .{ .integer = @intFromEnum(from_status) },
+                },
             },
         },
         .on_result = Effects.dbMsg(.order_status_saved),
