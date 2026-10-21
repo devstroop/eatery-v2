@@ -263,8 +263,15 @@ pub const NavSection = enum {
 /// The navigation stack. A fixed-capacity array, because the model must
 /// be default-constructible and `update` has no allocator to hand out.
 ///
-/// The stack holds the FULL history with the current screen on top, so
-/// `back` is always "drop the top and show the new top".
+/// The stack holds the session's history with the current screen on
+/// top, so `back` is always "drop the top and show the new top". It is
+/// bounded on purpose: pressing the screen already on top is a no-op,
+/// and a full stack drops its OLDEST entry rather than refusing the new
+/// destination. A service can keep navigating; it never freezes.
+///
+/// Session transitions do not push a gate and then the home screen.
+/// `resetTo` makes the gate the root, so Back from the first screen of
+/// a session stays on that screen.
 pub const max_depth = 32;
 
 pub const Stack = struct {
@@ -283,14 +290,23 @@ pub const Stack = struct {
         return self.items[self.len - 2];
     }
 
-    /// Navigate to a screen. Returns false when the stack was already at
-    /// `max_depth` and the push was refused - the caller keeps the
-    /// current screen rather than losing history.
-    pub fn push(self: *Stack, screen: Screen) bool {
-        if (self.len >= max_depth) return false;
+    /// Navigate to a screen.
+    ///
+    /// Pushing the current screen is a no-op: pressing the same tab
+    /// again is not a navigation. At `max_depth` the oldest entry is
+    /// dropped, so the history stays bounded and the new destination
+    /// still lands.
+    pub fn push(self: *Stack, screen: Screen) void {
+        if (self.len > 0 and self.items[self.len - 1] == screen) return;
+        if (self.len == max_depth) {
+            var index: usize = 1;
+            while (index < self.len) : (index += 1) {
+                self.items[index - 1] = self.items[index];
+            }
+            self.len -= 1;
+        }
         self.items[self.len] = screen;
         self.len += 1;
-        return true;
     }
 
     /// Go back: drop the current screen and land on the one under it.

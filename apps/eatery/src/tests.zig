@@ -189,6 +189,107 @@ test "going back returns to the previous screen" {
     try testing.expectEqual(nav.Screen.kds_board, model.screen());
 }
 
+test "a full history drops its oldest entry, so navigation never freezes" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.admin) }, &fx);
+
+    // The admin rail has seven destinations. Walking it twice over is
+    // more than enough to fill a 32-deep history, and each press must
+    // still land: a full stack is a bounded history, not a freeze.
+    var press: usize = 0;
+    while (press < nav.max_depth * 2) : (press += 1) {
+        const section = press % 7;
+        main.update(&model, .{ .open_section = @intCast(section) }, &fx);
+        try testing.expectEqual(rbac.section_screen(@enumFromInt(section)), model.screen());
+    }
+
+    try testing.expect(model.stack.len <= nav.max_depth);
+    try testing.expectEqual(model.screen(), model.stack.current().?);
+}
+
+test "pressing the current destination does not grow the history" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.kds) }, &fx);
+    const depth = model.stack.len;
+
+    // A busy service presses the same tab over and over. None of those
+    // presses is a navigation, so none of them is history.
+    var press: usize = 0;
+    while (press < 40) : (press += 1) {
+        main.update(&model, .{ .open_section = @intFromEnum(nav.NavSection.kitchen) }, &fx);
+    }
+
+    try testing.expectEqual(depth, model.stack.len);
+    try testing.expectEqual(nav.Screen.kds_board, model.screen());
+}
+
+test "changing role ends the previous operator's session" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    model.products = &.{
+        .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+
+    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.kds) }, &fx);
+    main.update(&model, .{ .add_to_cart = 1 }, &fx);
+    model.search.set("paneer");
+    model.selected_category = 1;
+    model.employee_id = 7;
+    model.employee_name = "Anita";
+
+    // The next role is a new session, not the old one with a new label.
+    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.waiter) }, &fx);
+
+    try testing.expectEqual(nav.Role.waiter, model.role);
+    try testing.expect(!model.signed_in);
+    try testing.expectEqual(@as(i64, 0), model.employee_id);
+    try testing.expectEqualStrings("", model.employee_name);
+    try testing.expectEqual(@as(usize, 0), model.cart_count());
+    try testing.expectEqual(@as(usize, 0), model.search.text().len);
+    try testing.expectEqual(@as(i64, 0), model.selected_category);
+    try testing.expectEqual(nav.Screen.login, model.screen());
+    try testing.expectEqual(@as(usize, 1), model.stack.len);
+    try testing.expectEqual(nav.Screen.login, model.stack.current().?);
+}
+
+test "signing out clears the cart, the filters and the operator" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    model.products = &.{
+        .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+
+    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.kds) }, &fx);
+    main.update(&model, .{ .add_to_cart = 1 }, &fx);
+    model.search.set("paneer");
+    model.selected_category = 1;
+    model.employee_id = 7;
+    model.employee_name = "Anita";
+    model.error_text = "Something went wrong";
+
+    main.update(&model, .{ .sign_out = {} }, &fx);
+
+    try testing.expect(!model.signed_in);
+    try testing.expect(!model.role_chosen);
+    try testing.expectEqual(@as(i64, 0), model.employee_id);
+    try testing.expectEqualStrings("", model.employee_name);
+    try testing.expectEqual(@as(usize, 0), model.cart_count());
+    try testing.expectEqual(@as(usize, 0), model.search.text().len);
+    try testing.expectEqual(@as(i64, 0), model.selected_category);
+    try testing.expectEqual(@as(usize, 0), model.error_text.len);
+    try testing.expectEqual(nav.Screen.role_picker, model.screen());
+}
+
 test "the cart adds, counts and totals in minor units" {
     var fx = try fakeFx();
     defer fx.deinit();
@@ -252,20 +353,57 @@ test "money stays integer: two hundred and fifty cents is never a float" {
 }
 
 test "a PIN is hashed, never stored" {
-    var hash_a: [auth.hex_len]u8 = undefined;
-    var hash_b: [auth.hex_len]u8 = undefined;
-    var hash_c: [auth.hex_len]u8 = undefined;
+    // A salt long enough for the hash to be derived from.
+    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    var hash_a: [auth.hash_length]u8 = undefined;
+    var hash_b: [auth.hash_length]u8 = undefined;
+    var hash_c: [auth.hash_length]u8 = undefined;
 
-    auth.hashPin("salt", "1234", &hash_a);
-    auth.hashPin("salt", "1234", &hash_b);
-    auth.hashPin("other-salt", "1234", &hash_c);
+    const a = auth.hashPin(salt, "123456", &hash_a) orelse return error.NoHash;
+    const b = auth.hashPin(salt, "123456", &hash_b) orelse return error.NoHash;
+    const c = auth.hashPin("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "123456", &hash_c) orelse return error.NoHash;
 
-    try testing.expectEqualSlices(u8, &hash_a, &hash_b);
+    // The same PIN and the same salt give the same hash: the sign-in
+    // finds the employee by the hash it computes.
+    try testing.expectEqualStrings(a, b);
     // A different salt gives a different hash: two restaurants with
     // the same PIN do not share a digest.
-    try testing.expect(!std.mem.eql(u8, &hash_a, &hash_c));
-    try testing.expect(auth.equal(&hash_a, &hash_b));
-    try testing.expect(!auth.equal(&hash_a, &hash_c));
+    try testing.expect(!std.mem.eql(u8, a, c));
+
+    // The hash is not the PIN, and it does not contain it.
+    try testing.expect(std.mem.indexOf(u8, a, "123456") == null);
+    // It is a bcrypt string, and it carries its own cost and salt, so
+    // it can be verified years later without knowing what the app was
+    // doing then.
+    try testing.expect(std.mem.startsWith(u8, a, "$2b$10$"));
+}
+
+test "a PIN verifies against its own hash and nothing else" {
+    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    var hash: [auth.hash_length]u8 = undefined;
+    const stored = auth.hashPin(salt, "123456", &hash) orelse return error.NoHash;
+
+    try testing.expect(auth.verifyPin(salt, "123456", stored));
+    try testing.expect(!auth.verifyPin(salt, "123457", stored));
+    // The hash carries the salt it was made with, so it verifies on
+    // its own terms: the installation is what scopes the LOOKUP, not
+    // the check.
+    try testing.expect(auth.verifyPin("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "123456", stored));
+}
+
+test "the old hash still verifies, so a running restaurant still works" {
+    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    var legacy: [auth.legacy_len]u8 = undefined;
+    const stored = auth.legacyHash(salt, "123456", &legacy) orelse return error.NoHash;
+
+    // The old digest is recognised as old, and it verifies.
+    try testing.expect(auth.isLegacy(stored));
+    try testing.expect(auth.verifyPin(salt, "123456", stored));
+    try testing.expect(!auth.verifyPin(salt, "123457", stored));
+    // A bcrypt string is not an old one.
+    var modern: [auth.hash_length]u8 = undefined;
+    const bcrypt_hash = auth.hashPin(salt, "123456", &modern) orelse return error.NoHash;
+    try testing.expect(!auth.isLegacy(bcrypt_hash));
 }
 
 test "the tax is rounded half up, and an inclusive price keeps it inside" {
@@ -297,6 +435,27 @@ test "the tax is rounded half up, and an inclusive price keeps it inside" {
 
     // A product with no slab is not taxed.
     try testing.expectEqual(@as(i64, 0), model.line_tax(99, 100));
+}
+
+test "a currency's decimals are its own" {
+    var model = main.initialModel();
+
+    // The yen has no decimals, the dinar has three, and most have two.
+    try testing.expectEqual(@as(i64, 0), core.decimalsForCurrency("JPY"));
+    try testing.expectEqual(@as(i64, 3), core.decimalsForCurrency("KWD"));
+    try testing.expectEqual(@as(i64, 2), core.decimalsForCurrency("USD"));
+    // A currency nobody has heard of is assumed to have two, which is
+    // the safe guess: a restaurant that meant three would set it.
+    try testing.expectEqual(@as(i64, 2), core.decimalsForCurrency("XYZ"));
+
+    // And the divisor is what the decimals mean: a hundred for most,
+    // one for the yen, a thousand for the dinar.
+    model.currency_decimals = 0;
+    try testing.expectEqual(@as(i64, 1), model.currency_divisor());
+    model.currency_decimals = 2;
+    try testing.expectEqual(@as(i64, 100), model.currency_divisor());
+    model.currency_decimals = 3;
+    try testing.expectEqual(@as(i64, 1000), model.currency_divisor());
 }
 
 test "a failed salt write does not make the salt look confirmed" {
@@ -331,8 +490,10 @@ test "the sign-in query is scoped to the session's role" {
     try testing.expectEqual(domain.EmployeeRole.display, rbac.employee_role(nav.Role.display));
 
     // The query asks the database for that role, rather than taking
-    // whatever employee the PIN belongs to.
-    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?2") != null);
+    // whatever employee the PIN belongs to. The role is the third
+    // parameter: the first two are the two hashes the sign-in looks
+    // the employee up by.
+    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?3") != null);
 }
 
 test "a second tap while the ticket is moving does not move it twice" {

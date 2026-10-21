@@ -152,8 +152,8 @@ were already fixed are in the history, and the archive says which.
 |---|---|---|
 | Track | Milestone | Issues |
 |---|---|---|
-| `feat/money` | M1 - Usable sale, M2 - Back office | #1, #2, #3, #7, #8, #9, #19, #20, #22, #25, #26, #30, #39, #51, #52, #57, #66, #68 |
-| `feat/core` | M1 - Usable sale, M2 - Back office, M4 - Release | #4, #5, #6, #16, #18, #21, #40, #44, #45, #47, #49, #53, #55, #56, #58, #60, #61, #62, #63, #64, #67, #70 |
+| `feat/money` | M1 - Usable sale, M2 - Back office | #1, #2, #3, #7, #8, #9, #19, #20, #22, #25, #26, #30, #39, #51, #52, #57, #66, #68, #95 |
+| `feat/core` | M1 - Usable sale, M2 - Back office, M4 - Release | #4, #5, #6, #16, #18, #21, #40, #44, #45, #47, #49, #53, #55, #56, #58, #60, #61, #62, #63, #64, #67, #70, #96 |
 | `feat/back-office` | M2 - Back office, M1 - Usable sale | #10, #11, #12, #13, #14, #15, #23, #24, #27, #28, #29, #34, #35, #36, #37, #38, #54, #59 |
 | `feat/reports` | M2 - Back office, M3 - Fabric | #33, #43 |
 | `feat/sync-sidecar` | M3 - Fabric | #32, #46 |

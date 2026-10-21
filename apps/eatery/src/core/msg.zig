@@ -25,6 +25,8 @@ pub const Msg = union(enum) {
     submit_login,
     /// The PIN check came back.
     login_checked: native_sdk.EffectDbResult,
+    /// A PIN was rewritten in the modern form.
+    pin_rehashed: native_sdk.EffectDbResult,
     /// Leave the session.
     sign_out,
     /// Back to the role picker (from the sign-in screen).

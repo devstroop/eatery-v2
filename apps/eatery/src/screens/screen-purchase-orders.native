@@ -22,7 +22,7 @@
               <text>{purchase.order_no}</text>
               <text size="sm" foreground="text_muted">{date(purchase.ordered_seconds)}</text>
             </column>
-            <text>{currency_symbol}{fixed(purchase.total_minor / 100, 2)}</text>
+            <text>{currency_symbol}{fixed(purchase.total_minor / currency_divisor, currency_decimal_count)}</text>
             <badge>{purchase.status_label}</badge>
           </row>
         </for>

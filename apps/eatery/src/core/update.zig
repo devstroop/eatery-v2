@@ -349,23 +349,28 @@ fn submitSetup(model: *Model, fx: *Effects) void {
 
     // The PIN is hashed with the installation salt, exactly as it is
     // at every other sign-in. The plaintext never reaches the disk.
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(model.pin_salt(), pin, &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(model.pin_salt(), pin, &hash) orelse {
+        model.setup_error = "Could not hash the PIN - try again";
+        return;
+    };
 
     const code = std.mem.trim(u8, model.setup_currency_code.text(), " ");
     const symbol = std.mem.trim(u8, model.setup_currency_symbol.text(), " ");
 
     model.busy = true;
     model.setup_error = "";
+    const currency = if (code.len == 0) "USD" else code;
     repos.setupCompany(
         fx,
         repos.key_setup,
         name,
-        if (code.len == 0) "USD" else code,
+        currency,
         if (symbol.len == 0) "$" else symbol,
         admin,
-        &hash,
+        hashed,
         model.pin_salt(),
+        model_mod.decimalsForCurrency(currency),
         fx.wallMs(),
     );
 }
@@ -388,34 +393,31 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .pick_role => |index| {
             const role = std.enums.fromInt(Role, index) orelse return;
+            // Choosing a role is a session boundary. The previous
+            // operator's cart, filters and history end here.
+            resetSession(model, if (role.needs_sign_in()) .login else rbac.home(role));
             model.role = role;
             model.role_chosen = true;
-            model.login_error = "";
-            model.error_text = "";
-            if (role.needs_sign_in()) {
-                go(model, .login);
-            } else {
-                // Kiosk roles are signed in by device.
-                model.signed_in = true;
-                go(model, rbac.home(role));
-                repos.loadAll(fx);
-                // The kitchen and the customer display watch the orders
-                // instead of waiting for a refresh: a live query re-runs
-                // itself when the `orders` table changes.
-                if (role == .kds or role == .display) {
-                    repos.watchOpenOrders(fx);
-                    // A live query only sees the writes THIS connection
-                    // made. The kitchen is usually another device, so
-                    // the board also re-reads on a timer: that is what
-                    // makes a sale on the cashier's machine appear on
-                    // the kitchen's screen.
-                    fx.startTimer(.{
-                        .key = repos.key_board_refresh,
-                        .interval_ms = 2000,
-                        .mode = .repeating,
-                        .on_fire = Effects.timerMsg(.refresh_orders),
-                    });
-                }
+            if (role.needs_sign_in()) return;
+            // Kiosk roles are signed in by device.
+            model.signed_in = true;
+            repos.loadAll(fx);
+            // The kitchen and the customer display watch the orders
+            // instead of waiting for a refresh: a live query re-runs
+            // itself when the `orders` table changes.
+            if (role == .kds or role == .display) {
+                repos.watchOpenOrders(fx);
+                // A live query only sees the writes THIS connection
+                // made. The kitchen is usually another device, so the
+                // board also re-reads on a timer: that is what makes a
+                // sale on the cashier's machine appear on the kitchen's
+                // screen.
+                fx.startTimer(.{
+                    .key = repos.key_board_refresh,
+                    .interval_ms = 2000,
+                    .mode = .repeating,
+                    .on_fire = Effects.timerMsg(.refresh_orders),
+                });
             }
         },
 
@@ -431,11 +433,29 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.login_error = "Still starting up - try again in a moment";
                 return;
             }
+            // The till stops guessing. A PIN is short, and a short PIN
+            // is found by trying every one of them; the till is where
+            // that trying happens, so the till is where it stops.
+            if (model.login_locked()) {
+                model.login_error = "Too many wrong PINs - try again in a moment";
+                return;
+            }
             if (model.pin.text().len == 0) {
                 model.login_error = "Enter your PIN";
                 return;
             }
-            auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash);
+            // The hash the sign-in looks up: the slow one, and the
+            // old fast one, so an employee whose PIN was hashed
+            // before bcrypt can still sign in.
+            const hashed = auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash) orelse {
+                model.login_error = "Could not check the PIN - try again";
+                return;
+            };
+            model.login_hash_len = hashed.len;
+            const legacy = auth.legacyHash(model.pin_salt(), model.pin.text(), &model.login_legacy_hash) orelse {
+                model.login_error = "Could not check the PIN - try again";
+                return;
+            };
             fx.dbQuery(.{
                 .key = repos.key_login,
                 // The query carries the session's role: the sign-in is
@@ -443,7 +463,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // stored role matches it may hold it.
                 .sql = repos.login_sql,
                 .params = &.{
-                    .{ .text = model.login_hash[0..] },
+                    .{ .text = hashed },
+                    .{ .text = legacy },
                     .{ .integer = @intFromEnum(rbac.employee_role(model.role)) },
                 },
                 .on_result = Effects.dbMsg(.login_checked),
@@ -452,6 +473,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .login_checked => |result| {
             if (result.kind != .page or result.outcome != .ok) {
+                noteLoginFailure(model);
                 model.login_error = "Sign-in failed - try again";
                 model.pin.set("");
                 return;
@@ -459,6 +481,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             var reader = page.Reader.init(result.bytes);
             var values: [page.max_columns]page.Value = undefined;
             if (!reader.readHeader() or !reader.nextRow(&values)) {
+                noteLoginFailure(model);
                 model.login_error = "Wrong PIN";
                 model.pin.set("");
                 return;
@@ -473,31 +496,49 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.pin.set("");
                 return;
             }
-            model.operator_buf.reset();
-            model.employee_id = reader.intOf(&values, "id", 0);
-            model.employee_name = model.operator_buf.dupe(reader.textOf(&values, "name")) orelse "";
+            // The row's hash is the one that matched, and the PIN is
+            // what it was made from: verify it here, so a row that
+            // matched for any other reason is not a sign-in.
+            const stored = reader.textOf(&values, "pin_hash");
+            if (!auth.verifyPin(model.pin_salt(), model.pin.text(), stored)) {
+                model.login_error = "Sign-in failed - try again";
+                model.pin.set("");
+                return;
+            }
+            // The session begins now. Reset before taking the name:
+            // the reset clears the operator buffer the name lives in.
+            const employee_id = reader.intOf(&values, "id", 0);
+            const employee_name = reader.textOf(&values, "name");
+            resetSession(model, rbac.home(model.role));
+            model.employee_id = employee_id;
+            model.employee_name = model.operator_buf.dupe(employee_name) orelse "";
             model.signed_in = true;
-            model.login_error = "";
-            model.pin.set("");
-            go(model, rbac.home(model.role));
+            model.role_chosen = true;
+            // The counter of wrong PINs starts again: the cashier is
+            // in, and the till is not holding a grudge.
+            model.login_failures = 0;
+            model.login_locked_until = 0;
             repos.loadAll(fx);
+            // A hash from before bcrypt is rewritten in the modern
+            // form, so the next sign-in of this employee is a slow
+            // one and the old digest stops being worth anything.
+            if (auth.isLegacy(stored)) {
+                repos.savePinHash(fx, repos.key_save_pin_hash, model.employee_id, model.login_hash[0..model.login_hash_len]);
+            }
         },
 
         .pick_role_again => {
+            resetSession(model, .role_picker);
             model.role_chosen = false;
-            model.signed_in = false;
-            model.login_error = "";
-            model.pin.set("");
-            model.stack.resetTo(.role_picker);
-            model.screen_index = Screen.role_picker.index();
         },
 
         .sign_out => {
-            model.signed_in = false;
-            model.employee_id = 0;
-            model.employee_name = "";
-            model.stack.resetTo(.login);
-            model.screen_index = Screen.login.index();
+            // A PIN role goes back to its sign-in gate. A kiosk role
+            // has no PIN, so it goes back to the role picker that
+            // chooses the device's mode.
+            const gate: Screen = if (model.role.needs_sign_in()) .login else .role_picker;
+            resetSession(model, gate);
+            model.role_chosen = gate == .login;
         },
 
         // ------------------------------------------------------- first run
@@ -517,6 +558,9 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .setup_created => |result| {
             model.busy = false;
             if (result.outcome != .ok) {
+                // A failed setup is still a session boundary: nothing
+                // from a partial first run may leak into the retry.
+                resetSession(model, .setup);
                 model.setup_error = switch (result.outcome) {
                     .constraint => "That setup breaks a data rule - try different names",
                     .busy => "The database is busy - try again",
@@ -526,16 +570,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             }
             // The restaurant exists: the operator is signed in, and the
             // app becomes a POS.
-            model.setup_error = "";
+            resetSession(model, .admin_dashboard);
             model.needs_setup = false;
             model.signed_in = true;
             model.employee_id = 1;
             model.employee_name = model.operator_buf.dupe(model.setup_admin_name.text()) orelse "";
             model.role_chosen = true;
             model.role = .admin;
-            model.stack.resetTo(.admin_dashboard);
-            model.screen_index = Screen.admin_dashboard.index();
-            model.nav_section = 0;
             // The setup wrote the salt in the same transaction as the
             // operator's PIN hash, so the salt in the model is now the
             // salt in the database. A sign-in may use it.
@@ -792,7 +833,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.busy = true;
-            repos.saveCurrency(fx, repos.key_save_currency, code, if (symbol.len == 0) "$" else symbol);
+            repos.saveCurrency(
+                fx,
+                repos.key_save_currency,
+                code,
+                if (symbol.len == 0) "$" else symbol,
+                model_mod.decimalsForCurrency(code),
+            );
         },
 
         .currency_saved => |result| {
@@ -962,9 +1009,26 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             };
             const next = nextStatus(order.status);
+            // An order does not close without the money. The last step
+            // of the lifecycle is the payment, and the kitchen cannot
+            // take it - so a ticket that has not been paid for stops
+            // here, and says why.
+            if (next == .completed and !order.paid) {
+                model.error_text = "Take the money before closing the order";
+                return;
+            }
             model.advance_order_id = order_id;
             model.busy = true;
             repos.setOrderStatus(fx, order_id, order.status, next, fx.wallMs());
+        },
+
+        .pin_rehashed => |result| {
+            // The rewrite is a courtesy: the sign-in has already
+            // happened, and a row that could not be rewritten is worth
+            // knowing about but not worth failing over.
+            if (result.outcome != .ok) {
+                model.error_text = "The PIN could not be upgraded - it still works";
+            }
         },
 
         .order_status_saved => |result| {
@@ -1120,8 +1184,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.needs_setup = true;
                 model.setup_currency_code.set("USD");
                 model.setup_currency_symbol.set("$");
-                model.stack.resetTo(.setup);
-                model.screen_index = Screen.setup.index();
+                resetNavigation(model, .setup);
             }
         },
 
@@ -1156,13 +1219,93 @@ fn go(model: *Model, screen: Screen) void {
         model.error_text = "This role cannot open that screen";
         return;
     }
-    if (!model.stack.push(screen)) {
-        // The history is full: keep the current screen rather than
-        // losing the way back.
-        return;
-    }
+    model.stack.push(screen);
     model.screen_index = screen.index();
     model.nav_section = sectionIndex(screen);
+}
+
+/// End the current session and land on `gate`.
+///
+/// This is the ONLY place session state is torn down. Sign-out, role
+/// change, a successful sign-in and the setup hand-off all come through
+/// here, so "what survives a session" has one answer rather than four.
+///
+/// Device settings are deliberately kept: the theme, the split widths,
+/// the KDS station filter, the installation salt and the device token
+/// belong to the machine, not to the operator.
+fn resetSession(model: *Model, gate: Screen) void {
+    model.signed_in = false;
+    model.employee_id = 0;
+    model.employee_name = "";
+    model.operator_buf.reset();
+    model.pin.set("");
+    model.login_error = "";
+
+    // Nothing the last operator put in the cart or typed into a filter
+    // belongs to the next one.
+    model.cart_len = 0;
+    model.cart_buf.reset();
+    model.cart_order_type = .dine_in;
+    model.cart_discount_id = 0;
+    model.cart_attempt_id = 0;
+    model.sale_pending = false;
+    model.payment_pending = false;
+    model.search.set("");
+    model.selected_category = 0;
+
+    // The waiter's table and its copy of the order lines are session
+    // state too.
+    model.active_table_id = 0;
+    model.active_table_name = "";
+    model.active_table_name_field = "";
+    model.active_order_id = 0;
+    model.pending_order_id = 0;
+    model.active_lines = &.{};
+    model.waiter_buf.reset();
+    model.waiter_lines_buf.reset();
+
+    // The last sale, the detail selection and every form belong to the
+    // session that created them.
+    model.selected_order_id = 0;
+    model.last_order_id = 0;
+    model.last_order_no_field = "";
+    model.last_order_type_field = "";
+    model.last_order_total_minor = 0;
+    model.last_order_items_count = 0;
+    model.last_order_at = 0;
+    model.sale_buf.reset();
+    model.payment_error = "";
+    model.advance_order_id = 0;
+
+    model.form_currency_code_buf.set("");
+    model.form_currency_symbol_buf.set("");
+    model.form_product_name_buf.set("");
+    model.form_product_price_buf.set("");
+    model.form_product_category_id = 0;
+    model.form_product_food_id = 0;
+    model.form_product_id = 0;
+    model.form_employee_name_buf.set("");
+    model.form_employee_role_id = 0;
+    model.form_employee_id = 0;
+    model.form_name_buf.set("");
+    model.form_address_buf.set("");
+    model.form_phone_buf.set("");
+    model.form_tax_buf.set("");
+
+    model.error_text = "";
+    model.setup_error = "";
+    model.busy = false;
+
+    // History is a session thing. `gate` is the only entry behind the
+    // first screen, so Back cannot reach the previous session.
+    resetNavigation(model, gate);
+}
+
+/// Land on a screen with no history behind it.
+fn resetNavigation(model: *Model, gate: Screen) void {
+    model.stack.resetTo(gate);
+    model.screen_index = gate.index();
+    model.nav_section = sectionIndex(gate);
 }
 
 /// The nav section a screen belongs to, as the index the rail uses.
@@ -1239,6 +1382,21 @@ fn nextStatus(status: domain.OrderStatus) domain.OrderStatus {
         .served => .completed,
         .completed, .voided => status,
     };
+}
+
+/// Count a wrong PIN, and lock the till when there have been too
+/// many.
+///
+/// A PIN is short, and a short PIN is found by trying every one of
+/// them. The till is where that trying happens, so the till is where it
+/// stops: after a few wrong guesses it refuses for a while, and a
+/// shoulder-surfing guesser gets one attempt rather than five.
+fn noteLoginFailure(model: *Model) void {
+    model.login_failures += 1;
+    if (model.login_failures < model_mod.max_login_failures) return;
+    model.login_failures = 0;
+    model.login_locked_until = model.now_ms + model_mod.login_lockout_ms;
+    model.login_error = "Too many wrong PINs - try again in a moment";
 }
 
 /// Turn the cart into an order and write it.

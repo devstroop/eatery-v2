@@ -36,6 +36,10 @@ const Model = core.Model;
 const Msg = msg_mod.Msg;
 const Effects = native_sdk.Effects(Msg);
 
+/// The installation salt, in the shape the app makes it: sixty-four
+/// hex characters.
+const test_salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 /// The app's migrations, embedded. The same files the CLI turns into
 /// `migrations.zig` for the runtime - the test applies them itself so
 /// it can bring up an in-memory database.
@@ -54,12 +58,13 @@ const migration_sql = [_][]const u8{
     @embedFile("schema/0012_order_sequence.sql"),
     @embedFile("schema/0013_order_request_key.sql"),
     @embedFile("schema/0014_payment_once.sql"),
+    @embedFile("schema/0015_currency_decimals.sql"),
 };
 
 const migration_names = [_][]const u8{
     "core", "catalog", "floor", "customers", "orders",
     "inventory", "ops", "compliance", "printing", "sync", "default_tax_slab",
-    "order_sequence", "order_request_key", "payment_once",
+    "order_sequence", "order_request_key", "payment_once", "currency_decimals",
 };
 
 /// A model, a real database and a real effects channel, together.
@@ -316,6 +321,37 @@ test "an order is written, read back, and its status advances" {
     repos.loadOrders(harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
+}
+
+/// The PIN hash the database holds for an employee, copied into
+/// `out`.
+///
+/// The page bytes are drain scratch, so the hash is copied before the
+/// next message takes the memory - and the copy is the caller's, because
+/// a slice of a local buffer would be dead before the caller reads it.
+fn storedPinHash(harness: *Harness, employee_id: i64, out: []u8) ![]const u8 {
+    harness.fx.dbQuery(.{
+        .key = 921,
+        .sql = "SELECT pin_hash FROM employee WHERE id = ?1;",
+        .params = &.{.{ .integer = employee_id }},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    var length: usize = 0;
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                const text = reader.textOf(&values, "pin_hash");
+                length = @min(text.len, out.len);
+                @memcpy(out[0..length], text[0..length]);
+            },
+            else => {},
+        }
+    }
+    return out[0..length];
 }
 
 /// The number of rows a query returns, read straight from the channel.
@@ -630,6 +666,163 @@ test "a payment is taken once" {
     try testing.expectEqual(@as(i64, 1), history);
 }
 
+test "an old PIN is rewritten in the modern form the next time it signs in" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // An employee whose PIN was hashed before bcrypt.
+    var legacy: [auth.legacy_len]u8 = undefined;
+    const old = auth.legacyHash(test_salt, "4821", &legacy) orelse return error.NoHash;
+    harness.fx.dbExec(.{
+        .key = 920,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = old }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+
+    // The sign-in worked: an employee whose PIN was hashed before
+    // bcrypt can still sign in.
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+
+    // And the row now holds the modern hash, so the next guess against
+    // the database is a slow one.
+    var stored_buffer: [256]u8 = undefined;
+    const stored = try storedPinHash(&harness, 1, &stored_buffer);
+    try testing.expect(!auth.isLegacy(stored));
+    try testing.expect(auth.verifyPin(test_salt, "4821", stored));
+    try testing.expect(!auth.verifyPin(test_salt, "4822", stored));
+}
+
+test "a PIN shorter than six digits is refused" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("4821");
+    harness.model.setup_pin2.set("4821");
+
+    // Four digits is ten thousand guesses, and a stolen database is
+    // worth ten thousand guesses: the hash can be slow, but it cannot
+    // be slow enough to make a small space safe.
+    try testing.expect(!harness.model.setup_can_submit());
+    try testing.expect(!harness.model.pin_is_acceptable("4821"));
+    try testing.expect(!harness.model.pin_is_acceptable("48215a"));
+    try testing.expect(harness.model.pin_is_acceptable("482155"));
+
+    // And the setup says why.
+    harness.send(Msg{ .setup_submit = {} });
+    try testing.expect(harness.model.setup_error.len > 0);
+    try testing.expect(!harness.model.signed_in);
+}
+
+test "the till stops taking PINs after too many wrong ones" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // An employee whose PIN is not the one being typed.
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "482155", &hash) orelse return error.NoHash;
+    harness.fx.dbExec(.{
+        .key = 922,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = hashed }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+    harness.model.now_ms = 1_700_000_000_000;
+
+    // The wrong PIN, five times.
+    for (0..core.max_login_failures) |_| {
+        harness.model.pin.set("000000");
+        harness.send(Msg{ .submit_login = {} });
+        try testing.expect(!harness.model.signed_in);
+    }
+
+    // And now the till has stopped taking them.
+    try testing.expect(harness.model.login_locked());
+    try testing.expect(harness.model.login_locked_seconds() > 0);
+
+    // Even the RIGHT PIN is refused while the till is locked: the
+    // point is to stop the guessing, not to annoy the cashier.
+    harness.model.pin.set("482155");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+    try testing.expect(harness.model.login_locked());
+}
+
+test "an order does not close without the money" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+    try testing.expect(!order.paid);
+
+    // Walk it to the last step: served. Each move is conditional on
+    // the status the order is in, so the expected status moves with it.
+    var expected = order.status;
+    for ([_]domain.OrderStatus{ .preparing, .ready, .served }) |status| {
+        repos.setOrderStatus(harness.fx, order.id, expected, status, 1_700_000_000_000);
+        harness.drain();
+        expected = status;
+    }
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.served, harness.model.orders[0].status);
+
+    // The last step is refused: the money has not been taken, and an
+    // order that closes without it is a sale the restaurant never sees.
+    harness.send(.{ .advance_order = order.id });
+    try testing.expect(harness.model.error_text.len > 0);
+
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.served, harness.model.orders[0].status);
+
+    // And with the money taken, the order closes.
+    harness.fx.dbExec(.{
+        .key = 923,
+        .statements = &.{.{
+            .sql = "INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at) VALUES (1, ?1, 0, 24500, '', 1, 1);",
+            .params = &.{.{ .integer = order.id }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.orders[0].paid);
+
+    harness.send(.{ .advance_order = order.id });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.completed, harness.model.orders[0].status);
+}
+
 test "the order number is a sequence" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
@@ -790,23 +983,22 @@ test "a PIN only matches the hash of the salted PIN" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 901,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
 
     // The right PIN finds the operator.
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
     harness.model.pin.set("4821");
     harness.send(Msg{ .submit_login = {} });
@@ -817,13 +1009,94 @@ test "a PIN only matches the hash of the salted PIN" {
     // The wrong PIN does not.
     var other = try Harness.start(testing.allocator);
     defer other.deinit();
-    @memcpy(other.model.pin_salt_buf[0..salt.len], salt);
-    other.model.pin_salt_len = salt.len;
+    @memcpy(other.model.pin_salt_buf[0..test_salt.len], test_salt);
+    other.model.pin_salt_len = test_salt.len;
     other.model.salt_state = .confirmed;
     other.model.pin.set("9999");
     other.send(Msg{ .submit_login = {} });
     try testing.expect(!other.model.signed_in);
     try testing.expect(other.model.login_failed());
+}
+
+test "back from home after a sign-in stays home" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
+
+    harness.fx.dbExec(.{
+        .key = 902,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = hashed }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+
+    // The sign-in screen is a session gate, not a history entry. Back
+    // from the first screen of a session is the first screen.
+    const depth = harness.model.stack.len;
+    harness.send(Msg{ .go_back = {} });
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+    try testing.expectEqual(depth, harness.model.stack.len);
+}
+
+test "signing out clears the cart and the operator" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
+
+    harness.fx.dbExec(.{
+        .key = 903,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = hashed }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.model.search.set("paneer");
+    harness.model.selected_category = 1;
+
+    harness.send(Msg{ .sign_out = {} });
+
+    try testing.expect(!harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 0), harness.model.employee_id);
+    try testing.expectEqualStrings("", harness.model.employee_name);
+    try testing.expectEqual(@as(usize, 0), harness.model.cart_count());
+    try testing.expectEqual(@as(usize, 0), harness.model.search.text().len);
+    try testing.expectEqual(@as(i64, 0), harness.model.selected_category);
+    try testing.expectEqual(nav.Screen.login, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.stack.len);
+    try testing.expectEqual(nav.Screen.login, harness.model.stack.current().?);
 }
 
 test "an employee's PIN only opens the mode they are stored for" {
@@ -832,22 +1105,21 @@ test "an employee's PIN only opens the mode they are stored for" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 904,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Ravi', 1, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
 
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
     // The till is in admin mode: a waiter's PIN is refused.
@@ -927,16 +1199,15 @@ test "a sign-in waits for the database to confirm the salt" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
     harness.fx.dbExec(.{
         .key = 903,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
@@ -1016,14 +1287,14 @@ test "the setup writes the company, the operator and the starter menu" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
 
     harness.model.setup_company_name.set("Sharma Restaurant");
     harness.model.setup_admin_name.set("Anita");
-    harness.model.setup_pin.set("4821");
-    harness.model.setup_pin2.set("4821");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
     try testing.expect(harness.model.setup_can_submit());
 
     harness.send(Msg{ .setup_submit = {} });
@@ -1048,10 +1319,10 @@ test "the setup writes the company, the operator and the starter menu" {
     try testing.expectEqual(@as(usize, 6), harness.model.tables.len);
 
     // And the operator can sign in with the PIN they just chose: the
-    // database holds the salted hash, never the plaintext.
+    // database holds the hashed PIN, never the plaintext.
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
-    harness.model.pin.set("4821");
+    harness.model.pin.set("482155");
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(harness.model.signed_in);
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
@@ -1070,7 +1341,7 @@ test "the setup writes the company, the operator and the starter menu" {
     // is a PIN that can never be verified.
     var stored: [128]u8 = undefined;
     const stored_len = try storedSalt(&harness, &stored);
-    try testing.expectEqualStrings(salt, stored[0..stored_len]);
+    try testing.expectEqualStrings(test_salt, stored[0..stored_len]);
 }
 
 test "the setup refuses a PIN that does not match" {
@@ -1079,8 +1350,8 @@ test "the setup refuses a PIN that does not match" {
 
     harness.model.setup_company_name.set("Sharma Restaurant");
     harness.model.setup_admin_name.set("Anita");
-    harness.model.setup_pin.set("4821");
-    harness.model.setup_pin2.set("9999");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("999911");
     try testing.expect(!harness.model.setup_can_submit());
 
     harness.send(Msg{ .setup_submit = {} });
@@ -1093,8 +1364,8 @@ test "the setup refuses an empty restaurant name" {
     defer harness.deinit();
 
     harness.model.setup_admin_name.set("Anita");
-    harness.model.setup_pin.set("4821");
-    harness.model.setup_pin2.set("4821");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
     harness.send(Msg{ .setup_submit = {} });
     try testing.expect(harness.model.setup_failed());
     try testing.expect(!harness.model.signed_in);
@@ -1338,6 +1609,28 @@ test "an employee is saved and can sign in" {
     try testing.expectEqualStrings("Waiter", ravi.role_label);
 }
 
+test "the company carries the currency's decimals" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // A restaurant that trades in yen.
+    harness.fx.dbExec(.{
+        .key = 924,
+        .statements = &.{.{
+            .sql = "INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive, created_at, currency_decimals) VALUES (1, 'Tokyo Diner', 'JPY', 'Y', 0, 1, 0);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadCompany(harness.fx);
+    harness.drain();
+
+    try testing.expectEqualStrings("JPY", harness.model.currency_code);
+    try testing.expectEqual(@as(i64, 0), harness.model.currency_decimals);
+    try testing.expectEqual(@as(i64, 1), harness.model.currency_divisor());
+}
+
 test "the currency is saved" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
@@ -1351,6 +1644,18 @@ test "the currency is saved" {
     harness.drain();
     try testing.expectEqualStrings("EUR", harness.model.currency_code);
     try testing.expectEqualStrings("€", harness.model.currency_symbol);
+    // The decimals come with the currency: a restaurant that trades in
+    // yen has no decimals to show.
+    try testing.expectEqual(@as(i64, 2), harness.model.currency_decimals);
+
+    harness.model.form_currency_code_buf.set("JPY");
+    harness.model.form_currency_symbol_buf.set("Y");
+    harness.send(Msg{ .save_currency = {} });
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("JPY", harness.model.currency_code);
+    try testing.expectEqual(@as(i64, 0), harness.model.currency_decimals);
+    try testing.expectEqual(@as(i64, 1), harness.model.currency_divisor());
 }
 
 test "the settings data loads: printers, tax slabs, groups and discounts" {

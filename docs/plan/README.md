@@ -35,7 +35,7 @@ The current tree is a **vertical slice in progress**, not a release.
 | Migrations | 11 |
 | Entities with a read + decode path | 8 |
 | Entities with a write path | 6 (order, lines, history, config, setup, payment) |
-| Headless tests | 49 authored (50 reported with the generated one) |
+| Headless tests | 69 authored (70 reported with the generated one) |
 | Sidecars | 0 (two README-only directories) |
 | CI workflows | 1 (verify + smoke) |
 
@@ -62,7 +62,7 @@ scheme collides (B-006), and the setup gaps remain (G-001).
 |---|---|---|---|---|
 | [0](phase-0-toolchain.md) | Toolchain & skeleton | 2 d | Partial | No (scripts and CI exist; no clean-machine proof) |
 | [1](phase-1-foundation.md) | Model, navigation, theme, shell | 4 d | Partial | No (the shell is there; no responsive layout mode) |
-| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (28 in-memory database tests exist; the read paths are not all written) |
+| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (41 in-memory database tests exist; the read paths are not all written) |
 | [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (the order writes and reads back; no modifiers, no tax, no discount) |
 | [4](phase-4-kds-display-waiter.md) | KDS, display, waiter | 6 d | Partial | No (all three render and the waiter joins a table's order; the waiter cannot pay) |
 | [5](phase-5-admin-surfaces.md) | Admin surfaces | 10 d | Partial | No (the settings screens, the catalogue and the people forms exist; reports do not) |

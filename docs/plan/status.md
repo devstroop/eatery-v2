@@ -3,7 +3,7 @@
 > **Status:** Snapshot. Regenerate by reading the source, not by trusting
 > this page.
 > **Last verified:** 2026-10-21, by source review plus the toolchain on
-> `PATH`. `native check` passes, `native test` runs 50/50 (49 authored,
+> `PATH`. `native check` passes, `native test` runs 70/70 (69 authored,
 > one generated) and `native build` produces a ReleaseFast binary.
 > Setup, the order-write fix, the payment flow, the waiter, the kitchen
 > stations, the customer display, the settings screens and the catalogue
@@ -27,8 +27,8 @@
 | Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, payment | `repos.zig` |
 | Effect keys | 36, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 64 authored (65 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 28, green | `src/tests_data.zig` |
+| Headless tests | 69 authored (70 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
+| Database integration tests | 41, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -40,7 +40,7 @@
 | Build and manifest | Partial | `app.json`, scripts and CI exist; no clean-machine proof; the smoke is shallow |
 | App model | Implemented | Model, Msg, update, boot, effects keys |
 | Role picker and login | Partial | Salted SHA-256, kiosk sign-in and first-run setup exist; the sign-in now checks the employee's stored role (B-002) and waits for the database to confirm the salt (B-003); the PIN is still a fast digest with no lockout (B-027) |
-| RBAC and navigation | Implemented core | 45 screens, 4 roles, one guard, stack |
+| RBAC and navigation | Implemented core | 45 screens, 4 roles, one guard, a session-scoped stack ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
 | Screen coverage | Partial | 31 of 45 screens are mounted and render; 14 have no template yet |
 | Theming | Implemented | Light/dark semantic tokens |
 | Shell layout | Partial | Fixed rail + content; no responsive mode |
@@ -59,7 +59,7 @@
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 49 authored + 28 DB tests pass; no sale smoke |
+| Testing | Partial | 69 authored + 41 DB tests pass; no sale smoke |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -126,13 +126,16 @@ a docs change.
 | D14 | ~~Login query ignores `employee.role`; the chosen role decides the session~~ | `src/core/update.zig` (`login_checked`), `src/data/repos.zig` (`login_sql`) | FIXED: the query asks for the session's role and the returned row is checked against it (B-002) |
 | D15 | Order table/customer ids were written as `0`, not `NULL` | `src/core/update.zig` (`placeOrder`) | Failed with FKs on; fixed in the working tree (B-005) |
 | D16 | `decodeCompany` kept slices into page drain memory | `src/data/repos.zig` (`decodeCompany`) | Company name/currency dangled; fixed in the working tree (B-004) |
-| D17 | PIN is a fast SHA-256 over four digits, with no lockout or masking | `src/data/auth.zig`, `src/screens/screen-login.native` | Offline brute force and shoulder-surfing (B-027) |
+| D17 | ~~PIN is a fast SHA-256 over four digits, with no lockout or masking~~ | `src/data/auth.zig`, `src/screens/screen-login.native` | FIXED: bcrypt at 2^10 rounds, six digits, and the till stops after five wrong PINs. The PIN field is still typed in the clear: the SDK has no masked text field (B-027, [ADR-0016](../decisions/0016-what-a-pin-is.md)) |
 | D18 | Setup exists but has gaps (currency symbol field, no disabled submit) | `src/screens/screen-setup.native`, `src/core/update.zig` | A fresh install can start, but setup is not trustworthy (G-001) |
 | D19 | ~~Status advance is not conditional; history can duplicate~~ | `src/core/update.zig` (`advance_order`), `src/data/repos.zig` (`setOrderStatus`) | FIXED: the move happens only from the status the order is in, and the history is written only when it did (B-008) |
 | D20 | Four screens bound counts the model does not have (`customer_count`, `reservation_count`, `supplier_count`, `purchase_order_count`) | `src/screens/screen-customers.native`, `screen-reservations.native`, `screen-suppliers.native`, `screen-purchase-orders.native` | FIXED: those rail destinations could never render at all. The counts are model methods now |
 | D21 | Three effect keys were used by two effects each (20, 21, 22) | `src/data/repos.zig` (the key table) | FIXED: a second live effect with the same key is REFUSED, so a company save could refuse an order write. Every key is used once, and a test says so |
-| D22 | The amounts are shown with two decimals whatever the currency is | `apps/eatery/src/screens/*.native` (`fixed(...)`) | The yen and the dinar are shown with decimals they do not have (B-013) |
+| D22 | ~~The amounts are shown with two decimals whatever the currency is~~ | `apps/eatery/src/core/model.zig` (`currency_divisor`), `apps/eatery/src/screens/*.native` | FIXED: the company carries its currency's decimals, the divisor comes from the model, and no amount divides by a hundred in the markup (B-013) |
 | D23 | An order can be closed without a payment | `src/core/update.zig` (`nextStatus`) | The kitchen can advance a ticket straight to closed and the money is never taken (B-014) |
+| D24 | ~~Back from home exposed the login screen; the stack froze at depth 32; cart/search/filters survived sign-out and role change~~ | `src/core/update.zig` (`resetSession`, `go`), `src/core/navigation.zig` (`Stack.push`) | FIXED: one session reset path, session gates are roots, pushing the current screen is a no-op and a full stack drops its oldest entry ([ADR-0015](../decisions/0015-session-scoped-navigation.md); B-009, B-010, B-011) |
+| D25 | The PIN salt is per installation, not per employee | `src/data/auth.zig` | A database that is cracked gives up every PIN, not one ([ADR-0016](../decisions/0016-what-a-pin-is.md)) |
+| D26 | The failed-PIN counter is per session | `src/core/model.zig` | A restart clears it, so a determined guesser restarts (B-027) |
 
 B-002 and B-003 are fixed in the working tree of 2026-10-21, with the
 effect-key collision (D21) and the four unrenderable screens (D20) found
@@ -161,9 +164,14 @@ now defers detailed evidence to the [review set](../review/README.md).
 | Role picker first, four roles | Navigation |
 | PIN role → login | Session |
 | Kiosk role → board | Session |
+| Back from home after a sign-in stays home | Session / Stack |
+| Signing out clears the cart, filters and operator | Session |
+| Changing role ends the previous session | Session |
 | Role cannot open forbidden screen | RBAC |
 | Matrix is total (tautological; see D-007) | RBAC |
 | Back returns | Stack |
+| A full history drops its oldest entry, so navigation never freezes | Stack |
+| Pressing the current destination does not grow the history | Stack |
 | Cart arithmetic | POS |
 | A second tap in flight does not place a second order | POS |
 | Two sales in the same millisecond are two sales | POS |

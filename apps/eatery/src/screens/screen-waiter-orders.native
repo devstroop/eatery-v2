@@ -16,7 +16,7 @@
           <row background="surface" radius="md" padding="10" gap="10" cross="center">
             <text grow="1">{order.order_no}</text>
             <badge>{order.status_label}</badge>
-            <text>{currency_symbol}{fixed(order.total_minor / 100, 2)}</text>
+            <text>{currency_symbol}{fixed(order.total_minor / currency_divisor, currency_decimal_count)}</text>
           </row>
         </for>
       </column>

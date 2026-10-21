@@ -1,9 +1,10 @@
 # Navigation, roles and access control
 
 > **Status:** Implemented core; screen coverage is Partial.
-> **Last verified:** 2026-10-20, by source review.
+> **Last verified:** 2026-10-21, by source review and the headless suite.
 > **Source:** `src/core/navigation.zig`, `src/core/rbac.zig`,
-> `src/core/update.zig` (`go`), `src/app.native`, `src/screens/*.native`.
+> `src/core/update.zig` (`go`, `resetSession`), `src/app.native`,
+> `src/screens/*.native`.
 
 ## There is no router
 
@@ -16,7 +17,9 @@ and no transition. A "navigation" is:
 
 This is a deliberate simplification for a kiosk-style app: the entry
 point is always the role picker, and there is nothing external to link
-into. See [ADR-0003](../decisions/0003-no-router-screen-enum-and-stack.md).
+into. See [ADR-0003](../decisions/0003-no-router-screen-enum-and-stack.md)
+and, for the session/history boundary,
+[ADR-0015](../decisions/0015-session-scoped-navigation.md).
 
 ## Roles
 
@@ -98,17 +101,26 @@ template mounts. That is the single largest as-built gap in the app.
 
 ## Navigation stack
 
-`Stack` is a fixed `[32]Screen` with `len`.
+`Stack` is a fixed `[32]Screen` with `len`. It is the **session's
+history**, not a log of every press (ADR-0015).
 
 | Operation | Behaviour |
 |---|---|
-| `push` | Refuses at depth 32 and returns false; caller keeps the current screen rather than losing history |
+| `push` | No-op when the target is already on top; at depth 32 drops the oldest entry and appends the new one |
 | `pop` | Returns null at a root; caller stays put |
 | `resetTo` | Discards history and lands on one screen |
 | `current` / `peek` | Top / one below top |
 
-`go()` pushes first and only then updates `screen_index`, so a refused
-push cannot leave the index and stack disagreeing.
+A full stack is not a refusal: navigation keeps working, and `go()`
+cannot fail because of depth. Permission is still the only reason `go()`
+refuses a destination. `go()` pushes and then updates `screen_index`, so
+the stack and the index always agree.
+
+Session transitions do not push the gate and then the home screen. They
+call `resetSession`, which clears the session's state and calls
+`resetTo(gate)`. The gate - or the role's home after a sign-in - is the
+only history entry, so Back from the first screen of a session stays
+there.
 
 ## Permission matrix
 
@@ -175,10 +187,19 @@ role picker
    │ submit_login                         │
    ▼                                      ▼
  signed in ──▶ home ──▶ loadAll ────────▶ home
-   │
-   ├── sign_out  ──▶ login (history reset)
-   └── pick_role_again ──▶ role picker (history reset)
+   │                                      │
+   ├── sign_out ──▶ login (session reset) │
+   │                                      └── sign_out ──▶ role picker
+   └── pick_role_again ──▶ role picker (session reset)
 ```
+
+Every arrow that ends a session goes through `resetSession(model, gate)`
+in `src/core/update.zig`. It clears the operator, cart, search, filters,
+waiter table and lines, last sale, forms, errors and history, then lands
+on `gate`. Device settings (theme, splits, station filter, salt, device
+token) are kept. The reset is called from `pick_role`, a successful
+`login_checked`, `sign_out`, `pick_role_again`, and setup's success and
+failure paths.
 
 ### `open_section`: a fixed bug worth remembering
 
@@ -193,6 +214,11 @@ bug a table-shaped UI invites: **the number a control sends and the number
 the handler indexes must mean the same thing.**
 
 ## As-built navigation defects
+
+The three p1 session/navigation defects - Back from home landing on the
+sign-in screen, the stack freezing at 32 entries, and session state
+surviving sign-out - are fixed. See
+[ADR-0015](../decisions/0015-session-scoped-navigation.md).
 
 1. **Thirty-one templates, 45 screens.** The other fourteen screens are
    a blank content pane.
@@ -229,8 +255,13 @@ the handler indexes must mean the same thing.**
 - Every role can reach the role picker and login.
 - A kiosk asking for `settings` stays on its board and sets an error.
 - The permission matrix is walked for every role × every screen.
-- Back returns to the previous screen.
+- Back returns to the previous screen, and Back at a session root stays
+  put.
+- A full history drops its oldest entry instead of freezing navigation.
+- Pressing the current destination does not grow the history.
 - Picking a role routes to the right gate.
+- A role change and a sign-out clear the previous operator's cart,
+  search, filters and identity.
 - The shell's gates name the screens the enum says they do.
 - Every gated screen builds a view and stays inside the widget budget.
 

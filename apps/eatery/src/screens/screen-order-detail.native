@@ -29,7 +29,7 @@
         <separator/>
         <row cross="center">
           <text grow="1" size="lg">Total</text>
-          <text size="lg">{currency_symbol}{fixed(selected_order_total / 100, 2)}</text>
+          <text size="lg">{currency_symbol}{fixed(selected_order_total / currency_divisor, currency_decimal_count)}</text>
         </row>
         <row gap="8">
           <spacer grow="1"/>

@@ -16,7 +16,7 @@
         <separator/>
         <row cross="center">
           <text grow="1" size="lg">Total</text>
-          <text size="lg">{currency_symbol}{fixed(last_order_total / 100, 2)}</text>
+          <text size="lg">{currency_symbol}{fixed(last_order_total / currency_divisor, currency_decimal_count)}</text>
         </row>
       </column>
     </card>
@@ -34,7 +34,7 @@
       </row>
       <row gap="8">
         <button variant="ghost" on-press="back_to_pos">Another order</button>
-        <button variant="primary" grow="1" disabled="{payment_pending}" on-press="take_payment">Take {currency_symbol}{fixed(last_order_total / 100, 2)}</button>
+        <button variant="primary" grow="1" disabled="{payment_pending}" on-press="take_payment">Take {currency_symbol}{fixed(last_order_total / currency_divisor, currency_decimal_count)}</button>
       </row>
     </column>
   </column>
