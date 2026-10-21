@@ -126,7 +126,7 @@ a docs change.
 | D14 | ~~Login query ignores `employee.role`; the chosen role decides the session~~ | `src/core/update.zig` (`login_checked`), `src/data/repos.zig` (`login_sql`) | FIXED: the query asks for the session's role and the returned row is checked against it (B-002) |
 | D15 | Order table/customer ids were written as `0`, not `NULL` | `src/core/update.zig` (`placeOrder`) | Failed with FKs on; fixed in the working tree (B-005) |
 | D16 | `decodeCompany` kept slices into page drain memory | `src/data/repos.zig` (`decodeCompany`) | Company name/currency dangled; fixed in the working tree (B-004) |
-| D17 | PIN is a fast SHA-256 over four digits, with no lockout or masking | `src/data/auth.zig`, `src/screens/screen-login.native` | Offline brute force and shoulder-surfing (B-027) |
+| D17 | ~~PIN is a fast SHA-256 over four digits, with no lockout or masking~~ | `src/data/auth.zig`, `src/screens/screen-login.native` | FIXED: bcrypt at 2^10 rounds, six digits, and the till stops after five wrong PINs. The PIN field is still typed in the clear: the SDK has no masked text field (B-027, [ADR-0016](../decisions/0016-what-a-pin-is.md)) |
 | D18 | Setup exists but has gaps (currency symbol field, no disabled submit) | `src/screens/screen-setup.native`, `src/core/update.zig` | A fresh install can start, but setup is not trustworthy (G-001) |
 | D19 | ~~Status advance is not conditional; history can duplicate~~ | `src/core/update.zig` (`advance_order`), `src/data/repos.zig` (`setOrderStatus`) | FIXED: the move happens only from the status the order is in, and the history is written only when it did (B-008) |
 | D20 | Four screens bound counts the model does not have (`customer_count`, `reservation_count`, `supplier_count`, `purchase_order_count`) | `src/screens/screen-customers.native`, `screen-reservations.native`, `screen-suppliers.native`, `screen-purchase-orders.native` | FIXED: those rail destinations could never render at all. The counts are model methods now |
@@ -134,6 +134,8 @@ a docs change.
 | D22 | The amounts are shown with two decimals whatever the currency is | `apps/eatery/src/screens/*.native` (`fixed(...)`) | The yen and the dinar are shown with decimals they do not have (B-013) |
 | D23 | An order can be closed without a payment | `src/core/update.zig` (`nextStatus`) | The kitchen can advance a ticket straight to closed and the money is never taken (B-014) |
 | D24 | ~~Back from home exposed the login screen; the stack froze at depth 32; cart/search/filters survived sign-out and role change~~ | `src/core/update.zig` (`resetSession`, `go`), `src/core/navigation.zig` (`Stack.push`) | FIXED: one session reset path, session gates are roots, pushing the current screen is a no-op and a full stack drops its oldest entry ([ADR-0015](../decisions/0015-session-scoped-navigation.md); B-009, B-010, B-011) |
+| D25 | The PIN salt is per installation, not per employee | `src/data/auth.zig` | A database that is cracked gives up every PIN, not one ([ADR-0016](../decisions/0016-what-a-pin-is.md)) |
+| D26 | The failed-PIN counter is per session | `src/core/model.zig` | A restart clears it, so a determined guesser restarts (B-027) |
 
 B-002 and B-003 are fixed in the working tree of 2026-10-21, with the
 effect-key collision (D21) and the four unrenderable screens (D20) found

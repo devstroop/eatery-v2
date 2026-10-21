@@ -1,7 +1,7 @@
 # Open questions
 
 > **Status:** Living document. Expected to grow.
-> **Last reviewed:** 2026-10-20.
+> **Last reviewed:** 2026-10-21.
 > **Related:** [`risks.md`](risks.md), [`status.md`](status.md).
 
 This page exists because the most expensive mistakes in a rewrite are the
@@ -86,10 +86,10 @@ date before that phase starts.
 
 | # | Question | Why it matters | How to resolve | Owner | Status |
 |---|---|---|---|---|---|
-| C1 | What is the threat model for a restaurant device? | PIN strength, kiosk exit, sync trust | Security review + interviews | Eng | Open |
-| C2 | Is a 4–8 digit PIN acceptable, or is a longer secret required? | Hashing choice and UX | Product + security | Product | Open |
-| C3 | Can we use a memory-hard KDF in the SDK, or a keychain pepper? | PIN brute-force resistance | Spike the SDK crypto surface | Eng | Open |
-| C4 | How should failed logins be throttled without locking out a rush? | Security vs service | Product + security | Product | Open |
+| C1 | What is the threat model for a restaurant device? | PIN strength, kiosk exit, sync trust | Security review + interviews | Eng | **Answered** — [ADR-0016](../decisions/0016-what-a-pin-is.md) |
+| C2 | Is a 4–8 digit PIN acceptable, or is a longer secret required? | Hashing choice and UX | Product + security | Product | **Answered** — six digits, [ADR-0016](../decisions/0016-what-a-pin-is.md) |
+| C3 | Can we use a memory-hard KDF in the SDK, or a keychain pepper? | PIN brute-force resistance | Spike the SDK crypto surface | Eng | **Answered** — the SDK has no KDF; bcrypt is in Zig's standard library and wants four kilobytes, [ADR-0016](../decisions/0016-what-a-pin-is.md) |
+| C4 | How should failed logins be throttled without locking out a rush? | Security vs service | Product + security | Product | **Answered** — five wrong PINs, then a minute's silence, [ADR-0016](../decisions/0016-what-a-pin-is.md) |
 | C5 | What personal data is stored (customer phone/email), and for how long? | Privacy obligations | Legal review | Product | Open |
 | C6 | Is data required to stay on-device, or may it sync/backup off-device? | Sync and cloud design | Customer/legal | Product | Open |
 | C7 | How are devices paired and trusted on the LAN? | Sync security | Design + spike | Eng | Open |
@@ -98,6 +98,9 @@ date before that phase starts.
 | C10 | What audit events must be retained (voids, discounts, price changes, logins)? | Compliance tables | Accountant/legal | Product | Open |
 | C11 | Does the app need code signing/notarisation in every target market? | Release | Release engineering | Eng | Open |
 | C12 | Is there a data-deletion/export request obligation? | Privacy | Legal | Product | Open |
+| C13 | The SDK's text field has no password mode, so a PIN is typed in the clear. Is a masked field, or a keypad, acceptable in the SDK? | A PIN on screen is a PIN the customer sees | Ask the SDK, or work around it | Eng | Open |
+| C14 | Should the PIN salt be per employee rather than per installation? | One cracked database then gives up every PIN | Needs a sign-in that identifies the employee first | Eng | Open |
+| C15 | Where should the failed-PIN counter live, so that a restart does not clear it? | A counter a restart clears is a counter a restart is worth | Write it to the database | Eng | Open |
 
 ## D. Sync
 
