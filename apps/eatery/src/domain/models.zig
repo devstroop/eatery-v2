@@ -381,6 +381,23 @@ pub const Shift = struct {
     expected_cash_minor: i64,
 };
 
+/// A payment the restaurant took.
+///
+/// The money is in minor units, and the mode is an enum resolved to a
+/// label at decode time: the markup binds fields, it does not decide
+/// what cash is called.
+pub const Payment = struct {
+    id: i64,
+    order_id: i64,
+    order_no: []const u8,
+    mode: PaymentMode,
+    /// The name of the mode, for the view.
+    mode_label: []const u8,
+    amount_minor: i64,
+    reference: []const u8,
+    paid_at: i64,
+};
+
 /// One line of the POS cart. The cart is session state, not database
 /// state: it lives in the model until the order is placed.
 pub const CartLine = struct {

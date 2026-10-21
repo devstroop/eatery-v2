@@ -127,6 +127,8 @@ pub const Msg = union(enum) {
     back_to_pos,
     /// The payment write came back.
     payment_taken: native_sdk.EffectDbResult,
+    /// The payments the restaurant has taken.
+    payments_loaded: native_sdk.EffectDbResult,
 
     // ----------------------------------------------------- the lists
 
@@ -154,6 +156,8 @@ pub const Msg = union(enum) {
     open_pos,
     /// Jump to the order list.
     open_orders,
+    /// Jump to the payments the restaurant has taken.
+    open_payments,
     /// Jump to the floor.
     open_tables,
 
@@ -333,6 +337,7 @@ pub const Msg = union(enum) {
         "config_saved",
         "setup_created",
         "payment_taken",
+        "payments_loaded",
         "order_opened",
         "order_line_added",
         "db_failed",

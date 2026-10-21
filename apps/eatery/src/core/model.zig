@@ -285,6 +285,7 @@ pub const Model = struct {
     discounts_list: []const domain.Discount = &.{},
     reservations_list: []const domain.Reservation = &.{},
     suppliers_list: []const domain.Supplier = &.{},
+    payments_list: []const domain.Payment = &.{},
     purchase_orders_list: []const domain.PurchaseOrder = &.{},
 
     /// Storage for the settings rows the screens show.
@@ -294,6 +295,7 @@ pub const Model = struct {
     discounts_buf: bump.Bump(4096) = .{},
     reservations_buf: bump.Bump(8192) = .{},
     suppliers_buf: bump.Bump(8192) = .{},
+    payments_buf: bump.Bump(16384) = .{},
     purchase_orders_buf: bump.Bump(8192) = .{},
 
     // ------------------------------------------------- the company form
@@ -947,6 +949,23 @@ pub const Model = struct {
     /// How many reservations are on the book.
     pub fn reservation_count(model: *const Model) usize {
         return model.reservations_list.len;
+    }
+
+    /// The payments the restaurant has taken.
+    pub fn payments(model: *const Model) []const domain.Payment {
+        return model.payments_list;
+    }
+
+    /// How many payments the restaurant has taken.
+    pub fn payment_count(model: *const Model) usize {
+        return model.payments_list.len;
+    }
+
+    /// The money the restaurant has taken, in minor units.
+    pub fn payments_total_minor(model: *const Model) i64 {
+        var total: i64 = 0;
+        for (model.payments_list) |payment| total += payment.amount_minor;
+        return total;
     }
 
     /// The suppliers.

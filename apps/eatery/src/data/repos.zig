@@ -75,6 +75,7 @@ pub const key_save_tax_slab = 39;
 pub const key_save_discount = 40;
 pub const key_save_category = 41;
 pub const key_save_pin_hash = 38;
+pub const key_payments = 42;
 
 // ------------------------------------------------------------ queries
 
@@ -148,6 +149,16 @@ pub const order_lines_sql =
 /// One setting out of `app_config`. The PIN salt lives there.
 pub const config_sql =
     \\SELECT key, value FROM app_config WHERE key = 'pin_salt' LIMIT 1;
+;
+
+/// The money the restaurant has taken, newest first.
+pub const payments_sql =
+    \\SELECT p.id, p.order_id, o.order_no, p.mode, p.amount_minor,
+    \\       p.reference, p.paid_at
+    \\FROM payment p
+    \\JOIN orders o ON o.id = p.order_id
+    \\ORDER BY p.paid_at DESC
+    \\LIMIT 200;
 ;
 
 /// The sign-in query.
@@ -280,6 +291,15 @@ pub fn loadOrders(fx: *Effects) void {
         .key = key_orders,
         .sql = orders_sql,
         .on_result = Effects.dbMsg(.orders_loaded),
+    });
+}
+
+/// Load the payments the restaurant has taken.
+pub fn loadPayments(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_payments,
+        .sql = payments_sql,
+        .on_result = Effects.dbMsg(.payments_loaded),
     });
 }
 
@@ -783,6 +803,31 @@ pub fn decodeReservations(model: *Model, bytes: []const u8) void {
         };
     }
     model.reservations_list = list[0..index];
+}
+
+/// Decode the payments the restaurant has taken.
+pub fn decodePayments(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.payments_buf.reset();
+    const count = reader.rows_left;
+    const list = model.payments_buf.allocSlice(domain.Payment, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        const mode = enumFromInt(domain.PaymentMode, reader.intOf(&values, "mode", 0));
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .order_id = reader.intOf(&values, "order_id", 0),
+            .order_no = model.payments_buf.dupe(reader.textOf(&values, "order_no")) orelse "",
+            .mode = mode,
+            .mode_label = mode.label(),
+            .amount_minor = reader.intOf(&values, "amount_minor", 0),
+            .reference = model.payments_buf.dupe(reader.textOf(&values, "reference")) orelse "",
+            .paid_at = reader.intOf(&values, "paid_at", 0),
+        };
+    }
+    model.payments_list = list[0..index];
 }
 
 pub fn decodeSuppliers(model: *Model, bytes: []const u8) void {

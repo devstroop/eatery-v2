@@ -809,6 +809,11 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_orders => go(model, .orders),
 
+        .open_payments => {
+            go(model, .payments);
+            repos.loadPayments(fx);
+        },
+
         .open_tables => go(model, .dining_tables),
 
         // ---------------------------------------------------------- the POS
@@ -1361,6 +1366,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .customers_loaded => |result| {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeCustomers(model, result.bytes);
+        },
+
+        .payments_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The payments could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodePayments(model, result.bytes);
         },
 
         .orders_loaded => |result| {

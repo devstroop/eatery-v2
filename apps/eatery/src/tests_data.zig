@@ -1467,6 +1467,53 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
+test "the payments screen shows the money the restaurant took" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // An order, paid for twice over: the restaurant's till has money
+    // in it, and the owner is asking what came in.
+    // Two orders, paid for: one in cash and one by card. An order is
+    // paid once - the database says so - so two payments means two
+    // orders.
+    harness.fx.dbExec(.{
+        .key = 940,
+        .statements = &.{.{
+            .sql = "INSERT INTO orders (id, order_no, order_type, status, dining_table_id, customer_id, employee_id, subtotal_minor, tax_minor, discount_minor, total_minor, placed_at, notes, created_at, updated_at) VALUES (1, 'A-1', 0, 3, 1, NULL, 7, 12000, 0, 0, 12000, 1700000000000, '', 1700000000000, 1700000000000), (2, 'A-2', 0, 3, 2, NULL, 7, 8000, 0, 0, 8000, 1700000001000, '', 1700000001000, 1700000001000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    harness.fx.dbExec(.{
+        .key = 941,
+        .statements = &.{.{
+            .sql = "INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at) VALUES (1, 1, 0, 12000, 'CASH-1', 1700000000000, 1700000000000), (2, 2, 1, 8000, 'CARD-1', 1700000001000, 1700000001000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The owner opens the payments and the money is there.
+    harness.send(Msg{ .open_payments = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.payments, harness.model.screen());
+    try testing.expectEqual(@as(usize, 2), harness.model.payment_count());
+    try testing.expectEqual(@as(i64, 20000), harness.model.payments_total_minor());
+
+    // Each payment says how it was paid, and the newest is first: the
+    // card was taken a second after the cash.
+    const payments = harness.model.payments();
+    try testing.expectEqualStrings("Card", payments[0].mode_label);
+    try testing.expectEqualStrings("CARD-1", payments[0].reference);
+    try testing.expectEqual(@as(i64, 8000), payments[0].amount_minor);
+    try testing.expectEqualStrings("A-2", payments[0].order_no);
+    try testing.expectEqualStrings("Cash", payments[1].mode_label);
+    try testing.expectEqual(@as(i64, 12000), payments[1].amount_minor);
+    try testing.expectEqualStrings("A-1", payments[1].order_no);
+}
+
 test "a manager can reset an employee's PIN" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

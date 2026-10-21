@@ -63,6 +63,7 @@
         <if test="{screen_index == 8}"><use template="screen-dashboard"/></if>
         <if test="{screen_index == 10}"><use template="screen-pos"/></if>
         <if test="{screen_index == 13}"><use template="screen-orders"/></if>
+        <if test="{screen_index == 15}"><use template="screen-payments"/></if>
         <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
         <if test="{screen_index == 16}"><use template="screen-customers"/></if>
         <if test="{screen_index == 20}"><use template="screen-reservations"/></if>

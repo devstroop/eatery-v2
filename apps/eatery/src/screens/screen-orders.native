@@ -15,6 +15,7 @@
     <row gap="8" cross="center">
       <text size="heading" grow="1">Orders</text>
       <badge>{order_count} open</badge>
+      <button size="sm" variant="ghost" on-press="open_payments">Payments</button>
     </row>
 
     <if test="{order_count == 0}">
@@ -81,5 +82,46 @@
         </row>
       </column>
     </card>
+  </column>
+</template>
+
+<!-- The money the restaurant has taken. The cashier's screen takes a
+     payment; this one is the owner asking what came in, and when. -->
+
+<template name="screen-payments">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Payments</text>
+      <text foreground="text_muted">{payment_count} taken</text>
+    </row>
+
+    <row gap="12">
+      <card padding="16" grow="1">
+        <column gap="4">
+          <text size="sm" foreground="text_muted">TAKEN</text>
+          <text size="display">{currency_symbol}{fixed(payments_total_minor / currency_divisor, currency_decimal_count)}</text>
+        </column>
+      </card>
+    </row>
+
+    <if test="{payment_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No payments yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="payments" key="id" as="payment">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <column gap="2" grow="1">
+              <text>{payment.order_no}</text>
+              <text size="sm" foreground="text_muted">{payment.mode_label}</text>
+            </column>
+            <text>{currency_symbol}{fixed(payment.amount_minor / currency_divisor, currency_decimal_count)}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
   </column>
 </template>
