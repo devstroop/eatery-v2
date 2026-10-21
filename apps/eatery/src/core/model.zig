@@ -100,7 +100,7 @@ fn tenTo(exponent: i64) i64 {
 ///
 /// The salt is the one piece of state a PIN hash cannot be checked
 /// without, and there is exactly one right answer to "which salt?" - the
-/// one in the database. These three states say how sure the app is about
+/// one in the database. These four states say how sure the app is about
 /// that, because the difference between "the database has no salt" and
 /// "the database has not answered yet" is the difference between
 /// installing a salt and guessing one.
@@ -111,6 +111,10 @@ pub const SaltState = enum {
     /// The database has no salt. The salt in the model is the one this
     /// installation will use, and it is written with the operator.
     installing,
+    /// The write came back, but the database has not been read again.
+    /// A second instance may have stored a different salt first, so the
+    /// model's salt is not confirmed yet.
+    verifying,
     /// The database holds this salt. A sign-in may hash with it.
     confirmed,
 };

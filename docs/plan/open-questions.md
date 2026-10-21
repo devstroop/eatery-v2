@@ -166,7 +166,7 @@ date before that phase starts.
 | G8 | Are there hardware/OS constraints in target restaurants (old machines, no Metal)? | GPU backend and performance | Customer audit | Eng | Open |
 | G9 | How is the database stored and protected on disk? | Privacy and tamper resistance | Security review | Eng | Open |
 | G10 | What journal mode and backup policy does the engine use? | Durability and recovery (G-022) | SDK docs + a power-loss test | Eng | Open |
-| G11 | How does a second app instance behave on the same database? | Salt race and write contention (B-028) | Two-instance spike | Eng | Open |
+| G11 | How does a second app instance behave on the same database? | The salt race is closed by a read-back; write contention and a single-instance guard remain (B-028, E-014) | Two-instance spike | Eng | Open |
 | G10 | Is there a licence/subscription enforcement requirement? | `subscription` table is unused | Product | Product | Open |
 
 ## H. Scale and performance

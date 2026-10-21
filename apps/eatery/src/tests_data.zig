@@ -1195,6 +1195,41 @@ test "a fresh installation gets a salt, stores it, and keeps it" {
     try testing.expectEqual(core.SaltState.confirmed, harness.model.salt_state);
 }
 
+test "a second instance adopts the salt that is already stored" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // The first instance installed its salt before this instance read
+    // the settings. Insert it without feeding the result to the model:
+    // the model under test is the second instance, and it still believes
+    // the database was empty.
+    const first = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    harness.fx.dbExec(.{
+        .key = 903,
+        .statements = &.{.{
+            .sql = "INSERT INTO app_config (key, value, updated_at) VALUES ('pin_salt', ?1, 1);",
+            .params = &.{.{ .text = first }},
+        }},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |_| {}
+
+    const second = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    @memcpy(harness.model.pin_salt_buf[0..second.len], second);
+    harness.model.pin_salt_len = second.len;
+    harness.model.salt_state = .installing;
+
+    // The second instance writes its salt. The insert does nothing
+    // because the first salt is already there, but SQLite still reports
+    // success. The instance must read the salt back before confirming
+    // it; otherwise every PIN it hashes can never verify.
+    repos.saveSalt(harness.fx, repos.key_save_salt, second, 1);
+    harness.drain();
+
+    try testing.expectEqualStrings(first, harness.model.pin_salt());
+    try testing.expectEqual(core.SaltState.confirmed, harness.model.salt_state);
+}
+
 test "a sign-in waits for the database to confirm the salt" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();

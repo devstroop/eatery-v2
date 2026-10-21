@@ -3,7 +3,7 @@
 > **Status:** Snapshot. Regenerate by reading the source, not by trusting
 > this page.
 > **Last verified:** 2026-10-21, by source review plus the toolchain on
-> `PATH`. `native check` passes, `native test` runs 80/80 (79 authored,
+> `PATH`. `native check` passes, `native test` runs 81/81 (80 authored,
 > one generated) and `native build` produces a ReleaseFast binary.
 > Setup, the order-write fix, the payment flow, the waiter, the kitchen
 > stations, the customer display, the settings screens and the catalogue
@@ -27,8 +27,8 @@
 | Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, payment | `repos.zig` |
 | Effect keys | 36, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 79 authored (80 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 46, green | `src/tests_data.zig` |
+| Headless tests | 80 authored (81 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
+| Database integration tests | 47, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -59,7 +59,7 @@
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 79 authored + 46 DB tests pass; no sale smoke |
+| Testing | Partial | 80 authored + 47 DB tests pass; no sale smoke |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -110,7 +110,7 @@ a docs change.
 
 | # | Defect | Where | Impact |
 |---|---|---|---|
-| D1 | ~~Provisional salt installed before the database confirms it; a failed save was marked confirmed~~ | `src/core/update.zig` (`submit_login`, `createSalt`, `config_loaded`) | FIXED: the salt is a three-state lifecycle (`unknown`, `installing`, `confirmed`), the sign-in waits for `confirmed`, and the setup writes the salt with the operator's hash (B-003) |
+| D1 | ~~Provisional salt installed before the database confirms it; a failed save was marked confirmed~~ | `src/core/update.zig` (`submit_login`, `createSalt`, `config_loaded`) | FIXED: the salt is a four-state lifecycle (`unknown`, `installing`, `verifying`, `confirmed`), the sign-in waits for `confirmed`, and the setup writes the salt with the operator's hash (B-003) |
 | D2 | ~~Order `id` = wall ms, `order_no` = wall seconds~~ | `src/core/update.zig` (`placeOrder`, `nextOrderId`), `src/data/repos.zig` (`saveOrder`) | FIXED: the number is a sequence the database assigns, the id keeps a per-device floor, and a request key makes a retry the same sale (B-006, [ADR-0014](../decisions/0014-order-identity.md)) |
 | D3 | `loadAll` omits `loadCustomers` | `src/data/repos.zig` (`loadAll`) | Customer data never appears (B-015) |
 | D4 | Shell gates are hard-coded ordinals | `src/app.native` | A test now pins the gated ordinals against the enum, so inserting a screen fails the suite instead of remapping the UI (B-023) |
@@ -136,6 +136,7 @@ a docs change.
 | D24 | ~~Back from home exposed the login screen; the stack froze at depth 32; cart/search/filters survived sign-out and role change~~ | `src/core/update.zig` (`resetSession`, `go`), `src/core/navigation.zig` (`Stack.push`) | FIXED: one session reset path, session gates are roots, pushing the current screen is a no-op and a full stack drops its oldest entry ([ADR-0015](../decisions/0015-session-scoped-navigation.md); B-009, B-010, B-011) |
 | D25 | The PIN salt is per installation, not per employee | `src/data/auth.zig` | A database that is cracked gives up every PIN, not one ([ADR-0016](../decisions/0016-what-a-pin-is.md)) |
 | D26 | The failed-PIN counter is per session | `src/core/model.zig` | A restart clears it, so a determined guesser restarts (B-027) |
+| D27 | ~~A second instance could confirm its own salt after a no-op write~~ | `src/core/update.zig` (`config_saved`) | FIXED: a successful salt write is read back; the model adopts the stored salt and only confirms that one (B-028) |
 
 B-002 and B-003 are fixed in the working tree of 2026-10-21, with the
 effect-key collision (D21) and the four unrenderable screens (D20) found
@@ -191,6 +192,7 @@ now defers detailed evidence to the [review set](../review/README.md).
 | A waiter's PIN does not open an admin session | Session |
 | A sign-in waits for the database to confirm the salt | Auth |
 | A failed salt write is not a confirmed salt | Auth |
+| A second instance adopts the salt that is already stored | Auth |
 | The page decoder | Data |
 | A decoded company does not point at the page bytes | Data |
 | Derived counts | Model |

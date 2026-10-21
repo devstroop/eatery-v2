@@ -224,12 +224,13 @@ session, so the next operator starts from the gate with no cart, filters,
 forms or history from the previous one.
 
 The salt is the one piece of state a PIN hash cannot be checked without,
-so it has three states rather than a flag:
+so it has four states rather than a flag:
 
 | State | What it means | What it allows |
 |---|---|---|
 | `unknown` | The database has not answered yet | Nothing may be hashed with the salt |
 | `installing` | The database has no salt: this one will be installed with the operator | The setup may hash the operator's PIN with it |
+| `verifying` | The write returned, but the database has not been read back | Nothing may be hashed until the stored salt is read |
 | `confirmed` | The database holds this salt | A sign-in may hash with it |
 
 `loadAll` currently loads company, categories, products, tables,
@@ -271,6 +272,7 @@ decision:
 - a waiter's PIN does not open an admin session;
 - a sign-in waits for the database to confirm the salt, and a failed
   salt write is not a confirmed salt;
+- a second instance adopts the salt that is already stored;
 - the shell gates the screens the enum says it does;
 - every gated screen renders, inside the widget budget.
 
