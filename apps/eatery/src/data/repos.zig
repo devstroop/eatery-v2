@@ -358,6 +358,7 @@ pub fn loadForScreen(fx: *Effects, screen: nav.Screen) void {
         .settings_modifiers => loadModifierGroups(fx),
         .settings_discounts => loadDiscounts(fx),
         .customers => loadCustomers(fx),
+        .pos => loadDiscounts(fx),
         .reservations => loadReservations(fx),
         .suppliers => loadSuppliers(fx),
         .purchase_orders => loadPurchaseOrders(fx),

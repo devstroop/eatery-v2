@@ -508,6 +508,90 @@ test "an inclusive price already carries its tax" {
     try testing.expectEqual(@as(i64, 24500), order.total_minor);
 }
 
+/// A restaurant with a slab at five percent, a dish taxed at it, a
+/// drink that is not taxed, and the discounts the cashier can pick.
+fn with_tax_and_discounts(harness: *Harness) !void {
+    harness.fx.dbExec(.{
+        .key = 912,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 5%', 500, 0, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "UPDATE product SET tax_slab_id = 2 WHERE id = 1;",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO discount (id, name, percent_bps, amount_minor, active, created_at) VALUES (3, 'Staff 10%', 1000, 0, 1, 0), (4, 'Five off', 0, 500, 1, 0);",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+}
+
+test "a discount comes off the bill, and the tax follows it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+    try with_tax_and_discounts(&harness);
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(.{ .apply_discount = 3 });
+
+    // Ten percent off 285.00 is 28.50.
+    try testing.expectEqual(@as(i64, 2850), harness.model.cart_discount_total());
+    // It lands on the lines in proportion to what they are worth.
+    try testing.expectEqual(@as(i64, 2450), harness.model.cart_discount_share(0));
+    try testing.expectEqual(@as(i64, 400), harness.model.cart_discount_share(1));
+
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    try testing.expectEqual(@as(i64, 28500), order.subtotal_minor);
+    try testing.expectEqual(@as(i64, 2850), order.discount_minor);
+    // The tax is on what is left: 220.50 at five percent is 11.025,
+    // and half up is 11.03. The drink is not taxed.
+    try testing.expectEqual(@as(i64, 1103), order.tax_minor);
+    try testing.expectEqual(@as(i64, 28500 + 1103 - 2850), order.total_minor);
+}
+
+test "a fixed discount is spread over the lines and the last one takes the rest" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+    try with_tax_and_discounts(&harness);
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(.{ .apply_discount = 4 });
+
+    // Five off 285.00: the first line takes its share and the last
+    // line takes the rest, so the parts add up to the discount.
+    try testing.expectEqual(@as(i64, 500), harness.model.cart_discount_total());
+    try testing.expectEqual(@as(i64, 429), harness.model.cart_discount_share(0));
+    try testing.expectEqual(@as(i64, 71), harness.model.cart_discount_share(1));
+
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    try testing.expectEqual(@as(i64, 500), order.discount_minor);
+    // The tax is on 240.71 at five percent: 12.035, and half up.
+    try testing.expectEqual(@as(i64, 1204), order.tax_minor);
+    try testing.expectEqual(@as(i64, 28500 + 1204 - 500), order.total_minor);
+}
+
 test "a payment is taken once" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

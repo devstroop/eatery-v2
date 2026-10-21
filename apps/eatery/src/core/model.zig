@@ -345,6 +345,10 @@ pub const Model = struct {
     cart_len: usize = 0,
     /// The order type of the open cart.
     cart_order_type: domain.OrderType = .dine_in,
+    /// The discount the cashier has applied to the cart, zero for none.
+    /// The view binds it: the discount that is chosen is the one that
+    /// is highlighted.
+    cart_discount_id: i64 = 0,
 
     // ------------------------------------------------------- app runtime
 
@@ -498,6 +502,75 @@ pub const Model = struct {
             if (slab.id == slab_id) return slab;
         }
         return null;
+    }
+
+    /// The tax on an amount, at a rate, in the business's mode.
+    pub fn tax_on(model: *const Model, amount_minor: i64, rate_bps: i64) i64 {
+        return taxOn(amount_minor, rate_bps, model.tax_inclusive);
+    }
+
+    /// The discount on the cart, in minor units.
+    ///
+    /// A percentage discount is a share of the cart; a fixed amount is
+    /// itself. The discount is never more than the cart is worth.
+    pub fn cart_discount_total(model: *const Model) i64 {
+        if (model.cart_discount_id == 0) return 0;
+        const subtotal = model.cart_total_minor();
+        if (subtotal <= 0) return 0;
+        for (model.discounts_list) |discount| {
+            if (discount.id != model.cart_discount_id) continue;
+            if (!discount.active) return 0;
+            if (discount.percent_bps > 0) {
+                return @min(@divTrunc(subtotal * discount.percent_bps, 10000), subtotal);
+            }
+            return @min(discount.amount_minor, subtotal);
+        }
+        return 0;
+    }
+
+    /// The discount that lands on the cart line at `index`.
+    ///
+    /// The discount is spread across the lines in proportion to what
+    /// they are worth, and the LAST line takes the remainder, so the
+    /// parts add up to the discount exactly and the arithmetic stays
+    /// whole numbers. The tax is worked out on what is left of each
+    /// line, which is what the customer actually pays for it.
+    pub fn cart_discount_share(model: *const Model, index: usize) i64 {
+        const total = model.cart_discount_total();
+        if (total <= 0) return 0;
+        if (index >= model.cart_len) return 0;
+        const subtotal = model.cart_total_minor();
+        if (subtotal <= 0) return 0;
+        var allocated: i64 = 0;
+        for (model.cart[0..index]) |line| {
+            allocated += @divTrunc(total * line.price_minor * line.qty, subtotal);
+        }
+        const remaining = total - allocated;
+        if (remaining <= 0) return 0;
+        if (index + 1 == model.cart_len) return remaining;
+        const line = model.cart[index];
+        return @min(@divTrunc(total * line.price_minor * line.qty, subtotal), remaining);
+    }
+
+    /// The tax on the cart, in minor units.
+    pub fn cart_tax_minor(model: *const Model) i64 {
+        var tax: i64 = 0;
+        for (model.cart[0..model.cart_len], 0..) |line, index| {
+            const taxable = line.price_minor * line.qty - model.cart_discount_share(index);
+            tax += model.tax_on(taxable, model.product_tax_bps(line.product_id));
+        }
+        return tax;
+    }
+
+    /// What the customer pays for the cart.
+    ///
+    /// An exclusive price does not carry its tax, so the tax is added;
+    /// an inclusive one does, so the tax is a memo and the price is
+    /// the total. The discount comes off either way.
+    pub fn cart_amount_due(model: *const Model) i64 {
+        const tax = model.cart_tax_minor();
+        const on_top = if (model.tax_inclusive) 0 else tax;
+        return model.cart_total_minor() + on_top - model.cart_discount_total();
     }
 
     /// The lines of the open order the waiter is serving.

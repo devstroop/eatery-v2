@@ -655,6 +655,21 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.cart_order_type = std.enums.fromInt(domain.OrderType, index) orelse return;
         },
 
+        .apply_discount => |discount_id| {
+            for (model.discounts_list) |discount| {
+                if (discount.id != discount_id) continue;
+                if (!discount.active) break;
+                model.cart_discount_id = discount_id;
+                model.error_text = "";
+                return;
+            }
+            model.error_text = "That discount is not one you can use";
+        },
+
+        .clear_discount => {
+            model.cart_discount_id = 0;
+        },
+
         .clear_cart => {
             model.cart_len = 0;
             model.cart_buf.reset();
@@ -1259,12 +1274,17 @@ fn placeOrder(model: *Model, fx: *Effects) void {
     }
     const order_id = model.cart_attempt_id;
 
-    // The tax, worked out line by line from each product's own slab.
-    // It is worked out before the order is built, because the order
-    // carries it.
+    // The tax, worked out line by line from each product's own slab,
+    // and on what is left of each line after the discount. It is
+    // worked out before the order is built, because the order carries
+    // it.
     var tax_minor: i64 = 0;
-    for (model.cart[0..model.cart_len]) |line| {
-        tax_minor += model.line_tax(line.product_id, line.price_minor) * line.qty;
+    var discount_minor: i64 = 0;
+    for (model.cart[0..model.cart_len], 0..) |line, index| {
+        const share = model.cart_discount_share(index);
+        discount_minor += share;
+        const taxable = line.price_minor * line.qty - share;
+        tax_minor += model.tax_on(taxable, model.product_tax_bps(line.product_id));
     }
 
     var order = domain.Order{
@@ -1281,11 +1301,11 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         .employee_id = model.employee_id,
         .subtotal_minor = model.cart_total_minor(),
         .tax_minor = tax_minor,
-        .discount_minor = 0,
+        .discount_minor = discount_minor,
         // The total is what the customer pays. An exclusive price does
         // not carry its tax, so the tax is added; an inclusive one
         // does, so the tax is a memo and the price is the total.
-        .total_minor = model.cart_total_minor() + (if (model.tax_inclusive) 0 else tax_minor),
+        .total_minor = model.cart_total_minor() + (if (model.tax_inclusive) 0 else tax_minor) - discount_minor,
         .placed_at = now,
         .notes = "",
     };
