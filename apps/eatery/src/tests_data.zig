@@ -1467,6 +1467,52 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
+test "a manager can reset an employee's PIN" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // The employee signs in with the PIN they were set up with.
+    var old_hash: [auth.hash_length]u8 = undefined;
+    const old = auth.hashPin(test_salt, "482155", &old_hash) orelse return error.NoHash;
+    harness.fx.dbExec(.{
+        .key = 931,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET pin_hash = ?1 WHERE id = 7;",
+            .params = &.{.{ .text = old }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The manager opens the reset and sets a new PIN.
+    harness.send(Msg{ .reset_employee_pin = 7 });
+    try testing.expectEqual(nav.Screen.reset_pin, harness.model.screen());
+    harness.model.form_reset_pin_buf.set("918273");
+    harness.model.form_reset_pin2_buf.set("918273");
+    harness.send(Msg{ .save_reset_pin = {} });
+
+    // The old PIN stops working and the new one works.
+    repos.loadEmployees(harness.fx);
+    harness.drain();
+
+    harness.model.signed_in = false;
+    harness.model.employee_id = 0;
+    harness.model.pin.set("482155");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+
+    harness.model.signed_in = false;
+    harness.model.employee_id = 0;
+    harness.model.pin.set("918273");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 7), harness.model.employee_id);
+}
+
 test "the walk-through takes a restaurant from nothing to a POS" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();

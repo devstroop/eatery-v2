@@ -247,6 +247,10 @@ pub const Model = struct {
     /// The forms the settings and the catalogue edit.
     form_currency_code_buf: canvas.TextBuffer(8) = .{},
     form_currency_symbol_buf: canvas.TextBuffer(8) = .{},
+    form_reset_pin_buf: canvas.TextBuffer(8) = .{},
+    form_reset_pin2_buf: canvas.TextBuffer(8) = .{},
+    form_reset_employee_id: i64 = 0,
+    form_reset_employee_name: []const u8 = "",
     form_category_name_buf: canvas.TextBuffer(64) = .{},
     form_category_id: i64 = 0,
     form_discount_name_buf: canvas.TextBuffer(64) = .{},
@@ -731,6 +735,21 @@ pub const Model = struct {
     }
 
     /// The product name in the product form.
+    /// The PIN being typed for the reset.
+    pub fn form_reset_pin(model: *const Model) []const u8 {
+        return model.form_reset_pin_buf.text();
+    }
+
+    /// The PIN being confirmed for the reset.
+    pub fn form_reset_pin2(model: *const Model) []const u8 {
+        return model.form_reset_pin2_buf.text();
+    }
+
+    /// Whose PIN is being reset.
+    pub fn form_reset_employee(model: *const Model) []const u8 {
+        return model.form_reset_employee_name;
+    }
+
     /// The name of the category being edited.
     pub fn form_category_name(model: *const Model) []const u8 {
         return model.form_category_name_buf.text();

@@ -1038,8 +1038,6 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_categories => go(model, .categories),
 
-        .open_employees => go(model, .employees),
-
         .edit_product => |id| openProductForm(model, id),
 
         .new_product => openProductForm(model, 0),
@@ -1064,9 +1062,48 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .edit_employee => |id| openEmployeeForm(model, id),
 
-        .new_employee => openEmployeeForm(model, 0),
+        .open_employees => go(model, .employees),
 
-        .save_employee => saveEmployee(model, fx),
+        .reset_employee_pin => |id| {
+            model.form_reset_employee_id = id;
+            model.form_reset_employee_name = "";
+            model.form_reset_pin_buf.set("");
+            model.form_reset_pin2_buf.set("");
+            for (model.employees) |employee| {
+                if (employee.id != id) continue;
+                model.form_reset_employee_name = employee.name;
+                break;
+            }
+            go(model, .reset_pin);
+        },
+
+        .form_reset_pin_edit => |event| model.form_reset_pin_buf.apply(event),
+
+        .form_reset_pin2_edit => |event| model.form_reset_pin2_buf.apply(event),
+
+        .save_reset_pin => {
+            const pin = model.form_reset_pin_buf.text();
+            if (model.form_reset_employee_id == 0) {
+                model.error_text = "Nobody is having their PIN reset";
+                return;
+            }
+            if (!model.pin_is_acceptable(pin)) {
+                model.error_text = "A PIN is six digits or more, and digits only";
+                return;
+            }
+            if (!std.mem.eql(u8, pin, model.form_reset_pin2_buf.text())) {
+                model.error_text = "The two PINs do not match";
+                return;
+            }
+            var hash: [auth.hash_length]u8 = undefined;
+            const hashed = auth.hashPin(model.pin_salt(), pin, &hash) orelse {
+                model.error_text = "Could not hash the PIN - try again";
+                return;
+            };
+            model.busy = true;
+            model.error_text = "";
+            repos.saveEmployeePin(fx, repos.key_save_employee, model.form_reset_employee_id, hashed);
+        },
 
         .employee_saved => |result| {
             model.busy = false;
@@ -1078,6 +1115,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadEmployees(fx);
             go(model, .employees);
         },
+
+        .new_employee => openEmployeeForm(model, 0),
+
+        .save_employee => saveEmployee(model, fx),
 
         .reservations_loaded => |result| {
             if (result.outcome != .ok) return;

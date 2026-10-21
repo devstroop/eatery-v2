@@ -178,8 +178,6 @@ pub const Msg = union(enum) {
     open_catalogue,
     /// Open the categories the menu is organised by.
     open_categories,
-    /// Back to the people.
-    open_employees,
     /// Edit the product with this id.
     edit_product: i64,
     /// Start a new product.
@@ -189,12 +187,21 @@ pub const Msg = union(enum) {
     /// The product was saved.
     product_saved: native_sdk.EffectDbResult,
 
+    /// Reset an employee's PIN.
+    reset_employee_pin: i64,
+    /// The reset form changed.
+    form_reset_pin_edit: canvas.TextInputEvent,
+    form_reset_pin2_edit: canvas.TextInputEvent,
+    /// Save the new PIN.
+    save_reset_pin,
     /// The employee form changed.
     form_employee_name_edit: canvas.TextInputEvent,
     /// The employee's role.
     form_employee_role: i64,
     /// Edit the employee with this id.
     edit_employee: i64,
+    /// Back to the employees.
+    open_employees,
     /// Start a new employee.
     new_employee,
     /// Save the employee.

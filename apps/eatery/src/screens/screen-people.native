@@ -26,9 +26,10 @@
     <scroll grow="1">
       <column gap="4">
         <for each="employees" key="id" as="employee">
-          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_employee:{employee.id}">
-            <text grow="1">{employee.name}</text>
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1" on-press="edit_employee:{employee.id}">{employee.name}</text>
             <badge>{employee.role_label}</badge>
+            <button size="sm" variant="ghost" on-press="reset_employee_pin:{employee.id}">Reset PIN</button>
           </row>
         </for>
       </column>
@@ -65,6 +66,41 @@
           <spacer grow="1"/>
           <button variant="primary" on-press="save_employee">Save</button>
         </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The PIN reset. An employee forgets their PIN, and the only way
+     to help them is to set a new one. The old one is gone the moment
+     the new one is written: a hash is replaced, not added. -->
+
+<template name="screen-reset-pin">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Reset {form_reset_employee}'s PIN</text>
+      <button size="sm" variant="ghost" on-press="open_employees">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_reset_pin}"
+          placeholder="6 digits"
+          label="New PIN"
+          on-input="form_reset_pin_edit"
+        />
+        <text-field
+          text="{form_reset_pin2}"
+          placeholder="again"
+          label="Confirm PIN"
+          on-input="form_reset_pin2_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_reset_pin">Reset the PIN</button>
+        </row>
+        <text size="sm" foreground="text_muted">The old PIN stops working the moment this is written.</text>
       </column>
     </card>
   </column>

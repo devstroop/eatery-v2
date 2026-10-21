@@ -396,6 +396,25 @@ pub fn loadCustomers(fx: *Effects) void {
     });
 }
 
+/// Replace an employee's PIN.
+///
+/// A hash is replaced, not added: the old one stops working the moment
+/// the new one is written, which is what a reset means.
+pub fn saveEmployeePin(fx: *Effects, key: u64, employee_id: i64, hash: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = hash },
+        .{ .integer = employee_id },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET pin_hash = ?1 WHERE id = ?2;",
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.employee_saved),
+    });
+}
+
 /// Write a category: a new one, or the one the form is editing.
 pub fn saveCategory(fx: *Effects, key: u64, id: i64, name: []const u8, at: i64) void {
     var params: [3]native_sdk.EffectDbValue = .{
