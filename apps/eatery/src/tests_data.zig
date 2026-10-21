@@ -1359,6 +1359,31 @@ test "the setup refuses a PIN that does not match" {
     try testing.expect(!harness.model.signed_in);
 }
 
+test "the customers load into the model" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A customer the restaurant knows.
+    harness.fx.dbExec(.{
+        .key = 925,
+        .statements = &.{.{
+            .sql = "INSERT INTO customer (id, name, phone, email, loyalty_points, created_at) VALUES (1, 'Asha', '99900', 'asha@example.com', 10, 0);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The boot load brings them in. The customers screen and the count
+    // beside the dashboard tile were both empty, always: the repository
+    // was there, and nothing ever called it.
+    repos.loadAll(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.customer_count());
+    try testing.expectEqualStrings("Asha", harness.model.customers[0].name);
+}
+
 test "the setup's symbol is the symbol, not the code" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();

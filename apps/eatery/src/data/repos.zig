@@ -440,6 +440,7 @@ pub fn loadAll(fx: *Effects) void {
     loadProducts(fx);
     loadTables(fx);
     loadEmployees(fx);
+    loadCustomers(fx);
     loadOrders(fx);
     loadOrderLines(fx);
 }
