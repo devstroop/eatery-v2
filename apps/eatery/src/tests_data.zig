@@ -36,6 +36,10 @@ const Model = core.Model;
 const Msg = msg_mod.Msg;
 const Effects = native_sdk.Effects(Msg);
 
+/// The installation salt, in the shape the app makes it: sixty-four
+/// hex characters.
+const test_salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 /// The app's migrations, embedded. The same files the CLI turns into
 /// `migrations.zig` for the runtime - the test applies them itself so
 /// it can bring up an in-memory database.
@@ -316,6 +320,37 @@ test "an order is written, read back, and its status advances" {
     repos.loadOrders(harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
+}
+
+/// The PIN hash the database holds for an employee, copied into
+/// `out`.
+///
+/// The page bytes are drain scratch, so the hash is copied before the
+/// next message takes the memory - and the copy is the caller's, because
+/// a slice of a local buffer would be dead before the caller reads it.
+fn storedPinHash(harness: *Harness, employee_id: i64, out: []u8) ![]const u8 {
+    harness.fx.dbQuery(.{
+        .key = 921,
+        .sql = "SELECT pin_hash FROM employee WHERE id = ?1;",
+        .params = &.{.{ .integer = employee_id }},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    var length: usize = 0;
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                const text = reader.textOf(&values, "pin_hash");
+                length = @min(text.len, out.len);
+                @memcpy(out[0..length], text[0..length]);
+            },
+            else => {},
+        }
+    }
+    return out[0..length];
 }
 
 /// The number of rows a query returns, read straight from the channel.
@@ -630,6 +665,43 @@ test "a payment is taken once" {
     try testing.expectEqual(@as(i64, 1), history);
 }
 
+test "an old PIN is rewritten in the modern form the next time it signs in" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // An employee whose PIN was hashed before bcrypt.
+    var legacy: [auth.legacy_len]u8 = undefined;
+    const old = auth.legacyHash(test_salt, "4821", &legacy) orelse return error.NoHash;
+    harness.fx.dbExec(.{
+        .key = 920,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+            .params = &.{.{ .text = old }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+    harness.model.pin.set("4821");
+    harness.send(Msg{ .submit_login = {} });
+
+    // The sign-in worked: an employee whose PIN was hashed before
+    // bcrypt can still sign in.
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+
+    // And the row now holds the modern hash, so the next guess against
+    // the database is a slow one.
+    var stored_buffer: [256]u8 = undefined;
+    const stored = try storedPinHash(&harness, 1, &stored_buffer);
+    try testing.expect(!auth.isLegacy(stored));
+    try testing.expect(auth.verifyPin(test_salt, "4821", stored));
+    try testing.expect(!auth.verifyPin(test_salt, "4822", stored));
+}
+
 test "the order number is a sequence" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
@@ -790,23 +862,22 @@ test "a PIN only matches the hash of the salted PIN" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 901,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
 
     // The right PIN finds the operator.
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
     harness.model.pin.set("4821");
     harness.send(Msg{ .submit_login = {} });
@@ -817,8 +888,8 @@ test "a PIN only matches the hash of the salted PIN" {
     // The wrong PIN does not.
     var other = try Harness.start(testing.allocator);
     defer other.deinit();
-    @memcpy(other.model.pin_salt_buf[0..salt.len], salt);
-    other.model.pin_salt_len = salt.len;
+    @memcpy(other.model.pin_salt_buf[0..test_salt.len], test_salt);
+    other.model.pin_salt_len = test_salt.len;
     other.model.salt_state = .confirmed;
     other.model.pin.set("9999");
     other.send(Msg{ .submit_login = {} });
@@ -830,22 +901,21 @@ test "back from home after a sign-in stays home" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 902,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
 
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
     harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
@@ -866,22 +936,21 @@ test "signing out clears the cart and the operator" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 903,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
 
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
     harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
@@ -915,22 +984,21 @@ test "an employee's PIN only opens the mode they are stored for" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 904,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Ravi', 1, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
 
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
     // The till is in admin mode: a waiter's PIN is refused.
@@ -1010,16 +1078,15 @@ test "a sign-in waits for the database to confirm the salt" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(salt, "4821", &hash);
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
     harness.fx.dbExec(.{
         .key = 903,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
-            .params = &.{.{ .text = &hash }},
+            .params = &.{.{ .text = hashed }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
@@ -1099,9 +1166,8 @@ test "the setup writes the company, the operator and the starter menu" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
-    const salt = "a1b2c3d4";
-    @memcpy(harness.model.pin_salt_buf[0..salt.len], salt);
-    harness.model.pin_salt_len = salt.len;
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
 
     harness.model.setup_company_name.set("Sharma Restaurant");
     harness.model.setup_admin_name.set("Anita");
@@ -1153,7 +1219,7 @@ test "the setup writes the company, the operator and the starter menu" {
     // is a PIN that can never be verified.
     var stored: [128]u8 = undefined;
     const stored_len = try storedSalt(&harness, &stored);
-    try testing.expectEqualStrings(salt, stored[0..stored_len]);
+    try testing.expectEqualStrings(test_salt, stored[0..stored_len]);
 }
 
 test "the setup refuses a PIN that does not match" {

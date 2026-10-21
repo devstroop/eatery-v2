@@ -71,6 +71,7 @@ pub const key_write_product = 34;
 pub const key_write_table = 35;
 pub const key_save_salt = 36;
 pub const key_save_currency = 37;
+pub const key_save_pin_hash = 38;
 
 // ------------------------------------------------------------ queries
 
@@ -141,8 +142,8 @@ pub const config_sql =
 /// The two parameters are the PIN hash (text) and the stored role
 /// (integer) - see `rbac.employee_role`.
 pub const login_sql =
-    \\SELECT id, name, role FROM employee
-    \\WHERE pin_hash = ?1 AND role = ?2 AND active = 1
+    \\SELECT id, name, role, pin_hash FROM employee
+    \\WHERE (pin_hash = ?1 OR pin_hash = ?2) AND role = ?3 AND active = 1
     \\LIMIT 1;
 ;
 
@@ -996,6 +997,27 @@ pub fn saveProduct(
 }
 
 /// Save an employee. An employee of id zero is a new one.
+/// Rewrite an employee's PIN hash in the modern form.
+///
+/// The sign-in finds the employee by the hash it computes, so the row
+/// keeps the hash it was given - but an old SHA-256 digest is worth
+/// nothing to an attacker with the database, and this is the moment to
+/// replace it.
+pub fn savePinHash(fx: *Effects, key: u64, employee_id: i64, hash: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = hash },
+        .{ .integer = employee_id },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET pin_hash = ?1 WHERE id = ?2;",
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.pin_rehashed),
+    });
+}
+
 pub fn saveEmployee(
     fx: *Effects,
     key: u64,

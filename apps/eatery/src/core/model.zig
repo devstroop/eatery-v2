@@ -99,6 +99,9 @@ pub const Model = struct {
         "salt_state",
         "last_issued_order_id",
         "advance_order_id",
+        "login_hash",
+        "login_hash_len",
+        "login_legacy_hash",
     };
 
     // ------------------------------------------------------------ session
@@ -330,7 +333,15 @@ pub const Model = struct {
     cart_attempt_id: i64 = 0,
     /// The hash of the PIN being checked. Lives in the model so the
     /// query parameter has a stable home.
-    login_hash: [64]u8 = undefined,
+    login_hash: [auth.hash_length]u8 = undefined,
+    /// The length of the hash in `login_hash`. The buffer is larger
+    /// than the string, so the length is what says where it ends.
+    login_hash_len: usize = 0,
+    /// The OLD hash of the same PIN - a SHA-256 digest. It is what the
+    /// sign-in looks up as well, so a restaurant whose employees signed
+    /// in before bcrypt can still sign in; the next sign-in rewrites
+    /// the row in the new form.
+    login_legacy_hash: [auth.legacy_len]u8 = undefined,
     /// Storage for the signed-in operator's name.
     operator_buf: bump.Bump(1024) = .{},
     /// Why the last sign-in failed, or empty.

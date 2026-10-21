@@ -349,8 +349,11 @@ fn submitSetup(model: *Model, fx: *Effects) void {
 
     // The PIN is hashed with the installation salt, exactly as it is
     // at every other sign-in. The plaintext never reaches the disk.
-    var hash: [auth.hex_len]u8 = undefined;
-    auth.hashPin(model.pin_salt(), pin, &hash);
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(model.pin_salt(), pin, &hash) orelse {
+        model.setup_error = "Could not hash the PIN - try again";
+        return;
+    };
 
     const code = std.mem.trim(u8, model.setup_currency_code.text(), " ");
     const symbol = std.mem.trim(u8, model.setup_currency_symbol.text(), " ");
@@ -364,7 +367,7 @@ fn submitSetup(model: *Model, fx: *Effects) void {
         if (code.len == 0) "USD" else code,
         if (symbol.len == 0) "$" else symbol,
         admin,
-        &hash,
+        hashed,
         model.pin_salt(),
         fx.wallMs(),
     );
@@ -432,7 +435,18 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.login_error = "Enter your PIN";
                 return;
             }
-            auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash);
+            // The hash the sign-in looks up: the slow one, and the
+            // old fast one, so an employee whose PIN was hashed
+            // before bcrypt can still sign in.
+            const hashed = auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash) orelse {
+                model.login_error = "Could not check the PIN - try again";
+                return;
+            };
+            model.login_hash_len = hashed.len;
+            const legacy = auth.legacyHash(model.pin_salt(), model.pin.text(), &model.login_legacy_hash) orelse {
+                model.login_error = "Could not check the PIN - try again";
+                return;
+            };
             fx.dbQuery(.{
                 .key = repos.key_login,
                 // The query carries the session's role: the sign-in is
@@ -440,7 +454,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // stored role matches it may hold it.
                 .sql = repos.login_sql,
                 .params = &.{
-                    .{ .text = model.login_hash[0..] },
+                    .{ .text = hashed },
+                    .{ .text = legacy },
                     .{ .integer = @intFromEnum(rbac.employee_role(model.role)) },
                 },
                 .on_result = Effects.dbMsg(.login_checked),
@@ -470,6 +485,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.pin.set("");
                 return;
             }
+            // The row's hash is the one that matched, and the PIN is
+            // what it was made from: verify it here, so a row that
+            // matched for any other reason is not a sign-in.
+            const stored = reader.textOf(&values, "pin_hash");
+            if (!auth.verifyPin(model.pin_salt(), model.pin.text(), stored)) {
+                model.login_error = "Sign-in failed - try again";
+                model.pin.set("");
+                return;
+            }
             // The session begins now. Reset before taking the name:
             // the reset clears the operator buffer the name lives in.
             const employee_id = reader.intOf(&values, "id", 0);
@@ -480,6 +504,12 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.signed_in = true;
             model.role_chosen = true;
             repos.loadAll(fx);
+            // A hash from before bcrypt is rewritten in the modern
+            // form, so the next sign-in of this employee is a slow
+            // one and the old digest stops being worth anything.
+            if (auth.isLegacy(stored)) {
+                repos.savePinHash(fx, repos.key_save_pin_hash, model.employee_id, model.login_hash[0..model.login_hash_len]);
+            }
         },
 
         .pick_role_again => {
@@ -961,6 +991,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.advance_order_id = order_id;
             model.busy = true;
             repos.setOrderStatus(fx, order_id, order.status, next, fx.wallMs());
+        },
+
+        .pin_rehashed => |result| {
+            // The rewrite is a courtesy: the sign-in has already
+            // happened, and a row that could not be rewritten is worth
+            // knowing about but not worth failing over.
+            if (result.outcome != .ok) {
+                model.error_text = "The PIN could not be upgraded - it still works";
+            }
         },
 
         .order_status_saved => |result| {
