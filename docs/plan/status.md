@@ -3,7 +3,7 @@
 > **Status:** Snapshot. Regenerate by reading the source, not by trusting
 > this page.
 > **Last verified:** 2026-10-21, by source review plus the toolchain on
-> `PATH`. `native check` passes, `native test` runs 71/71 (70 authored,
+> `PATH`. `native check` passes, `native test` runs 80/80 (79 authored,
 > one generated) and `native build` produces a ReleaseFast binary.
 > Setup, the order-write fix, the payment flow, the waiter, the kitchen
 > stations, the customer display, the settings screens and the catalogue
@@ -27,8 +27,8 @@
 | Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, payment | `repos.zig` |
 | Effect keys | 36, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 70 authored (71 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 41, green | `src/tests_data.zig` |
+| Headless tests | 79 authored (80 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
+| Database integration tests | 46, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -59,7 +59,7 @@
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 70 authored + 41 DB tests pass; no sale smoke |
+| Testing | Partial | 79 authored + 46 DB tests pass; no sale smoke |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -125,7 +125,7 @@ a docs change.
 | D13 | Order insert omitted `orders.updated_at`, which is `NOT NULL` with no default | `src/data/repos.zig` (`saveOrder`), `src/schema/0005_orders.sql` | Every order write failed (B-001); fixed in the working tree, not committed |
 | D14 | ~~Login query ignores `employee.role`; the chosen role decides the session~~ | `src/core/update.zig` (`login_checked`), `src/data/repos.zig` (`login_sql`) | FIXED: the query asks for the session's role and the returned row is checked against it (B-002) |
 | D15 | Order table/customer ids were written as `0`, not `NULL` | `src/core/update.zig` (`placeOrder`) | Failed with FKs on; fixed in the working tree (B-005) |
-| D16 | `decodeCompany` kept slices into page drain memory | `src/data/repos.zig` (`decodeCompany`) | Company name/currency dangled; fixed in the working tree (B-004) |
+| D16 | ~~`decodeCompany` kept slices into page drain memory~~ | `src/data/repos.zig` (`decodeCompany`) | FIXED: every decoder copies text into the model's bump buffer, and a regression test overwrites the page after decoding to prove it (B-004) |
 | D17 | ~~PIN is a fast SHA-256 over four digits, with no lockout or masking~~ | `src/data/auth.zig`, `src/screens/screen-login.native` | FIXED: bcrypt at 2^10 rounds, six digits, and the till stops after five wrong PINs. The PIN field is still typed in the clear: the SDK has no masked text field (B-027, [ADR-0016](../decisions/0016-what-a-pin-is.md)) |
 | D18 | Setup exists but has gaps (currency symbol field, no disabled submit) | `src/screens/screen-setup.native`, `src/core/update.zig` | A fresh install can start, but setup is not trustworthy (G-001) |
 | D19 | ~~Status advance is not conditional; history can duplicate~~ | `src/core/update.zig` (`advance_order`), `src/data/repos.zig` (`setOrderStatus`) | FIXED: the move happens only from the status the order is in, and the history is written only when it did (B-008) |
@@ -192,6 +192,7 @@ now defers detailed evidence to the [review set](../review/README.md).
 | A sign-in waits for the database to confirm the salt | Auth |
 | A failed salt write is not a confirmed salt | Auth |
 | The page decoder | Data |
+| A decoded company does not point at the page bytes | Data |
 | Derived counts | Model |
 | Layout survives resize | Markup |
 | The shell gates the screens the enum says it does | Navigation |
@@ -200,8 +201,9 @@ now defers detailed evidence to the [review set](../review/README.md).
 | Every effect key names one effect and no two | Data |
 | Every light and dark text pair clears WCAG AA | Theme |
 
-Not covered: every decoder except the generic page reader, timer, error
-arms, the sidecars, and a sale through the UI.
+Not covered: every decoder except the generic page reader and the
+company decoder, timer, error arms, the sidecars, and a sale through the
+UI.
 
 ## What "done" would add
 

@@ -664,6 +664,51 @@ test "the page decoder reads the engine's dialect" {
     try testing.expect(!reader.nextRow(&values));
 }
 
+test "a decoded company does not point at the page bytes" {
+    // The page bytes are drain scratch: they are valid for the update
+    // that receives them and dead after it. Build a company page, decode
+    // it, then overwrite the whole page. Every text the model kept must
+    // still read back, because the decoder copied it into the model.
+    var bytes: std.ArrayList(u8) = .empty;
+    defer bytes.deinit(testing.allocator);
+
+    try appendInt(&bytes, 9); // column count
+    try appendInt(&bytes, 1); // row count
+    for ([_][]const u8{
+        "id",          "name",           "currency_code", "currency_symbol", "tax_inclusive",
+        "address",     "phone",          "tax_number",    "currency_decimals",
+    }) |name| {
+        try appendBytes(&bytes, name);
+    }
+    try appendTag(&bytes, 1);
+    try appendI64(&bytes, 7);
+    try appendText(&bytes, "Test Diner");
+    try appendText(&bytes, "USD");
+    try appendText(&bytes, "$");
+    try appendTag(&bytes, 1);
+    try appendI64(&bytes, 0);
+    try appendText(&bytes, "12 MG Road");
+    try appendText(&bytes, "+91 98765 43210");
+    try appendText(&bytes, "29ABCDE1234F1Z5");
+    try appendTag(&bytes, 1);
+    try appendI64(&bytes, 2);
+
+    var model = main.initialModel();
+    repos.decodeCompany(&model, bytes.items);
+
+    try testing.expectEqualStrings("Test Diner", model.company_name_field);
+    try testing.expectEqualStrings("12 MG Road", model.company_address_field);
+
+    @memset(bytes.items, 0xAA);
+
+    try testing.expectEqualStrings("Test Diner", model.company_name_field);
+    try testing.expectEqualStrings("12 MG Road", model.company_address_field);
+    try testing.expectEqualStrings("+91 98765 43210", model.company_phone_field);
+    try testing.expectEqualStrings("29ABCDE1234F1Z5", model.company_tax_field);
+    try testing.expectEqualStrings("USD", model.currency_code);
+    try testing.expectEqualStrings("$", model.currency_symbol);
+}
+
 test "the model reports its own numbers instead of storing them" {
     var model = main.initialModel();
     model.orders = &.{
