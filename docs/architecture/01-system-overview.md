@@ -148,6 +148,7 @@ anchor.
 | I7 | The `Screen` enum is append-only. | `src/core/navigation.zig:47`; markup compares indices |
 | I8 | Every imported template is in `app_sources.zig`. | `src/app_sources.zig`; import fails loudly |
 | I9 | A navigation is never refused because the stack is full. | `Stack.push` is a no-op on the current screen and drops the oldest entry at depth 32 ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
+| I10 | Every text pair in both palettes clears WCAG AA. | the contrast test in `src/tests.zig`; token table in [ui-components](ui-components.md) |
 
 ## Current boundary of the system
 
@@ -160,7 +161,7 @@ Implemented end to end today:
 - floor table board (read-only);
 - kitchen board with lifecycle advance;
 - 43-table schema, 11 migrations, core repositories;
-- 69 authored headless tests, of which 41 run against an in-memory database.
+- 70 authored headless tests, of which 41 run against an in-memory database.
 
 Not implemented, despite appearing as types or tables:
 

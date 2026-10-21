@@ -20,13 +20,16 @@ const Model = core.Model;
 
 /// Eatery's brand palette.
 const brand = struct {
-    const primary = rgb(0x30, 0xA8, 0xCF); // v1 primary - the cyan blue
-    const primary_dark = rgb(0x22, 0x7A, 0x96);
+    // The light semantic fills are the darkest step of the v1 hues that
+    // clears WCAG AA with white text, and as text on the light
+    // background and surface. The test in tests.zig is the guard.
+    const primary = rgb(0x17, 0x6B, 0x84); // v1 cyan blue, one step down
+    const primary_dark = rgb(0x12, 0x56, 0x6A);
     const secondary = rgb(0x4A, 0xC3, 0xA1); // v1 secondary - the teal green
     const accent = rgb(0x70, 0x5E, 0xE0); // v1 accent - the purple
-    const success = rgb(0x2F, 0x9E, 0x69);
-    const warning = rgb(0xC8, 0x7A, 0x14);
-    const danger = rgb(0xD9, 0x43, 0x35);
+    const success = rgb(0x1B, 0x6E, 0x47);
+    const warning = rgb(0x87, 0x52, 0x0C);
+    const danger = rgb(0xB3, 0x2D, 0x22);
     const info = rgb(0x2F, 0x5E, 0xC2);
 };
 

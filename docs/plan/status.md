@@ -3,7 +3,7 @@
 > **Status:** Snapshot. Regenerate by reading the source, not by trusting
 > this page.
 > **Last verified:** 2026-10-21, by source review plus the toolchain on
-> `PATH`. `native check` passes, `native test` runs 70/70 (69 authored,
+> `PATH`. `native check` passes, `native test` runs 71/71 (70 authored,
 > one generated) and `native build` produces a ReleaseFast binary.
 > Setup, the order-write fix, the payment flow, the waiter, the kitchen
 > stations, the customer display, the settings screens and the catalogue
@@ -27,7 +27,7 @@
 | Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, payment | `repos.zig` |
 | Effect keys | 36, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 69 authored (70 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
+| Headless tests | 70 authored (71 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
 | Database integration tests | 41, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
@@ -42,7 +42,7 @@
 | Role picker and login | Partial | Salted SHA-256, kiosk sign-in and first-run setup exist; the sign-in now checks the employee's stored role (B-002) and waits for the database to confirm the salt (B-003); the PIN is still a fast digest with no lockout (B-027) |
 | RBAC and navigation | Implemented core | 45 screens, 4 roles, one guard, a session-scoped stack ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
 | Screen coverage | Partial | 31 of 45 screens are mounted and render; 14 have no template yet |
-| Theming | Implemented | Light/dark semantic tokens |
+| Theming | Implemented | Light/dark semantic tokens; every text pair is asserted against WCAG AA |
 | Shell layout | Partial | Fixed rail + content; no responsive mode |
 | Dashboard | Implemented | Counts, recent orders, shortcuts; money is hard-coded to 2 decimals (B-013) |
 | POS | Partial | Menu, filter, cart, order types and discounts work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; the tax is worked out line by line from each product's slab. No modifiers, and the currency's decimals are still two |
@@ -59,7 +59,7 @@
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 69 authored + 41 DB tests pass; no sale smoke |
+| Testing | Partial | 70 authored + 41 DB tests pass; no sale smoke |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -198,9 +198,10 @@ now defers detailed evidence to the [review set](../review/README.md).
 | Every gated screen renders, inside the widget budget | Markup |
 | Every screen builds a view inside the budget | Markup |
 | Every effect key names one effect and no two | Data |
+| Every light and dark text pair clears WCAG AA | Theme |
 
-Not covered: every decoder except the generic page reader, theme tokens,
-timer, error arms, the sidecars, and a sale through the UI.
+Not covered: every decoder except the generic page reader, timer, error
+arms, the sidecars, and a sale through the UI.
 
 ## What "done" would add
 

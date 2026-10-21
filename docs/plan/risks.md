@@ -83,7 +83,7 @@ owner is not being managed.
 |---|---|---|---|---|---|
 | U1 | No keyboard flow for a busy counter | med | med | Keyboard shortcuts and focus order | Design/Eng |
 | U2 | Tiny touch targets on a tablet | med | med | Touch layout mode if tablet is in scope | Design |
-| U3 | Dark-mode contrast is unverified | med | low | Contrast audit | Design |
+| U3 | Non-text contrast and real screen composition are unverified | med | low | Contrast audit beyond the token-pair test | Design |
 | U4 | Error copy is technical and not actionable | med | med | Copy review per error arm | Design |
 | U5 | A printing failure blocks a sale | med | high | Commit the sale before printing; show retry | Product |
 | U6 | Clock skew makes waiting times wrong | med | low | Monotonic elapsed time from `placed_at` | Eng |
