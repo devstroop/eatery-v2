@@ -43,6 +43,22 @@ pub const dishes = [_]Dish{
 /// The categories the starter menu uses, in menu order.
 pub const categories = [_][]const u8{ "Starters", "Mains", "Breads", "Drinks" };
 
+/// The kitchen stations the starter menu is cooked in. A product's
+/// station is chosen by its kind: drinks are the bar's, everything
+/// else is the kitchen's.
+pub const stations = [_]struct { name: []const u8 }{
+    .{ .name = "Kitchen" },
+    .{ .name = "Bar" },
+};
+
+/// The station a starter dish is cooked in.
+pub fn stationOf(dish: Dish) usize {
+    return switch (dish.product_type) {
+        .beverage => 2,
+        else => 1,
+    };
+}
+
 /// The table category the starter floor uses.
 pub const table_category = "Main room";
 

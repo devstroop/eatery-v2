@@ -44,6 +44,110 @@ pub fn boot(model: *Model, fx: *Effects) void {
     repos.loadCompany(fx);
 }
 
+/// A new order on the board gets a sound. The kitchen hears the sale
+/// without looking at the screen - and the cashier hears it too, which
+/// is how a second cashier knows a table needs serving.
+fn announceNewOrder(model: *Model, fx: *Effects) void {
+    var newest: i64 = model.last_seen_order_id;
+    for (model.orders) |order| {
+        if (order.id > newest) newest = order.id;
+    }
+    if (newest == model.last_seen_order_id) return;
+    const first_time = model.last_seen_order_id == 0;
+    model.last_seen_order_id = newest;
+    // The first board of the shift is not a new sale: the kitchen has
+    // not been watching yet.
+    if (first_time) return;
+    fx.playAudio(.{
+        .key = repos.key_chime,
+        .path = "assets/chime.wav",
+        .on_event = Effects.audioMsg(.audio_event),
+    });
+}
+
+/// Keep the waiter's cart in step with the database: the lines of the
+/// order they are serving, with their names copied (the shared
+/// order-line buffer is reset on every read).
+fn keepActiveOrder(model: *Model) void {
+    if (model.active_order_id == 0) {
+        model.active_lines = &.{};
+        return;
+    }
+    var count: usize = 0;
+    for (model.order_lines) |line| {
+        if (line.order_id == model.active_order_id) count += 1;
+    }
+    model.waiter_lines_buf.reset();
+    const list = model.waiter_lines_buf.allocSlice(domain.OrderLine, count) orelse {
+        model.active_lines = &.{};
+        return;
+    };
+    var index: usize = 0;
+    for (model.order_lines) |line| {
+        if (line.order_id != model.active_order_id) continue;
+        list[index] = .{
+            .id = line.id,
+            .order_id = line.order_id,
+            .product_id = line.product_id,
+            .station_id = line.station_id,
+            .product_name = model.waiter_lines_buf.dupe(line.product_name) orelse "",
+            .qty = line.qty,
+            .unit_price_minor = line.unit_price_minor,
+            .tax_bps = line.tax_bps,
+            .notes = line.notes,
+        };
+        index += 1;
+    }
+    model.active_lines = list[0..index];
+}
+
+/// The waiter picked a table. If the table already has an open order,
+/// the waiter joins it; if it is free, a new order is opened for it.
+fn selectTable(model: *Model, fx: *Effects, table_id: i64) void {
+    const table = findTable(model, table_id) orelse return;
+    model.waiter_buf.reset();
+    model.active_table_id = table.id;
+    model.active_table_name_field = model.waiter_buf.dupe(table.name) orelse "";
+
+    // Does the table already have an open order?
+    for (model.orders) |order| {
+        if (order.dining_table_id != table.id) continue;
+        switch (order.status) {
+            .pending, .preparing, .ready, .served => {
+                model.active_order_id = order.id;
+                go(model, .waiter_menu);
+                repos.loadOrderLines(fx);
+                return;
+            },
+            .completed, .voided => {},
+        }
+    }
+
+    // A free table: open an order for it.
+    model.pending_order_id = fx.wallMs();
+    var number_buffer: [16]u8 = undefined;
+    const number = makeOrderNo(&number_buffer, model.pending_order_id);
+    repos.openOrderForTable(fx, repos.key_open_order, table.id, model.employee_id, number, model.pending_order_id);
+}
+
+/// Add a product to the open order the waiter is serving.
+fn addToOrder(model: *Model, fx: *Effects, product_id: i64) void {
+    if (model.active_order_id == 0) {
+        model.error_text = "Pick a table first";
+        return;
+    }
+    const product = findProduct(model, product_id) orelse return;
+    repos.addOrderLine(
+        fx,
+        repos.key_add_line,
+        model.active_order_id,
+        product.id,
+        product.name,
+        product.price_minor,
+        fx.wallMs(),
+    );
+}
+
 /// Take the payment for the order that was just placed and close it.
 fn takePayment(model: *Model, fx: *Effects) void {
     if (model.last_order_id == 0) {
@@ -142,6 +246,23 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.signed_in = true;
                 go(model, rbac.home(role));
                 repos.loadAll(fx);
+                // The kitchen and the customer display watch the orders
+                // instead of waiting for a refresh: a live query re-runs
+                // itself when the `orders` table changes.
+                if (role == .kds or role == .display) {
+                    repos.watchOpenOrders(fx);
+                    // A live query only sees the writes THIS connection
+                    // made. The kitchen is usually another device, so
+                    // the board also re-reads on a timer: that is what
+                    // makes a sale on the cashier's machine appear on
+                    // the kitchen's screen.
+                    fx.startTimer(.{
+                        .key = repos.key_board_refresh,
+                        .interval_ms = 2000,
+                        .mode = .repeating,
+                        .on_fire = Effects.timerMsg(.refresh_orders),
+                    });
+                }
             }
         },
 
@@ -328,6 +449,41 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadOrders(fx);
         },
 
+        // ----------------------------------------------------- the waiter
+
+        .select_table => |table_id| selectTable(model, fx, table_id),
+
+        .go_waiter_tables => go(model, .waiter_tables),
+
+        .go_waiter_menu => go(model, .waiter_menu),
+
+        .go_waiter_cart => go(model, .waiter_cart),
+
+        .order_opened => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "Could not open the table";
+                return;
+            }
+            // The order exists: the waiter can add to it.
+            model.active_order_id = model.pending_order_id;
+            model.pending_order_id = 0;
+            go(model, .waiter_menu);
+            repos.loadOrderLines(fx);
+        },
+
+        .add_to_order => |product_id| addToOrder(model, fx, product_id),
+
+        .order_line_added => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "Could not add the item";
+                return;
+            }
+            // The line is on the order: read the order back so the
+            // waiter sees the running total.
+            repos.loadOrderLines(fx);
+            repos.loadOrders(fx);
+        },
+
         // ---------------------------------------------------- the payment
 
         .set_payment_mode => |id| model.payment_mode_field = id,
@@ -364,6 +520,31 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         // -------------------------------------------------- the kitchen board
+
+        .refresh_orders => |timer| {
+            if (timer.outcome != .fired) return;
+            repos.loadOrders(fx);
+        },
+
+        .set_station_filter => |id| model.station_filter_field = id,
+
+        .set_station_filter_all => model.station_filter_field = 0,
+
+        .stations_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeStations(model, result.bytes);
+        },
+
+        .product_stations_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeProductStations(model, result.bytes);
+        },
+
+        .audio_event => |event| {
+            // The chime's own outcome. A failed chime is not the
+            // operator's problem: the board still shows the order.
+            _ = event;
+        },
 
         .advance_order => |order_id| {
             const order = findOrder(model, order_id) orelse return;
@@ -414,13 +595,26 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         .orders_loaded => |result| {
-            if (result.outcome != .ok) return;
-            if (result.kind == .page) repos.decodeOrders(model, result.bytes);
+            if (result.outcome != .ok) {
+                // A board that cannot read the orders is a board that
+                // silently shows the wrong thing. Say so.
+                model.error_text = switch (result.outcome) {
+                    .rejected => "The order list is busy - try again",
+                    .busy => "The database is busy - try again",
+                    else => "Could not read the orders",
+                };
+                return;
+            }
+            if (result.kind == .page) {
+                repos.decodeOrders(model, result.bytes);
+                announceNewOrder(model, fx);
+            }
         },
 
         .order_lines_loaded => |result| {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeOrderLines(model, result.bytes);
+            keepActiveOrder(model);
         },
 
         .config_loaded => |result| {
@@ -558,6 +752,13 @@ fn findProduct(model: *const Model, product_id: i64) ?domain.Product {
     return null;
 }
 
+fn findTable(model: *const Model, table_id: i64) ?domain.DiningTable {
+    for (model.tables) |table| {
+        if (table.id == table_id) return table;
+    }
+    return null;
+}
+
 fn findOrder(model: *const Model, order_id: i64) ?domain.Order {
     for (model.orders) |order| {
         if (order.id == order_id) return order;
@@ -615,6 +816,9 @@ fn placeOrder(model: *Model, fx: *Effects) void {
             .id = now + @as(i64, @intCast(count)),
             .order_id = now,
             .product_id = line.product_id,
+            // The line carries the station that cooks it, so the kitchen
+            // board can filter by station without a join.
+            .station_id = model.station_of_product(line.product_id),
             .product_name = line.name,
             .qty = line.qty,
             .unit_price_minor = line.price_minor,
@@ -640,11 +844,20 @@ fn placeOrder(model: *Model, fx: *Effects) void {
     repos.saveOrder(fx, order, lines[0..count]);
 }
 
-/// A readable order number: the wall clock in seconds.
+/// The order number. It is the wall clock in MILLISECONDS: unique (the
+/// column is UNIQUE), sortable, and the same value as the order id, so
+/// a number on a ticket is a number you can trace. A per-day sequence
+/// ("1, 2, 3") is nicer on a receipt and is a later change.
+fn makeOrderNo(buffer: *[16]u8, at: i64) []const u8 {
+    const written = std.fmt.bufPrint(buffer, "{d}", .{at}) catch return "0";
+    return written;
+}
+
+/// The order number for the POS cart, owned by the cart's buffer.
 fn allocOrderNo(model: *Model, at: i64) []const u8 {
     const buffer = model.cart_buf.alloc(16, 1) orelse return "0";
     var out: [16]u8 = undefined;
-    const written = std.fmt.bufPrint(&out, "{d}", .{@divTrunc(at, 1000)}) catch return "0";
+    const written = makeOrderNo(&out, at);
     @memcpy(buffer[0..written.len], written);
     return buffer[0..written.len];
 }

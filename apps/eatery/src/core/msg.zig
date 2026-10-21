@@ -79,6 +79,23 @@ pub const Msg = union(enum) {
     /// The order write came back.
     order_placed: native_sdk.EffectDbResult,
 
+    // --------------------------------------------------------- the waiter
+
+    /// The waiter picked a table: open (or find) its order.
+    select_table: i64,
+    /// Back to the waiter's floor.
+    go_waiter_tables,
+    /// Back to the waiter's menu.
+    go_waiter_menu,
+    /// The waiter's open order.
+    go_waiter_cart,
+    /// Add a product to the open order of the selected table.
+    add_to_order: i64,
+    /// The order for the table was opened.
+    order_opened: native_sdk.EffectDbResult,
+    /// The line was added to the open order.
+    order_line_added: native_sdk.EffectDbResult,
+
     // -------------------------------------------------------- the payment
 
     /// The payment mode the cashier picked.
@@ -99,6 +116,24 @@ pub const Msg = union(enum) {
     /// Jump to the floor.
     open_tables,
 
+    // ------------------------------------------------------ the kitchen board
+
+    /// The board refreshes itself: the kitchen is a different device
+    /// from the cashier, and a live query only sees the writes this
+    /// connection made. A timer is what actually keeps the board
+    /// current.
+    refresh_orders: native_sdk.EffectTimer,
+    /// The board is filtered by a station.
+    set_station_filter: i64,
+    /// The board shows every station. A payload must be a BINDING, so
+    /// "every station" needs a message of its own.
+    set_station_filter_all,
+    /// The stations were loaded.
+    stations_loaded: native_sdk.EffectDbResult,
+    /// The product-to-station mapping was loaded.
+    product_stations_loaded: native_sdk.EffectDbResult,
+    /// An audio event (the chime finished, or failed).
+    audio_event: native_sdk.EffectAudio,
     // ------------------------------------------------------ kitchen board
 
     /// Move an order along its lifecycle (the order id).
@@ -148,9 +183,14 @@ pub const Msg = union(enum) {
         "config_saved",
         "setup_created",
         "payment_taken",
+        "order_opened",
+        "order_line_added",
         "db_failed",
         "order_placed",
         "order_status_saved",
         "tick",
+        "stations_loaded",
+        "product_stations_loaded",
+        "audio_event",
     };
 };

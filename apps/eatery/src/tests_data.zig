@@ -127,8 +127,14 @@ const Harness = struct {
         // The guard is a runaway check, not an error path: a message
         // that produces another message forever is a bug in `update`,
         // and the test should hang loudly rather than spin.
+        //
+        // The flush is what the runtime does at the end of a batch: a
+        // live query dirtied by the batch re-runs here, so the kitchen
+        // board sees a new order without anyone asking for it.
         var guard: usize = 0;
-        while (self.fx.takeMsg()) |msg| {
+        while (true) {
+            self.fx.flushDbSubscriptions();
+            const msg = self.fx.takeMsg() orelse break;
             main.update(&self.model, msg, self.fx);
             guard += 1;
             if (guard > 64) break;
@@ -525,4 +531,128 @@ test "taking the payment closes the order and records the money" {
     repos.loadOrders(harness.fx);
     harness.drain();
     try testing.expectEqual(nav.Screen.orders, harness.model.screen());
+}
+
+test "the waiter opens an order for a free table and adds to it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.tables = &.{
+        .{ .id = 1, .category_id = 1, .name = "T1", .status = .free, .status_label = "Free", .seats = 2, .pos_x = 0, .pos_y = 0 },
+        .{ .id = 2, .category_id = 1, .name = "T2", .status = .free, .status_label = "Free", .seats = 2, .pos_x = 1, .pos_y = 0 },
+    };
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+
+    // A free table gets a new order, numbered after the clock.
+    harness.send(.{ .select_table = 1 });
+    try testing.expect(harness.model.active_order_id != 0);
+    try testing.expectEqualStrings("T1", harness.model.active_table());
+    try testing.expectEqual(nav.Screen.waiter_menu, harness.model.screen());
+
+    // The order is on the table.
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+    try testing.expectEqual(@as(i64, 1), harness.model.orders[0].dining_table_id);
+    try testing.expect(harness.model.orders[0].order_no.len > 0);
+
+    // A dish on the order brings the order's total with it.
+    harness.send(.{ .add_to_order = 1 });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(i64, 24500), harness.model.orders[0].total_minor);
+    try testing.expectEqual(@as(i64, 24500), harness.model.orders[0].subtotal_minor);
+
+    // The waiter's cart shows the line.
+    try testing.expectEqual(@as(i64, 1), harness.model.active_order_item_count());
+    try testing.expectEqual(@as(i64, 24500), harness.model.active_order_total());
+}
+
+test "a table that already has an order is joined, not duplicated" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.tables = &.{
+        .{ .id = 1, .category_id = 1, .name = "T1", .status = .occupied, .status_label = "Occupied", .seats = 2, .pos_x = 0, .pos_y = 0 },
+    };
+    // An order is already open on the table.
+    harness.fx.dbExec(.{
+        .key = 951,
+        .statements = &.{.{
+            .sql = "INSERT INTO orders (id, order_no, order_type, status, dining_table_id, customer_id, employee_id, subtotal_minor, tax_minor, discount_minor, total_minor, placed_at, notes, created_at, updated_at) VALUES (42, '42', 0, 0, 1, NULL, 7, 0, 0, 0, 0, 1, '', 1, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+
+    harness.send(.{ .select_table = 1 });
+    try testing.expectEqual(@as(i64, 42), harness.model.active_order_id);
+
+    // And no second order was opened.
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+}
+
+test "the kitchen board's live query sees a new order" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The kitchen watches the orders.
+    repos.watchOpenOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 0), harness.model.orders.len);
+
+    // A sale lands.
+    harness.fx.dbExec(.{
+        .key = 950,
+        .statements = &.{.{
+            .sql = "INSERT INTO orders (id, order_no, order_type, status, dining_table_id, customer_id, employee_id, subtotal_minor, tax_minor, discount_minor, total_minor, placed_at, notes, created_at, updated_at) VALUES (77, '77', 0, 0, NULL, NULL, 7, 100, 0, 0, 100, 1, '', 1, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The board knows about it without anyone asking.
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+    try testing.expectEqual(@as(i64, 77), harness.model.orders[0].id);
+}
+
+test "the kitchen board filters by station" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.orders = &.{
+        .{ .id = 1, .order_no = "1", .order_type = .dine_in, .status = .pending, .status_label = "Pending", .type_label = "Dine in", .dining_table_id = 0, .customer_id = 0, .employee_id = 0, .subtotal_minor = 0, .tax_minor = 0, .discount_minor = 0, .total_minor = 0, .placed_at = 0, .notes = "" },
+        .{ .id = 2, .order_no = "2", .order_type = .dine_in, .status = .pending, .status_label = "Pending", .type_label = "Dine in", .dining_table_id = 0, .customer_id = 0, .employee_id = 0, .subtotal_minor = 0, .tax_minor = 0, .discount_minor = 0, .total_minor = 0, .placed_at = 0, .notes = "" },
+    };
+    // The first order is on the grill, the second at the bar.
+    harness.model.order_lines = &.{
+        .{ .id = 1, .order_id = 1, .product_id = 1, .station_id = 1, .product_name = "Paneer Tikka", .qty = 1, .unit_price_minor = 0, .tax_bps = 0, .notes = "" },
+        .{ .id = 2, .order_id = 2, .product_id = 2, .station_id = 2, .product_name = "Masala Chai", .qty = 1, .unit_price_minor = 0, .tax_bps = 0, .notes = "" },
+    };
+
+    // Every station sees every ticket.
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try testing.expectEqual(@as(usize, 2), harness.model.kitchen_tickets(arena).len);
+
+    // The grill sees one, the bar sees one.
+    harness.model.station_filter_field = 1;
+    try testing.expectEqual(@as(usize, 1), harness.model.kitchen_tickets(arena).len);
+    try testing.expectEqual(@as(i64, 1), harness.model.kitchen_tickets(arena)[0].id);
+
+    harness.model.station_filter_field = 2;
+    try testing.expectEqual(@as(usize, 1), harness.model.kitchen_tickets(arena).len);
+    try testing.expectEqual(@as(i64, 2), harness.model.kitchen_tickets(arena)[0].id);
 }

@@ -11,6 +11,13 @@
       <badge>{ticket_count} on the board</badge>
     </row>
 
+    <row gap="4" cross="center">
+      <toggle-button selected="{station_filter == 0}" on-toggle="set_station_filter_all">All</toggle-button>
+      <for each="stations" key="id" as="station">
+        <toggle-button selected="{station.id == station_filter}" on-toggle="set_station_filter:{station.id}">{station.name}</toggle-button>
+      </for>
+    </row>
+
     <if test="{ticket_count == 0}">
       <column background="surface" radius="md" padding="16">
         <text foreground="text_muted">Nothing cooking. The board fills up as orders land.</text>

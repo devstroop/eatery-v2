@@ -220,12 +220,20 @@ pub const KdsStation = struct {
     sort_order: i64,
 };
 
+/// Which station cooks which product.
+pub const ProductStation = struct {
+    product_id: i64,
+    station_id: i64,
+};
+
 /// One line of an order. Prices are frozen at the moment the order was
 /// taken - a price change tomorrow must not rewrite yesterday's bills.
 pub const OrderLine = struct {
     id: i64,
     order_id: i64,
     product_id: i64,
+    /// The kitchen station that cooks this line.
+    station_id: i64,
     product_name: []const u8,
     qty: i64,
     unit_price_minor: i64,

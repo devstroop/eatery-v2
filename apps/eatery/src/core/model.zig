@@ -114,6 +114,16 @@ pub const Model = struct {
     order_lines_buf: bump.Bump(order_lines_buffer) = .{},
     /// Storage for the order just placed.
     sale_buf: bump.Bump(1024) = .{},
+    /// Storage for the table the waiter is serving.
+    waiter_buf: bump.Bump(1024) = .{},
+    /// Storage for the kitchen stations.
+    stations_buf: bump.Bump(4096) = .{},
+    /// Storage for the product-to-station mapping.
+    product_stations_buf: bump.Bump(4096) = .{},
+    /// Storage for the lines of the order the waiter is serving. The
+    /// names are COPIED: the shared order-line buffer is reset every
+    /// time the lines are read again.
+    waiter_lines_buf: bump.Bump(8192) = .{},
     /// Storage for the company row's text. The page bytes are drain
     /// scratch: a name read from the database has to be COPIED before
     /// the model keeps it.
@@ -132,10 +142,35 @@ pub const Model = struct {
     /// The search text in the POS.
     search: canvas.TextBuffer(64) = .{},
 
+    // ------------------------------------------------------ the kitchen
+
+    /// Which station cooks which product.
+    product_stations: []const domain.ProductStation = &.{},
+    /// The kitchen stations, and the one the board is filtered by (0
+    /// is "every station").
+    stations_list: []const domain.KdsStation = &.{},
+    station_filter_field: i64 = 0,
+    /// The last order the board has seen. A newer one is a new sale,
+    /// and the kitchen hears about it.
+    last_seen_order_id: i64 = 0,
+
+    // --------------------------------------------------------- the waiter
+
+    /// The table the waiter is serving, and the open order on it.
+    active_table_id: i64 = 0,
+    active_table_name: []const u8 = "",
+    active_order_id: i64 = 0,
+    /// The order being opened for a table, before the database
+    /// confirms it.
+    pending_order_id: i64 = 0,
+    /// The lines of the open order.
+    active_lines: []const domain.OrderLine = &.{},
+
     // ------------------------------------------------------- the sale
 
     /// The order that was just placed: the confirmation screen shows
     /// it and the payment is taken against it.
+    active_table_name_field: []const u8 = "",
     last_order_id: i64 = 0,
     last_order_no_field: []const u8 = "",
     last_order_type_field: []const u8 = "",
@@ -234,6 +269,84 @@ pub const Model = struct {
     /// The error the operator needs to see.
     pub fn error_message(model: *const Model) []const u8 {
         return model.error_text;
+    }
+
+    /// The table the waiter is serving.
+    pub fn active_table(model: *const Model) []const u8 {
+        return model.active_table_name_field;
+    }
+
+    /// The open order the waiter is serving, or zero.
+    pub fn active_order(model: *const Model) i64 {
+        return model.active_order_id;
+    }
+
+    /// How many items the open order carries.
+    pub fn active_order_item_count(model: *const Model) i64 {
+        var count: i64 = 0;
+        for (model.active_lines) |line| count += line.qty;
+        return count;
+    }
+
+    /// What the customer display shows for each order in progress: the
+    /// table the order is on (a customer cares about the table, not the
+    /// order number), the kind of sale, and where it has got to.
+    pub fn display_cards(model: *const Model, arena: std.mem.Allocator) []const DisplayCard {
+        var count: usize = 0;
+        for (model.orders) |order| {
+            switch (order.status) {
+                .pending, .preparing, .ready, .served => count += 1,
+                .completed, .voided => {},
+            }
+        }
+        const out = arena.alloc(DisplayCard, count) catch return &.{};
+        var index: usize = 0;
+        for (model.orders) |order| {
+            switch (order.status) {
+                .pending, .preparing, .ready, .served => {},
+                .completed, .voided => continue,
+            }
+            out[index] = .{
+                .label = displayLabel(model, order.dining_table_id, order.order_no),
+                .status_label = order.status_label,
+                .type_label = order.type_label,
+                .order_no = order.order_no,
+            };
+            index += 1;
+        }
+        return out[0..index];
+    }
+
+    /// The kitchen stations, as the board's filter shows them.
+    pub fn stations(model: *const Model) []const domain.KdsStation {
+        return model.stations_list;
+    }
+
+    /// The station that cooks a product, or zero when no station does.
+    pub fn station_of_product(model: *const Model, product_id: i64) i64 {
+        for (model.product_stations) |mapping| {
+            if (mapping.product_id == product_id) return mapping.station_id;
+        }
+        return 0;
+    }
+
+    /// The station the board is filtered by.
+    pub fn station_filter(model: *const Model) i64 {
+        return model.station_filter_field;
+    }
+
+    /// The lines of the open order the waiter is serving.
+    pub fn active_order_lines(model: *const Model) []const domain.OrderLine {
+        return model.active_lines;
+    }
+
+    /// The total of the open order the waiter is serving.
+    pub fn active_order_total(model: *const Model) i64 {
+        var total: i64 = 0;
+        for (model.active_lines) |line| {
+            total += line.unit_price_minor * line.qty;
+        }
+        return total;
     }
 
     /// The order number of the order just placed.
@@ -524,7 +637,9 @@ pub const Model = struct {
         var count: usize = 0;
         for (model.orders) |order| {
             switch (order.status) {
-                .pending, .preparing, .ready => count += 1,
+                .pending, .preparing, .ready => {
+                    if (orderOnStation(model, order.id, model.station_filter_field)) count += 1;
+                },
                 .served, .completed, .voided => {},
             }
         }
@@ -532,7 +647,9 @@ pub const Model = struct {
         var index: usize = 0;
         for (model.orders) |order| {
             switch (order.status) {
-                .pending, .preparing, .ready => {},
+                .pending, .preparing, .ready => {
+                    if (!orderOnStation(model, order.id, model.station_filter_field)) continue;
+                },
                 .served, .completed, .voided => continue,
             }
             out[index] = .{
@@ -593,6 +710,25 @@ pub const CartRow = struct {
     total_minor: i64,
 };
 
+/// One card on the customer display.
+pub const DisplayCard = struct {
+    /// The table the order is on, or the order number when the order
+    /// is not for a table.
+    label: []const u8,
+    status_label: []const u8,
+    type_label: []const u8,
+    order_no: []const u8,
+};
+
+/// The name of the table an order is on. A take-away order has no
+/// table, so it falls back to the order number.
+fn displayLabel(model: *const Model, table_id: i64, order_no: []const u8) []const u8 {
+    for (model.tables) |table| {
+        if (table.id == table_id) return table.name;
+    }
+    return order_no;
+}
+
 /// One ticket on the kitchen board.
 pub const Ticket = struct {
     id: i64,
@@ -626,6 +762,16 @@ fn waitingLabel(model: *const Model, order: domain.Order, arena: std.mem.Allocat
     if (model.now_ms <= 0 or order.placed_at <= 0) return "just now";
     const minutes = @divTrunc(model.now_ms - order.placed_at, 60_000);
     return std.fmt.allocPrint(arena, "{d} min", .{minutes}) catch "";
+}
+
+/// Whether an order belongs to a station. A station of zero means
+/// "every station": a ticket with no station is everybody's.
+fn orderOnStation(model: *const Model, order_id: i64, station: i64) bool {
+    if (station == 0) return true;
+    for (model.order_lines) |line| {
+        if (line.order_id == order_id and line.station_id == station) return true;
+    }
+    return false;
 }
 
 /// Whether a product passes the category and search filters.
