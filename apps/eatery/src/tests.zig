@@ -17,6 +17,7 @@ const core = @import("core/model.zig");
 const msg_mod = @import("core/msg.zig");
 const nav = @import("core/navigation.zig");
 const rbac = @import("core/rbac.zig");
+const theme = @import("core/theme.zig");
 const repos = @import("data/repos.zig");
 const page = @import("data/page.zig");
 const auth = @import("data/auth.zig");
@@ -74,6 +75,30 @@ fn expectByText(widget: canvas.Widget, kind: canvas.WidgetKind, text: []const u8
         std.debug.print("no {t} with text \"{s}\" in the view - if you changed app.native, update this test to match\n", .{ kind, text });
         return error.WidgetNotFound;
     };
+}
+
+fn srgbToLinear(channel: f32) f32 {
+    return if (channel <= 0.04045) channel / 12.92 else std.math.pow(f32, (channel + 0.055) / 1.055, 2.4);
+}
+
+fn relativeLuminance(color: canvas.Color) f32 {
+    return 0.2126 * srgbToLinear(color.r) +
+        0.7152 * srgbToLinear(color.g) +
+        0.0722 * srgbToLinear(color.b);
+}
+
+fn contrastRatio(a: canvas.Color, b: canvas.Color) f32 {
+    const a_luminance = relativeLuminance(a);
+    const b_luminance = relativeLuminance(b);
+    return (@max(a_luminance, b_luminance) + 0.05) / (@min(a_luminance, b_luminance) + 0.05);
+}
+
+fn expectContrast(palette: []const u8, label: []const u8, foreground: canvas.Color, background: canvas.Color, minimum: f32) !void {
+    const ratio = contrastRatio(foreground, background);
+    if (ratio < minimum) {
+        std.debug.print("{s}: {s} is {d:.2}:1, below {d:.1}:1\n", .{ palette, label, ratio, minimum });
+    }
+    try testing.expect(ratio >= minimum);
 }
 
 /// A model with the effects channel in fake mode: requests are recorded
@@ -227,6 +252,44 @@ test "pressing the current destination does not grow the history" {
 
     try testing.expectEqual(depth, model.stack.len);
     try testing.expectEqual(nav.Screen.kds_board, model.screen());
+}
+
+test "every text pair in the light and dark palettes clears WCAG AA" {
+    const palettes = [_]struct { name: []const u8, tokens: canvas.DesignTokens }{
+        .{ .name = "light", .tokens = theme.light() },
+        .{ .name = "dark", .tokens = theme.dark() },
+    };
+
+    for (palettes) |palette| {
+        const c = palette.tokens.colors;
+        const pairs = [_]struct { name: []const u8, foreground: canvas.Color, background: canvas.Color, minimum: f32 }{
+            .{ .name = "text on background", .foreground = c.text, .background = c.background, .minimum = 4.5 },
+            .{ .name = "text on surface", .foreground = c.text, .background = c.surface, .minimum = 4.5 },
+            .{ .name = "muted text on background", .foreground = c.text_muted, .background = c.background, .minimum = 4.5 },
+            .{ .name = "muted text on surface", .foreground = c.text_muted, .background = c.surface, .minimum = 4.5 },
+            .{ .name = "accent label on accent", .foreground = c.accent_text, .background = c.accent, .minimum = 4.5 },
+            .{ .name = "accent as text on background", .foreground = c.accent, .background = c.background, .minimum = 4.5 },
+            .{ .name = "accent as text on surface", .foreground = c.accent, .background = c.surface, .minimum = 4.5 },
+            .{ .name = "destructive label on destructive", .foreground = c.destructive_text, .background = c.destructive, .minimum = 4.5 },
+            .{ .name = "destructive as text on background", .foreground = c.destructive, .background = c.background, .minimum = 4.5 },
+            .{ .name = "destructive as text on surface", .foreground = c.destructive, .background = c.surface, .minimum = 4.5 },
+            .{ .name = "success label on success", .foreground = c.success_text, .background = c.success, .minimum = 4.5 },
+            .{ .name = "success as text on background", .foreground = c.success, .background = c.background, .minimum = 4.5 },
+            .{ .name = "success as text on surface", .foreground = c.success, .background = c.surface, .minimum = 4.5 },
+            .{ .name = "warning label on warning", .foreground = c.warning_text, .background = c.warning, .minimum = 4.5 },
+            .{ .name = "warning as text on background", .foreground = c.warning, .background = c.background, .minimum = 4.5 },
+            .{ .name = "warning as text on surface", .foreground = c.warning, .background = c.surface, .minimum = 4.5 },
+            .{ .name = "info label on info", .foreground = c.info_text, .background = c.info, .minimum = 4.5 },
+            .{ .name = "info as text on background", .foreground = c.info, .background = c.background, .minimum = 4.5 },
+            .{ .name = "info as text on surface", .foreground = c.info, .background = c.surface, .minimum = 4.5 },
+            .{ .name = "focus ring on background", .foreground = c.focus_ring, .background = c.background, .minimum = 3.0 },
+            .{ .name = "focus ring on surface", .foreground = c.focus_ring, .background = c.surface, .minimum = 3.0 },
+        };
+
+        for (pairs) |pair| {
+            try expectContrast(palette.name, pair.name, pair.foreground, pair.background, pair.minimum);
+        }
+    }
 }
 
 test "changing role ends the previous operator's session" {

@@ -703,26 +703,36 @@ trigger and no per-element work.
 // src/core/theme.zig
 /// Eatery's brand palette.
 const brand = struct {
-    const primary = rgb(0x30, 0xA8, 0xCF); // v1 primary - the cyan blue
-    const primary_dark = rgb(0x22, 0x7A, 0x96);
+    // The light semantic fills are the darkest step of the v1 hues that
+    // clears WCAG AA with white text, and as text on the light
+    // background and surface. The test in tests.zig is the guard.
+    const primary = rgb(0x17, 0x6B, 0x84); // v1 cyan blue, one step down
+    const primary_dark = rgb(0x12, 0x56, 0x6A);
     const secondary = rgb(0x4A, 0xC3, 0xA1); // v1 secondary - the teal green
     const accent = rgb(0x70, 0x5E, 0xE0); // v1 accent - the purple
-    const success = rgb(0x2F, 0x9E, 0x69);
-    const warning = rgb(0xC8, 0x7A, 0x14);
-    const danger = rgb(0xD9, 0x43, 0x35);
+    const success = rgb(0x1B, 0x6E, 0x47);
+    const warning = rgb(0x87, 0x52, 0x0C);
+    const danger = rgb(0xB3, 0x2D, 0x22);
     const info = rgb(0x2F, 0x5E, 0xC2);
 };
 ```
 
 | Brand role | Light value | Dark value | Token it drives |
 |---|---|---|---|
-| Primary (cyan blue) | `#30A8CF` | `#4CC2EA` | `accent`, `focus_ring` |
+| Primary (cyan blue) | `#176B84` | `#4CC2EA` | `accent`, `focus_ring` |
 | Secondary (teal green) | `#4AC3A1` | - | reserved |
 | Accent (purple) | `#705EE0` | - | reserved |
-| Success | `#2F9E69` | `#45B886` | `success` |
-| Warning | `#C87A14` | `#E09A3C` | `warning` |
-| Danger | `#D94335` | `#E85D51` | `destructive` |
+| Success | `#1B6E47` | `#45B886` | `success` |
+| Warning | `#87520C` | `#E09A3C` | `warning` |
+| Danger | `#B32D22` | `#E85D51` | `destructive` |
 | Info | `#2F5EC2` | `#5B8CE0` | `info` |
+
+The light semantic fills are deliberately darker than v1's brand
+values: each clears WCAG AA for normal text with its paired `_text`
+token, and as text on `background` and `surface`. The test
+`every text pair in the light and dark palettes clears WCAG AA` asserts
+those combinations for both palettes, so a palette edit that breaks one
+fails the suite.
 
 ### The two palettes
 
@@ -738,17 +748,17 @@ The dark palette is the same brand one step down in luminance.
 | `text` | `#151A21` | `#ECEFF3` |
 | `text_muted` | `#646E7A` | `#9AA5B1` |
 | `border` | `#E1E5EA` | `#2A333D` |
-| `accent` | `#30A8CF` | `#4CC2EA` |
+| `accent` | `#176B84` | `#4CC2EA` |
 | `accent_text` | `#FFFFFF` | `#081014` |
-| `destructive` | `#D94335` | `#E85D51` |
+| `destructive` | `#B32D22` | `#E85D51` |
 | `destructive_text` | `#FFFFFF` | `#120808` |
-| `success` | `#2F9E69` | `#45B886` |
+| `success` | `#1B6E47` | `#45B886` |
 | `success_text` | `#FFFFFF` | `#06140E` |
-| `warning` | `#C87A14` | `#E09A3C` |
+| `warning` | `#87520C` | `#E09A3C` |
 | `warning_text` | `#FFFFFF` | `#140E04` |
 | `info` | `#2F5EC2` | `#5B8CE0` |
 | `info_text` | `#FFFFFF` | `#060E18` |
-| `focus_ring` | `#30A8CF` | `#4CC2EA` |
+| `focus_ring` | `#176B84` | `#4CC2EA` |
 
 The palettes set 18 of the token names the platform's colour list
 includes. The `syntax_*` roles (the code-block palette), `shadow`,

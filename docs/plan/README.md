@@ -35,7 +35,7 @@ The current tree is a **vertical slice in progress**, not a release.
 | Migrations | 11 |
 | Entities with a read + decode path | 8 |
 | Entities with a write path | 6 (order, lines, history, config, setup, payment) |
-| Headless tests | 69 authored (70 reported with the generated one) |
+| Headless tests | 70 authored (71 reported with the generated one) |
 | Sidecars | 0 (two README-only directories) |
 | CI workflows | 1 (verify + smoke) |
 
