@@ -26,7 +26,7 @@ owner is not being managed.
 | # | Risk | Was | Now |
 |---|---|---|---|
 | SEC1 | Any employee PIN can open Admin | certain / high | FIXED: the sign-in query is scoped to the session's role and the returned row is checked against it (B-002) |
-| SEC0 | Provisional-salt race weakens login correctness | med / high | FIXED: the sign-in waits for the database to confirm the salt, and the setup writes the salt with the operator's hash (B-003) |
+| SEC0 | Provisional-salt race weakens login correctness | med / high | FIXED: the sign-in waits for the database to confirm the salt, the setup writes the salt with the operator's hash, and a second instance reads back a successful write before confirming it (B-003, B-028) |
 | C2 | Waiter and display roles are unusable | certain / high | The waiter floor, menu, cart and order list render, and the display board shows the order cards. What the waiter still cannot do is pay for a table |
 | C3 | A fresh install cannot log in | certain / high | FIXED: the setup writes the company, the operator, the salt and a starter menu in one transaction |
 | C4 | Two effects shared an effect key | certain / high | FIXED: a second live effect with the same key is refused, so a write could silently never happen. Every key is used once, and a test says so |

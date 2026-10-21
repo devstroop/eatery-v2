@@ -381,8 +381,9 @@ fn submitSetup(model: *Model, fx: *Effects) void {
 /// yet. A failed write that still cleared the flag would leave the app
 /// hashing PINs against a salt that is not in the database - the
 /// operator signs in, the next boot makes a different salt, and nobody
-/// can ever sign in again. The state moves to `.confirmed` when the
-/// write comes back, in `config_saved`.
+/// can ever sign in again. The write coming back moves the state to
+/// `.verifying`; only the read-back in `config_loaded` confirms the salt
+/// the database actually holds.
 fn createSalt(model: *Model, fx: *Effects) void {
     repos.saveSalt(fx, repos.key_save_salt, model.pin_salt(), fx.wallMs());
 }
@@ -1123,19 +1124,26 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                     var reader = page.Reader.init(result.bytes);
                     var values: [page.max_columns]page.Value = undefined;
                     if (!reader.readHeader()) return;
-                    if (!reader.nextRow(&values)) {
+                    var has_salt = reader.nextRow(&values);
+                    if (has_salt and reader.textOf(&values, "value").len == 0) has_salt = false;
+                    if (!has_salt) {
                         // The database has NO salt: this is a fresh
                         // installation, and the salt in the model is
                         // the one it will use. The setup writes it with
                         // the operator's hash.
+                        //
+                        // If we just wrote a salt and the read does not
+                        // find one, the write did not land. Retrying here
+                        // would loop; block sign-in and say so.
+                        if (model.salt_state == .verifying) {
+                            model.salt_state = .unknown;
+                            model.error_text = "The installation settings did not save";
+                            return;
+                        }
                         model.salt_state = .installing;
                         return;
                     }
                     const salt = reader.textOf(&values, "value");
-                    if (salt.len == 0) {
-                        model.salt_state = .installing;
-                        return;
-                    }
                     const copied = model.pin_salt_buf[0..];
                     const length = @min(salt.len, copied.len);
                     @memcpy(copied[0..length], salt[0..length]);
@@ -1157,9 +1165,12 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .config_saved => |result| {
             if (result.outcome == .ok) {
-                // The salt is in the database now, so it is the salt a
-                // sign-in has to use.
-                model.salt_state = .confirmed;
+                // `ON CONFLICT DO NOTHING` reports success even when a
+                // second instance stored a different salt first. The
+                // write alone is not proof: read the salt back, and let
+                // `config_loaded` confirm the one the database holds.
+                model.salt_state = .verifying;
+                repos.loadConfig(fx);
                 return;
             }
             // The salt did not land. The model keeps the provisional
