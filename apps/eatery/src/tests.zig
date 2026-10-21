@@ -967,6 +967,51 @@ test "every gated screen renders, and none of them blows the widget budget" {
     }
 }
 
+test "every session screen renders, inside the widget budget" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.role_chosen = true;
+    model.signed_in = true;
+
+    // The session screens are mounted on their own condition rather
+    // than on the ordinal, so the budget test above never built them.
+    // The walk-through is two of them, and it is the first thing
+    // anybody sees of the app.
+    const screens = [_]struct { template: []const u8, ordinal: usize }{
+        .{ .template = "screen-role-picker", .ordinal = nav.Screen.role_picker.index() },
+        .{ .template = "screen-login", .ordinal = nav.Screen.login.index() },
+        .{ .template = "screen-setup", .ordinal = nav.Screen.setup.index() },
+        .{ .template = "screen-wizard", .ordinal = nav.Screen.wizard.index() },
+        .{ .template = "screen-create-company", .ordinal = nav.Screen.create_company.index() },
+    };
+
+    for (screens) |entry| {
+        model.needs_setup = false;
+        model.role_chosen = true;
+        model.signed_in = true;
+        if (std.mem.eql(u8, entry.template, "screen-role-picker")) {
+            model.role_chosen = false;
+        } else if (std.mem.eql(u8, entry.template, "screen-login")) {
+            model.signed_in = false;
+        } else if (std.mem.eql(u8, entry.template, "screen-setup")) {
+            model.needs_setup = true;
+        } else {
+            // The walk-through: nobody is signed in yet.
+            model.signed_in = false;
+        }
+        model.screen_index = entry.ordinal;
+        const tree = try buildTree(arena, &model);
+        const nodes = countWidgets(tree.root);
+        if (nodes > max_view_widgets) {
+            std.debug.print("the session screen {s} built {d} widgets, over the {d} budget\n", .{ entry.template, nodes, max_view_widgets });
+            return error.ScreenOverBudget;
+        }
+    }
+}
+
 test "every screen shows a landmark of its own" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
