@@ -1343,9 +1343,29 @@ pub const Model = struct {
         return &payment_mode_options;
     }
 
-    /// True when the app is waiting for a first-run setup.
+    /// True when the app is showing the walk-through's first step.
+    ///
+    /// The walk-through is a session screen: it is shown before
+    /// anybody is signed in, so it is mounted beside the setup rather
+    /// than in the shell's content pane.
+    pub fn show_create_company(model: *const Model) bool {
+        return model.screen() == .create_company;
+    }
+
+    /// True when the app is showing the walk-through's second step.
+    pub fn show_wizard(model: *const Model) bool {
+        return model.screen() == .wizard;
+    }
+
+    /// True when the app is showing the quick setup.
+    ///
+    /// The screen, not the state: the setup is one way into a fresh
+    /// install, and the walk-through is the other. A fresh install
+    /// needs a setup, and the screen says WHICH one - the shell draws
+    /// the setup only when the setup is the screen being shown, so the
+    /// walk-through and the quick setup are never both on the pane.
     pub fn show_setup(model: *const Model) bool {
-        return model.needs_setup;
+        return model.screen() == .setup;
     }
 
     /// The company's address.

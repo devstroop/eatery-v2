@@ -1371,11 +1371,13 @@ test "a fresh database asks to be set up" {
     harness.drain();
 
     try testing.expect(harness.model.needs_setup);
-    try testing.expect(harness.model.show_setup());
-    try testing.expect(!harness.model.show_role_picker());
     // The walk-through is the way in: the company's record first, and
-    // the owner on the step after.
+    // the owner on the step after. The quick setup is the other way,
+    // and it is not on the pane.
     try testing.expectEqual(nav.Screen.create_company, harness.model.screen());
+    try testing.expect(harness.model.show_create_company());
+    try testing.expect(!harness.model.show_setup());
+    try testing.expect(!harness.model.show_role_picker());
 }
 
 test "a category is saved, and the menu is organised by it" {
@@ -1457,10 +1459,19 @@ test "a fresh install becomes a restaurant through the app alone" {
     harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
-    // The app opens on the setup, because the database has no company.
+    // The app opens on the walk-through, because the database has no
+    // company. The quick setup is the other way in, and it is what the
+    // test below drives.
     repos.loadCompany(harness.fx);
     harness.drain();
     try testing.expect(harness.model.needs_setup);
+    try testing.expectEqual(nav.Screen.create_company, harness.model.screen());
+    try testing.expect(harness.model.show_create_company());
+    try testing.expect(!harness.model.show_setup());
+
+    // The owner takes the quick way in instead.
+    harness.send(Msg{ .wizard_quick_setup = {} });
+    try testing.expectEqual(nav.Screen.setup, harness.model.screen());
     try testing.expect(harness.model.show_setup());
 
     // The owner fills the form in.

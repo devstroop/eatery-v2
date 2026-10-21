@@ -41,6 +41,14 @@
     <use template="screen-setup"/>
   </if>
 
+  <if test="{show_create_company}">
+    <use template="screen-create-company"/>
+  </if>
+
+  <if test="{show_wizard}">
+    <use template="screen-wizard"/>
+  </if>
+
   <if test="{show_role_picker}">
     <use template="screen-role-picker"/>
   </if>
@@ -98,8 +106,6 @@
         <if test="{screen_index == 46}"><use template="screen-discount-form"/></if>
         <if test="{screen_index == 47}"><use template="screen-category-form"/></if>
         <if test="{screen_index == 48}"><use template="screen-categories"/></if>
-        <if test="{screen_index == 4}"><use template="screen-wizard"/></if>
-        <if test="{screen_index == 5}"><use template="screen-create-company"/></if>
         <if test="{screen_index == 6}"><use template="screen-reset-pin"/></if>
         <if test="{screen_index == 42}"><use template="screen-display"/></if>
         <if test="{screen_index == 28}"><use template="screen-settings"/></if>

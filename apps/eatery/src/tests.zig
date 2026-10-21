@@ -770,10 +770,31 @@ test "the setup screen renders on a fresh installation" {
 
     var model = main.initialModel();
     model.needs_setup = true;
+    // The quick setup is the screen being shown. A fresh install needs
+    // a setup, but the walk-through is the other way in, and the two
+    // are never both on the pane.
+    model.screen_index = @intCast(nav.Screen.setup.index());
 
     const tree = try buildTree(arena, &model);
     _ = try expectByText(tree.root, .text, "Set up your restaurant");
     _ = try expectByText(tree.root, .button, "Create the restaurant");
+}
+
+test "a fresh installation shows the walk-through, not the quick setup" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.needs_setup = true;
+    model.screen_index = @intCast(nav.Screen.create_company.index());
+
+    // The walk-through is on the pane...
+    const tree = try buildTree(arena, &model);
+    _ = try expectByText(tree.root, .text, "Step one of two. You can change any of it later.");
+    // ...and the quick setup is not. Its own line is the one only it
+    // has; the heading the two share is the point of the screen.
+    try testing.expect(findByText(tree.root, .text, "This takes a minute. Everything here can be changed later.") == null);
 }
 
 test "the layout survives a resize" {
@@ -806,7 +827,7 @@ const max_view_widgets = 1024;
 /// numbers, and the markup would mount the wrong screen. A test that
 /// fails here means "append, do not insert".
 const gated_ordinals = [_]usize{
-    4,  5,  6,  8,  9,  10, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24,
+    6,  8,  9,  10, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24,
     25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
     40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
 };
@@ -970,6 +991,12 @@ test "every screen shows a landmark of its own" {
         } else if (std.mem.eql(u8, landmark.template, "screen-role-picker")) {
             model.role_chosen = false;
         } else if (std.mem.eql(u8, landmark.template, "screen-login")) {
+            model.signed_in = false;
+        } else if (std.mem.eql(u8, landmark.template, "screen-create-company")) {
+            // The walk-through is a session screen: it is shown before
+            // anybody is signed in.
+            model.signed_in = false;
+        } else if (std.mem.eql(u8, landmark.template, "screen-wizard")) {
             model.signed_in = false;
         }
         model.screen_index = screen_index_of(landmark.template);
