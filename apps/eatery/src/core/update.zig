@@ -1001,6 +1001,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             };
             const next = nextStatus(order.status);
+            // An order does not close without the money. The last step
+            // of the lifecycle is the payment, and the kitchen cannot
+            // take it - so a ticket that has not been paid for stops
+            // here, and says why.
+            if (next == .completed and !order.paid) {
+                model.error_text = "Take the money before closing the order";
+                return;
+            }
             model.advance_order_id = order_id;
             model.busy = true;
             repos.setOrderStatus(fx, order_id, order.status, next, fx.wallMs());

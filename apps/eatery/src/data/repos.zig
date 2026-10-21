@@ -108,10 +108,17 @@ pub const customers_sql =
     \\ORDER BY name;
 ;
 
+/// The orders, with what has been paid for them.
+///
+/// The payment count is here because the order list has to know, before
+/// anyone is offered the chance to close an order, whether the money
+/// has been taken. An order that can be closed without being paid for
+/// is a sale the restaurant never sees.
 pub const orders_sql =
     \\SELECT id, order_no, order_type, status, dining_table_id, customer_id,
     \\       employee_id, subtotal_minor, tax_minor, discount_minor,
-    \\       total_minor, placed_at, notes
+    \\       total_minor, placed_at, notes,
+    \\       (SELECT COUNT(*) FROM payment WHERE order_id = orders.id) AS paid
     \\FROM orders
     \\WHERE status <> 5
     \\ORDER BY placed_at DESC
@@ -572,6 +579,7 @@ pub fn decodeOrders(model: *Model, bytes: []const u8) void {
             .total_minor = reader.intOf(&values, "total_minor", 0),
             .placed_at = reader.intOf(&values, "placed_at", 0),
             .notes = model.orders_buf.dupe(reader.textOf(&values, "notes")) orelse "",
+            .paid = reader.intOf(&values, "paid", 0) > 0,
         };
     }
     model.orders = list[0..index];

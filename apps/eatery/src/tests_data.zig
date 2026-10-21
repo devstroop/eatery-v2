@@ -766,6 +766,62 @@ test "the till stops taking PINs after too many wrong ones" {
     try testing.expect(harness.model.login_locked());
 }
 
+test "an order does not close without the money" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+    try testing.expect(!order.paid);
+
+    // Walk it to the last step: served. Each move is conditional on
+    // the status the order is in, so the expected status moves with it.
+    var expected = order.status;
+    for ([_]domain.OrderStatus{ .preparing, .ready, .served }) |status| {
+        repos.setOrderStatus(harness.fx, order.id, expected, status, 1_700_000_000_000);
+        harness.drain();
+        expected = status;
+    }
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.served, harness.model.orders[0].status);
+
+    // The last step is refused: the money has not been taken, and an
+    // order that closes without it is a sale the restaurant never sees.
+    harness.send(.{ .advance_order = order.id });
+    try testing.expect(harness.model.error_text.len > 0);
+
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.served, harness.model.orders[0].status);
+
+    // And with the money taken, the order closes.
+    harness.fx.dbExec(.{
+        .key = 923,
+        .statements = &.{.{
+            .sql = "INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at) VALUES (1, ?1, 0, 24500, '', 1, 1);",
+            .params = &.{.{ .integer = order.id }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.orders[0].paid);
+
+    harness.send(.{ .advance_order = order.id });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.completed, harness.model.orders[0].status);
+}
+
 test "the order number is a sequence" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
