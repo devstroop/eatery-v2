@@ -243,6 +243,10 @@ pub const Model = struct {
     /// The forms the settings and the catalogue edit.
     form_currency_code_buf: canvas.TextBuffer(8) = .{},
     form_currency_symbol_buf: canvas.TextBuffer(8) = .{},
+    form_discount_name_buf: canvas.TextBuffer(64) = .{},
+    form_discount_percent_buf: canvas.TextBuffer(16) = .{},
+    form_discount_amount_buf: canvas.TextBuffer(16) = .{},
+    form_discount_id: i64 = 0,
     form_tax_slab_name_buf: canvas.TextBuffer(64) = .{},
     form_tax_slab_rate_buf: canvas.TextBuffer(16) = .{},
     form_tax_slab_inclusive: bool = false,
@@ -715,6 +719,27 @@ pub const Model = struct {
     }
 
     /// The product name in the product form.
+    /// The name of the discount being edited.
+    pub fn form_discount_name(model: *const Model) []const u8 {
+        return model.form_discount_name_buf.text();
+    }
+
+    /// The percentage of the discount being edited, as typed.
+    pub fn form_discount_percent(model: *const Model) []const u8 {
+        return model.form_discount_percent_buf.text();
+    }
+
+    /// The amount off the bill, as typed.
+    pub fn form_discount_amount(model: *const Model) []const u8 {
+        return model.form_discount_amount_buf.text();
+    }
+
+    /// The heading of the discount form.
+    pub fn discount_form_title(model: *const Model) []const u8 {
+        if (model.form_discount_id == 0) return "New discount";
+        return "Edit discount";
+    }
+
     /// The name of the tax slab being edited.
     pub fn form_tax_slab_name(model: *const Model) []const u8 {
         return model.form_tax_slab_name_buf.text();

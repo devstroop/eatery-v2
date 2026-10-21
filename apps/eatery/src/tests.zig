@@ -700,7 +700,7 @@ const max_view_widgets = 1024;
 const gated_ordinals = [_]usize{
     8,  10, 12, 13, 14, 16, 17, 20, 23, 24, 25,
     26, 28, 29, 30, 31, 32, 33, 34, 35, 37, 38,
-    39, 40, 41, 42, 43, 44, 45,
+    39, 40, 41, 42, 43, 44, 45, 46,
 };
 
 /// The widgets in a tree, the tree itself included.

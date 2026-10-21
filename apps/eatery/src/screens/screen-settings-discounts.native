@@ -6,6 +6,7 @@
     <row gap="8" cross="center">
       <text size="heading" grow="1">Discounts</text>
       <badge>{discount_count} discounts</badge>
+      <button size="sm" on-press="new_discount">New</button>
       <button size="sm" variant="ghost" on-press="open_settings">Back</button>
     </row>
 
@@ -18,7 +19,7 @@
     <scroll grow="1">
       <column gap="4">
         <for each="discounts" key="id" as="discount">
-          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_discount:{discount.id}">
             <text grow="1">{discount.name}</text>
             <text>{discount.value_label}</text>
           </row>

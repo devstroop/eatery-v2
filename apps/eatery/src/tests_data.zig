@@ -1359,6 +1359,70 @@ test "the setup refuses a PIN that does not match" {
     try testing.expect(!harness.model.signed_in);
 }
 
+test "a discount is saved, and it takes what the owner said off" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // Ten percent off, the way a staff discount is written down.
+    harness.model.form_discount_name_buf.set("Staff 10%");
+    harness.model.form_discount_percent_buf.set("10");
+    harness.send(Msg{ .save_discount = {} });
+
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+
+    var found = false;
+    for (harness.model.discounts_list) |discount| {
+        if (!std.mem.eql(u8, discount.name, "Staff 10%")) continue;
+        found = true;
+        // Ten percent is a thousand basis points.
+        try testing.expectEqual(@as(i64, 1000), discount.percent_bps);
+        try testing.expectEqual(@as(i64, 0), discount.amount_minor);
+    }
+    try testing.expect(found);
+
+    // Or a fixed amount off the bill.
+    harness.model.form_discount_name_buf.set("Fifty off");
+    harness.model.form_discount_percent_buf.set("");
+    harness.model.form_discount_amount_buf.set("50.00");
+    harness.send(Msg{ .save_discount = {} });
+
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+    var amount = false;
+    for (harness.model.discounts_list) |discount| {
+        if (!std.mem.eql(u8, discount.name, "Fifty off")) continue;
+        amount = true;
+        try testing.expectEqual(@as(i64, 0), discount.percent_bps);
+        // Fifty is five thousand minor units.
+        try testing.expectEqual(@as(i64, 5000), discount.amount_minor);
+    }
+    try testing.expect(amount);
+}
+
+test "a discount needs a name, and it has to take something off" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // No name.
+    harness.model.form_discount_percent_buf.set("10");
+    harness.send(Msg{ .save_discount = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+
+    // A rate that is not a number.
+    harness.model.form_discount_name_buf.set("Staff");
+    harness.model.form_discount_percent_buf.set("ten");
+    harness.send(Msg{ .save_discount = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+
+    // A discount that takes nothing off is not a discount.
+    harness.model.form_discount_name_buf.set("Staff");
+    harness.model.form_discount_percent_buf.set("");
+    harness.model.form_discount_amount_buf.set("");
+    harness.send(Msg{ .save_discount = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
 test "a tax slab is saved, and the rate the owner typed is the rate stored" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

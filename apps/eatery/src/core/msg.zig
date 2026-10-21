@@ -212,6 +212,18 @@ pub const Msg = union(enum) {
     modifier_groups_loaded: native_sdk.EffectDbResult,
     /// The discounts were loaded.
     discounts_loaded: native_sdk.EffectDbResult,
+    /// The discount form changed.
+    form_discount_name_edit: canvas.TextInputEvent,
+    form_discount_percent_edit: canvas.TextInputEvent,
+    form_discount_amount_edit: canvas.TextInputEvent,
+    /// Open the discount form: an existing discount, or a new one.
+    edit_discount: i64,
+    new_discount,
+    save_discount,
+    /// Back to the discounts.
+    open_discounts,
+    /// The discount was saved.
+    discount_saved: native_sdk.EffectDbResult,
 
     // ---------------------------------------------------- the company form
 

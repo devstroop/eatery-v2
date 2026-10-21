@@ -24,7 +24,7 @@ pub const sources = [_]canvas.ui_markup.SourceFile{
     .{ .path = "screens/screen-tables.native", .source = @embedFile("screens/screen-tables.native") },
     .{ .path = "screens/screen-settings-printers.native", .source = @embedFile("screens/screen-settings-printers.native") },
     .{ .path = "screens/screen-settings-tax.native", .source = @embedFile("screens/screen-settings-tax.native") },
-    .{ .path = "screens/screen-tax-slab-form.native", .source = @embedFile("screens/screen-tax-slab-form.native") },
+    .{ .path = "screens/screen-setting-forms.native", .source = @embedFile("screens/screen-setting-forms.native") },
     .{ .path = "screens/screen-settings-modifiers.native", .source = @embedFile("screens/screen-settings-modifiers.native") },
     .{ .path = "screens/screen-settings-discounts.native", .source = @embedFile("screens/screen-settings-discounts.native") },
     .{ .path = "screens/screen-settings-currency.native", .source = @embedFile("screens/screen-settings-currency.native") },

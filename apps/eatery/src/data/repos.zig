@@ -72,6 +72,7 @@ pub const key_write_table = 35;
 pub const key_save_salt = 36;
 pub const key_save_currency = 37;
 pub const key_save_tax_slab = 39;
+pub const key_save_discount = 40;
 pub const key_save_pin_hash = 38;
 
 // ------------------------------------------------------------ queries
@@ -380,6 +381,38 @@ pub fn loadCustomers(fx: *Effects) void {
         .key = key_customers,
         .sql = customers_sql,
         .on_result = Effects.dbMsg(.customers_loaded),
+    });
+}
+
+/// Write a discount: a new one, or the one the form is editing.
+pub fn saveDiscount(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    percent_bps: i64,
+    amount_minor: i64,
+    at: i64,
+) void {
+    var params: [6]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = percent_bps },
+        .{ .integer = amount_minor },
+        .{ .integer = 1 },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO discount (id, name, percent_bps, amount_minor, active, created_at)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, percent_bps = ?3, amount_minor = ?4;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.discount_saved),
     });
 }
 
