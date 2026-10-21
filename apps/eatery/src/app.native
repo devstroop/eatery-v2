@@ -16,6 +16,7 @@
 <import src="screens/screen-login.native"/>
 <import src="screens/screen-dashboard.native"/>
 <import src="screens/screen-pos.native"/>
+<import src="screens/screen-order-detail.native"/>
 <import src="screens/screen-orders.native"/>
 <import src="screens/screen-tables.native"/>
 <import src="screens/screen-kitchen.native"/>
@@ -78,6 +79,7 @@
         <if test="{screen_index == 8}"><use template="screen-dashboard"/></if>
         <if test="{screen_index == 10}"><use template="screen-pos"/></if>
         <if test="{screen_index == 13}"><use template="screen-orders"/></if>
+        <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
         <if test="{screen_index == 17}"><use template="screen-tables"/></if>
         <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
         <if test="{screen_index == 37}"><use template="screen-waiter-tables"/></if>
