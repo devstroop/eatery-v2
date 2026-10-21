@@ -1,0 +1,45 @@
+<!-- The product form: what a dish is, what it costs, and which
+     category it sits in. It edits one product, and it edits the SAME
+     product the catalogue row opens. -->
+
+<template name="screen-product-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{product_form_title}</text>
+      <button size="sm" variant="ghost" on-press="open_catalogue">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_product_name}"
+          placeholder="Paneer Tikka"
+          label="Name"
+          on-input="form_product_name_edit"
+        />
+        <text-field
+          text="{form_product_price}"
+          placeholder="245.00"
+          label="Price"
+          on-input="form_product_price_edit"
+        />
+        <row gap="4" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">Category</text>
+          <for each="categories" key="id" as="category">
+            <toggle-button selected="{category.id == form_product_category}" on-toggle="form_product_category:{category.id}">{category.name}</toggle-button>
+          </for>
+        </row>
+        <row gap="4" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">Food</text>
+          <for each="food_types" key="id" as="food">
+            <toggle-button selected="{food.id == form_product_food}" on-toggle="form_product_food:{food.id}">{food.label}</toggle-button>
+          </for>
+        </row>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_product">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>

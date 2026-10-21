@@ -1,0 +1,24 @@
+<!-- The data: what the database holds, and where the data lives.
+     Import, export and backup come next; this screen is the honest
+     state of the data today. -->
+
+<template name="screen-settings-data">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Data</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <card padding="16" width="440">
+      <column gap="6">
+        <row cross="center"><text grow="1" foreground="text_muted">Products</text><text>{product_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Categories</text><text>{category_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Tables</text><text>{table_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Orders</text><text>{order_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Employees</text><text>{employee_count}</text></row>
+        <separator/>
+        <text size="sm" foreground="text_muted">Everything is stored in one local database. Export, import and backup are not built yet.</text>
+      </column>
+    </card>
+  </column>
+</template>

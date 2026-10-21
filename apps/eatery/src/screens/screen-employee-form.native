@@ -1,0 +1,33 @@
+<!-- The employee form: who works here and what they can do. The PIN
+     is set separately, by the owner - it is never on a screen that
+     could be shoulder-surfed, and never in the list. -->
+
+<template name="screen-employee-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{employee_form_title}</text>
+      <button size="sm" variant="ghost" on-press="open_employees">Back</button>
+    </row>
+
+    <card padding="16" width="440">
+      <column gap="8">
+        <text-field
+          text="{form_employee_name}"
+          placeholder="Anita"
+          label="Name"
+          on-input="form_employee_name_edit"
+        />
+        <row gap="4" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">Role</text>
+          <for each="employee_roles" key="id" as="role">
+            <toggle-button selected="{role.id == form_employee_role}" on-toggle="form_employee_role:{role.id}">{role.label}</toggle-button>
+          </for>
+        </row>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_employee">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>

@@ -109,6 +109,10 @@ pub const Screen = enum {
     kds_board,
     display_board,
 
+    // the edit forms (appended: the enum order is a contract)
+    product_form,
+    employee_form,
+
     pub fn index(self: Screen) usize {
         return @intFromEnum(self);
     }
@@ -158,6 +162,8 @@ pub const Screen = enum {
             .waiter_orders => "Orders",
             .kds_board => "Kitchen display",
             .display_board => "Display",
+            .product_form => "Product",
+            .employee_form => "Employee",
         };
     }
 

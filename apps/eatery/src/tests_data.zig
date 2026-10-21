@@ -693,3 +693,127 @@ test "a company cannot be saved without a name" {
     harness.send(Msg{ .save_company = {} });
     try testing.expect(harness.model.error_text_text().len > 0);
 }
+
+test "a product is saved, read back, and the menu shows it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The form starts from a new product.
+    harness.send(Msg{ .new_product = {} });
+    try testing.expectEqual(nav.Screen.product_form, harness.model.screen());
+
+    // It is filled in and saved.
+    harness.model.form_product_name_buf.set("Garlic Naan");
+    harness.model.form_product_price_buf.set("60.50");
+    harness.model.form_product_category_id = 1;
+    harness.model.form_product_food_id = 1;
+    harness.send(Msg{ .save_product = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    // The catalogue has it, at the price that was typed: sixty rupees
+    // and fifty paise, in minor units, exactly.
+    try testing.expectEqual(@as(usize, 3), harness.model.products.len);
+    const naan = findProductNamed(&harness.model, "Garlic Naan") orelse return error.ProductNotFound;
+    try testing.expectEqual(@as(i64, 6050), naan.price_minor);
+}
+
+test "a price that is not a number is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_product_name_buf.set("Something");
+    harness.model.form_product_price_buf.set("sixty");
+    harness.model.form_product_category_id = 1;
+    harness.send(Msg{ .save_product = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
+test "an employee is saved and can sign in" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_employee = {} });
+    harness.model.form_employee_name_buf.set("Ravi");
+    harness.model.form_employee_role_id = 1;
+    harness.send(Msg{ .save_employee = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    try testing.expectEqual(@as(usize, 2), harness.model.employees.len);
+    const ravi = findEmployeeNamed(&harness.model, "Ravi") orelse return error.EmployeeNotFound;
+    try testing.expectEqual(@as(i64, 1), ravi.role);
+    try testing.expectEqualStrings("Waiter", ravi.role_label);
+}
+
+test "the currency is saved" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_currency_code_buf.set("EUR");
+    harness.model.form_currency_symbol_buf.set("€");
+    harness.send(Msg{ .save_currency = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("EUR", harness.model.currency_code);
+    try testing.expectEqualStrings("€", harness.model.currency_symbol);
+}
+
+test "the settings data loads: printers, tax slabs, groups and discounts" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 970,
+        .statements = &.{
+            .{
+                // Slab 0 is the "No tax" slab the migration creates.
+                .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 5%', 500, 0, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO printer (id, name, kind, transport, address, job, active, created_at) VALUES (1, 'Counter', 'escpos', 'tcp', '192.168.1.9:9100', 'receipt', 1, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO modifier_group (id, name, required, min_select, max_select, sort_order, active) VALUES (1, 'Spice', 0, 0, 1, 1, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO discount (id, name, percent_bps, amount_minor, active, created_at) VALUES (1, 'Staff', 1000, 0, 1, 1);",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    repos.loadTaxSlabs(harness.fx);
+    repos.loadPrinters(harness.fx);
+    repos.loadModifierGroups(harness.fx);
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+
+    try testing.expectEqual(@as(usize, 2), harness.model.tax_slabs_list.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.printers_list.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.modifier_groups_list.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.discounts_list.len);
+    try testing.expectEqualStrings("Counter", harness.model.printers_list[0].name);
+    try testing.expectEqualStrings("receipt", harness.model.printers_list[0].job);
+}
+
+/// The product with this name, or null.
+fn findProductNamed(model: *const Model, name: []const u8) ?domain.Product {
+    for (model.products) |product| {
+        if (std.mem.eql(u8, product.name, name)) return product;
+    }
+    return null;
+}
+
+/// The employee with this name, or null.
+fn findEmployeeNamed(model: *const Model, name: []const u8) ?domain.Employee {
+    for (model.employees) |employee| {
+        if (std.mem.eql(u8, employee.name, name)) return employee;
+    }
+    return null;
+}
