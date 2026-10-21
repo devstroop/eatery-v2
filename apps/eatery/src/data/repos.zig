@@ -84,6 +84,8 @@ pub const key_save_station = 47;
 pub const key_db_tables = 48;
 pub const key_modifiers = 51;
 pub const key_save_modifier_group = 52;
+pub const key_table_categories = 55;
+pub const key_save_table_category = 56;
 pub const key_save_customer = 53;
 pub const key_deactivate_employee = 54;
 pub const key_devices = 49;
@@ -115,6 +117,11 @@ pub const tables_sql =
     \\FROM dining_table
     \\WHERE active = 1
     \\ORDER BY name;
+;
+
+/// The categories the tables are grouped into.
+pub const table_categories_sql =
+    \\SELECT id, name FROM dining_table_category ORDER BY name;
 ;
 
 pub const employees_sql =
@@ -450,6 +457,30 @@ pub fn saveDishStation(fx: *Effects, key: u64, product_id: i64, station_id: i64)
             },
         },
         .on_result = Effects.dbMsg(.dish_assigned),
+    });
+}
+
+/// Load the categories of tables.
+pub fn loadTableCategories(model: *Model, fx: *Effects) void {
+    query(model, fx, key_table_categories, table_categories_sql, &.{}, Effects.dbMsg(.table_categories_loaded));
+}
+
+/// Write a category of tables: a new one, or the one the form is editing.
+pub fn saveTableCategory(fx: *Effects, key: u64, id: i64, name: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO dining_table_category (id, name) VALUES (?1, ?2)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.table_category_saved),
     });
 }
 
@@ -1188,6 +1219,24 @@ pub fn decodeTableCounts(model: *Model, bytes: []const u8) void {
         };
     }
     model.table_counts_list = list[0..index];
+}
+
+/// Decode the categories of tables.
+pub fn decodeTableCategories(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.table_categories_buf.reset();
+    const count = reader.rows_left;
+    const list = model.table_categories_buf.allocSlice(domain.TableCategory, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.table_categories_buf.dupe(reader.textOf(&values, "name")) orelse "",
+        };
+    }
+    model.table_categories_list = list[0..index];
 }
 
 /// Decode the choices in the modifier groups.

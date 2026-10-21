@@ -87,6 +87,7 @@
         <else>
           <if test="{screen_index == 8}"><use template="screen-dashboard"/></if>
           <if test="{screen_index == 10}"><use template="screen-pos"/></if>
+        <if test="{screen_index == 11}"><use template="screen-pos-cart"/></if>
           <if test="{screen_index == 13}"><use template="screen-orders"/></if>
           <if test="{screen_index == 15}"><use template="screen-payments"/></if>
           <if test="{screen_index == 27}"><use template="screen-reports"/></if>
@@ -96,6 +97,7 @@
           <if test="{screen_index == 36}"><use template="screen-db-inspector"/></if>
           <if test="{screen_index == 50}"><use template="screen-modifier-group-form"/></if>
           <if test="{screen_index == 51}"><use template="screen-customer-form"/></if>
+        <if test="{screen_index == 52}"><use template="screen-table-category-form"/></if>
           <if test="{screen_index == 49}"><use template="screen-stock-count"/></if>
           <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
           <if test="{screen_index == 16}"><use template="screen-customers"/></if>
@@ -103,6 +105,8 @@
           <if test="{screen_index == 24}"><use template="screen-suppliers"/></if>
           <if test="{screen_index == 25}"><use template="screen-purchase-orders"/></if>
           <if test="{screen_index == 17}"><use template="screen-tables"/></if>
+        <if test="{screen_index == 18}"><use template="screen-table-categories"/></if>
+        <if test="{screen_index == 19}"><use template="screen-floor-plan"/></if>
           <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
           <if test="{screen_index == 37}"><use template="screen-waiter-tables"/></if>
           <if test="{screen_index == 38}"><use template="screen-waiter-menu"/></if>

@@ -822,6 +822,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_pos => go(model, .pos),
 
+        .open_pos_cart => go(model, .pos_cart),
+
         .open_orders => go(model, .orders),
 
         .open_payments => {
@@ -912,6 +914,63 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.error_text = "";
             repos.loadCustomers(model, fx);
             go(model, .customers);
+        },
+
+        .open_table_categories => {
+            go(model, .table_categories);
+            repos.loadTableCategories(model, fx);
+        },
+
+        .open_floor_plan => {
+            go(model, .floor_plan);
+            repos.loadTables(model, fx);
+        },
+
+        .new_table_category => {
+            model.form_table_category_id = 0;
+            model.form_table_category_name_buf.set("");
+            go(model, .table_category_form);
+        },
+
+        .edit_table_category => |id| {
+            model.form_table_category_id = id;
+            model.form_table_category_name_buf.set("");
+            for (model.table_categories_list) |category| {
+                if (category.id != id) continue;
+                model.form_table_category_name_buf.set(category.name);
+                break;
+            }
+            go(model, .table_category_form);
+        },
+
+        .form_table_category_name_edit => |event| model.form_table_category_name_buf.apply(event),
+
+        .save_table_category => {
+            const name = std.mem.trim(u8, model.form_table_category_name_buf.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "The category needs a name";
+                return;
+            }
+            const id = if (model.form_table_category_id != 0) model.form_table_category_id else fx.wallMs();
+            model.busy = true;
+            model.error_text = "";
+            repos.saveTableCategory(fx, repos.key_save_table_category, id, name);
+        },
+
+        .table_category_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The category could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadTableCategories(model, fx);
+            go(model, .table_categories);
+        },
+
+        .table_categories_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeTableCategories(model, result.bytes);
         },
 
         .open_modifier_groups => {

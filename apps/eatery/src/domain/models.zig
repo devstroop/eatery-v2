@@ -205,6 +205,12 @@ pub const DiningTable = struct {
     pos_y: i64,
 };
 
+/// A category of dining table: "Main room", "Terrace", "Bar".
+pub const TableCategory = struct {
+    id: i64,
+    name: []const u8,
+};
+
 pub const Customer = struct {
     id: i64,
     name: []const u8,

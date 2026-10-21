@@ -1667,6 +1667,44 @@ test "the last admin cannot be removed" {
     try testing.expectEqual(@as(i64, 1), rows);
 }
 
+test "the owner writes a category of tables" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The owner opens the categories.
+    harness.send(Msg{ .open_table_categories = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.table_categories, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.table_category_count());
+    try testing.expectEqualStrings("Main room", harness.model.table_categories()[0].name);
+
+    // And writes one.
+    harness.send(Msg{ .new_table_category = {} });
+    try testing.expectEqual(nav.Screen.table_category_form, harness.model.screen());
+    harness.model.form_table_category_name_buf.set("Terrace");
+    harness.send(Msg{ .save_table_category = {} });
+    harness.drain();
+
+    // The category is saved, and the owner is back on the list.
+    try testing.expectEqual(nav.Screen.table_categories, harness.model.screen());
+    try testing.expectEqual(@as(usize, 2), harness.model.table_category_count());
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM dining_table_category WHERE name = 'Terrace';", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a category of tables with no name is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_table_category = {} });
+    harness.model.form_table_category_name_buf.set("  ");
+    harness.send(Msg{ .save_table_category = {} });
+
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM dining_table_category;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
 test "the owner writes a customer" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

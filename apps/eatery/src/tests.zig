@@ -827,9 +827,9 @@ const max_view_widgets = 1024;
 /// numbers, and the markup would mount the wrong screen. A test that
 /// fails here means "append, do not insert".
 const gated_ordinals = [_]usize{
-    6,  8,  9,  10, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24,
+    6,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
     25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
 };
 
 
@@ -846,6 +846,7 @@ const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-login", .text = "Sign in" },
     .{ .template = "screen-dashboard", .text = "Dashboard" },
     .{ .template = "screen-pos", .text = "Cart" },
+    .{ .template = "screen-pos-cart", .text = "Back to the menu" },
     .{ .template = "screen-catalogue-list", .text = "Catalogue" },
     .{ .template = "screen-product-form", .text = "Category" },
     .{ .template = "screen-orders", .text = "Orders" },
@@ -861,6 +862,9 @@ const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-order-detail", .text = "Total" },
     .{ .template = "screen-order-confirmation", .text = "Items" },
     .{ .template = "screen-tables", .text = "Dining tables" },
+    .{ .template = "screen-table-categories", .text = "Table categories" },
+    .{ .template = "screen-table-category-form", .text = "Table category" },
+    .{ .template = "screen-floor-plan", .text = "Floor plan" },
     .{ .template = "screen-reservations", .text = "Reservations" },
     .{ .template = "screen-customers", .text = "Customers" },
     .{ .template = "screen-kitchen", .text = "Kitchen" },
@@ -1066,6 +1070,7 @@ fn screen_index_of(template: []const u8) usize {
         .{ .template = "screen-login", .screen = .login },
         .{ .template = "screen-dashboard", .screen = .admin_dashboard },
         .{ .template = "screen-pos", .screen = .pos },
+        .{ .template = "screen-pos-cart", .screen = .pos_cart },
         .{ .template = "screen-catalogue-list", .screen = .product_categories },
         .{ .template = "screen-product-form", .screen = .product_form },
         .{ .template = "screen-orders", .screen = .orders },
@@ -1081,6 +1086,9 @@ fn screen_index_of(template: []const u8) usize {
         .{ .template = "screen-order-detail", .screen = .order_detail },
         .{ .template = "screen-order-confirmation", .screen = .order_confirmation },
         .{ .template = "screen-tables", .screen = .dining_tables },
+        .{ .template = "screen-table-categories", .screen = .table_categories },
+        .{ .template = "screen-table-category-form", .screen = .table_category_form },
+        .{ .template = "screen-floor-plan", .screen = .floor_plan },
         .{ .template = "screen-reservations", .screen = .reservations },
         .{ .template = "screen-customers", .screen = .customers },
         .{ .template = "screen-kitchen", .screen = .kds_board },

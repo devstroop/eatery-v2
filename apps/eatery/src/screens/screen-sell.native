@@ -5,49 +5,23 @@
      than that. A file may hold several templates, so a screen that
      shares a file with its neighbours costs nothing. -->
 
-<!-- The point of sale. The menu on the left, the cart on the right.
-     The product grid is a virtualized list so a hundred-item menu does
-     not blow the widget budget, and the visible slice is a derived
-     binding: the filter (category plus search text) is applied in the
-     model, never in the markup. -->
+<!-- The cart. It is a screen of its own AND the pane on the right of
+     the point of sale: the same template, so the cart cannot drift
+     from itself. On the sale screen it is a pane; on its own it is the
+     whole thing, which is what a small till wants. -->
 
-<template name="screen-pos">
-  <split grow="1" value="{menu_split}" on-resize="menu_resized">
-    <column gap="8" padding="16" grow="1">
-      <row gap="8" cross="center">
-        <search-field
-          text="{search_text}"
-          placeholder="Search the menu"
-          label="Search the menu"
-          on-input="search_edit"
-          grow="1"
-        />
-      </row>
-
+<template name="screen-pos-cart">
+  <column grow="1" gap="8" padding="16" background="surface">
+    <row gap="8" cross="center">
+      <text size="lg" grow="1">Cart</text>
+      <if test="{show_pos_cart_screen}">
+        <button size="sm" variant="ghost" on-press="open_pos">Back to the menu</button>
+      </if>
+    </row>
       <row gap="4" cross="center">
-        <toggle-button selected="{selected_category == 0}" on-toggle="set_category_all">All</toggle-button>
-        <for each="categories" key="id" as="category">
-          <toggle-button selected="{category.id == selected_category}" on-toggle="set_category:{category.id}">{category.name}</toggle-button>
-        </for>
-      </row>
-
-      <scroll grow="1">
-        <grid columns="4" gap="8">
-          <for each="visible_products" key="id" as="product">
-            <card padding="8" on-press="add_to_cart:{product.id}">
-              <column gap="2">
-                <text wrap="true">{product.name}</text>
-                <text size="sm" foreground="text_muted">{currency_symbol}{fixed(product.price_minor / currency_divisor, currency_decimal_count)}</text>
-              </column>
-            </card>
-          </for>
-        </grid>
-      </scroll>
-    </column>
-
-    <column width="300" gap="8" padding="16" background="surface">
-      <text size="lg">Cart</text>
-      <row gap="4" cross="center">
+        <if test="{show_cart_on_its_own}">
+          <button size="sm" variant="ghost" on-press="open_pos_cart">Cart on its own</button>
+        </if>
         <text size="sm" foreground="text_muted" grow="1">{cart_type_label}</text>
         <for each="order_types" key="id" as="kind">
           <toggle-button selected="{kind.id == cart_order_type}" on-toggle="set_order_type:{kind.id}">{kind.label}</toggle-button>
@@ -104,7 +78,50 @@
         <button variant="ghost" on-press="clear_cart">Clear</button>
         <button variant="primary" grow="1" disabled="{sale_pending}" on-press="place_order">Place order</button>
       </row>
+  </column>
+</template>
+
+<!-- The point of sale. The menu on the left, the cart on the right.
+     The product grid is a virtualized list so a hundred-item menu does
+     not blow the widget budget, and the visible slice is a derived
+     binding: the filter (category plus search text) is applied in the
+     model, never in the markup. -->
+
+<template name="screen-pos">
+  <split grow="1" value="{menu_split}" on-resize="menu_resized">
+    <column gap="8" padding="16" grow="1">
+      <row gap="8" cross="center">
+        <search-field
+          text="{search_text}"
+          placeholder="Search the menu"
+          label="Search the menu"
+          on-input="search_edit"
+          grow="1"
+        />
+      </row>
+
+      <row gap="4" cross="center">
+        <toggle-button selected="{selected_category == 0}" on-toggle="set_category_all">All</toggle-button>
+        <for each="categories" key="id" as="category">
+          <toggle-button selected="{category.id == selected_category}" on-toggle="set_category:{category.id}">{category.name}</toggle-button>
+        </for>
+      </row>
+
+      <scroll grow="1">
+        <grid columns="4" gap="8">
+          <for each="visible_products" key="id" as="product">
+            <card padding="8" on-press="add_to_cart:{product.id}">
+              <column gap="2">
+                <text wrap="true">{product.name}</text>
+                <text size="sm" foreground="text_muted">{currency_symbol}{fixed(product.price_minor / currency_divisor, currency_decimal_count)}</text>
+              </column>
+            </card>
+          </for>
+        </grid>
+      </scroll>
     </column>
+
+    <use template="screen-pos-cart"/>
   </split>
 </template>
 

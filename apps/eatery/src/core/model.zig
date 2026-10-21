@@ -283,6 +283,7 @@ pub const Model = struct {
     tax_slabs_list: []const domain.TaxSlab = &.{},
     modifier_groups_list: []const domain.ModifierGroup = &.{},
     modifiers_list: []const domain.Modifier = &.{},
+    table_categories_list: []const domain.TableCategory = &.{},
     discounts_list: []const domain.Discount = &.{},
     reservations_list: []const domain.Reservation = &.{},
     suppliers_list: []const domain.Supplier = &.{},
@@ -299,6 +300,7 @@ pub const Model = struct {
     tax_slabs_buf: bump.Bump(4096) = .{},
     modifier_groups_buf: bump.Bump(4096) = .{},
     modifiers_buf: bump.Bump(4096) = .{},
+    table_categories_buf: bump.Bump(2048) = .{},
     discounts_buf: bump.Bump(4096) = .{},
     reservations_buf: bump.Bump(8192) = .{},
     suppliers_buf: bump.Bump(8192) = .{},
@@ -355,6 +357,10 @@ pub const Model = struct {
     form_stock_count_buf: canvas.TextBuffer(16) = .{},
     /// Why the count changed.
     form_stock_reason_buf: canvas.TextBuffer(64) = .{},
+    /// The category being edited, zero for a new one.
+    form_table_category_id: i64 = 0,
+    /// Its name.
+    form_table_category_name_buf: canvas.TextBuffer(64) = .{},
     /// The customer being edited, zero for a new one.
     form_customer_id: i64 = 0,
     /// The customer's name.
@@ -1277,6 +1283,21 @@ pub const Model = struct {
         return model.form_customer_address_buf.text();
     }
 
+    /// The categories the tables are grouped into.
+    pub fn table_categories(model: *const Model) []const domain.TableCategory {
+        return model.table_categories_list;
+    }
+
+    /// How many categories there are.
+    pub fn table_category_count(model: *const Model) usize {
+        return model.table_categories_list.len;
+    }
+
+    /// The category being edited, by name.
+    pub fn form_table_category_name(model: *const Model) []const u8 {
+        return model.form_table_category_name_buf.text();
+    }
+
     /// The choices in the group being edited.
     pub fn modifiers(model: *const Model) []const domain.Modifier {
         return model.modifiers_list;
@@ -1625,6 +1646,21 @@ pub const Model = struct {
     /// The sign-in PIN as typed. The view binds this, never the buffer.
     pub fn pin_text(model: *const Model) []const u8 {
         return model.pin.text();
+    }
+
+    /// True when the cart is the screen being shown, rather than the
+    /// pane beside the menu.
+    pub fn show_pos_cart_screen(model: *const Model) bool {
+        return model.screen() == .pos_cart;
+    }
+
+    /// True when the cart is a pane, so the way into it on its own is
+    /// worth offering.
+    ///
+    /// The negation is here and not in the markup: the markup has no
+    /// "not", and a model method may say what it means.
+    pub fn show_cart_on_its_own(model: *const Model) bool {
+        return model.screen() != .pos_cart;
     }
 
     /// The order type of the open cart.

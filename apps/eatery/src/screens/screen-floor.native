@@ -15,6 +15,8 @@
     <row gap="8" cross="center">
       <text size="heading" grow="1">Dining tables</text>
       <badge>{occupied_table_count} busy of {table_count}</badge>
+      <button size="sm" variant="ghost" on-press="open_floor_plan">Floor plan</button>
+      <button size="sm" variant="ghost" on-press="open_table_categories">Categories</button>
     </row>
 
     <if test="{table_count == 0}">
@@ -148,5 +150,94 @@
         </row>
       </column>
     </card>
+  </column>
+</template>
+
+<!-- The categories of tables: "Main room", "Terrace", "Bar". A
+     table belongs to one, and the category is what the floor is
+     arranged in. -->
+
+<template name="screen-table-categories">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Table categories</text>
+      <badge>{table_category_count} categories</badge>
+      <button size="sm" variant="primary" on-press="new_table_category">New</button>
+      <button size="sm" variant="ghost" on-press="open_tables">Back</button>
+    </row>
+
+    <if test="{table_category_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No categories yet. The tables need somewhere to be.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="table_categories" key="id" as="category">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1" on-press="edit_table_category:{category.id}">{category.name}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<template name="screen-table-category-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Table category</text>
+      <button size="sm" variant="ghost" on-press="open_table_categories">Back</button>
+    </row>
+
+    <card padding="16" width="440">
+      <column gap="8">
+        <text-field
+          text="{form_table_category_name}"
+          placeholder="Main room"
+          label="Name"
+          on-input="form_table_category_name_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_table_category">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The plan of the room: the tables where they stand. The positions
+     are grid cells, so a table that is in the wrong place can be put
+     right, and the floor is the floor and not a list. -->
+
+<template name="screen-floor-plan">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Floor plan</text>
+      <text foreground="text_muted">{table_count} tables</text>
+      <button size="sm" variant="ghost" on-press="open_tables">Back</button>
+    </row>
+
+    <if test="{table_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No tables yet, so there is no plan to draw.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <grid columns="4" gap="8">
+        <for each="tables" key="id" as="table">
+          <card padding="12">
+            <column gap="4">
+              <text size="lg">{table.name}</text>
+              <badge>{table.status_label}</badge>
+              <text size="sm" foreground="text_muted">{table.seats} seats</text>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
   </column>
 </template>

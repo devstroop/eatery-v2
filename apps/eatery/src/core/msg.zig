@@ -168,6 +168,8 @@ pub const Msg = union(enum) {
     open_payments,
     /// Jump to the day's report.
     open_reports,
+    /// Open the cart on its own.
+    open_pos_cart,
     /// Back to the dashboard.
     open_dashboard,
     /// Open the stock on the shelf.
@@ -176,6 +178,22 @@ pub const Msg = union(enum) {
     open_kitchen_dishes,
     /// Open the modifier groups.
     open_modifier_groups,
+    /// Open the categories of tables.
+    open_table_categories,
+    /// Open the plan of the room.
+    open_floor_plan,
+    /// Edit the category of tables with this id.
+    edit_table_category: i64,
+    /// Start a new category of tables.
+    new_table_category,
+    /// The category's name changed.
+    form_table_category_name_edit: canvas.TextInputEvent,
+    /// Save the category.
+    save_table_category,
+    /// The category was saved.
+    table_category_saved: native_sdk.EffectDbResult,
+    /// The categories of tables.
+    table_categories_loaded: native_sdk.EffectDbResult,
     /// Open the customers.
     open_customers,
     /// Edit the customer with this id.
@@ -461,6 +479,8 @@ pub const Msg = union(enum) {
         "stock_saved",
         "dish_assigned",
         "modifier_group_saved",
+        "table_category_saved",
+        "table_categories_loaded",
         "customer_saved",
         "modifiers_loaded",
         "db_tables_loaded",
