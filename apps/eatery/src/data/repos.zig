@@ -85,15 +85,21 @@ pub const products_sql =
     \\ORDER BY name;
 ;
 
+/// The categories on the menu. A category that is not in use is not
+/// shown: the menu a customer reads is the menu the kitchen cooks.
 pub const categories_sql =
     \\SELECT id, name, sort_order
     \\FROM product_category
+    \\WHERE active = 1
     \\ORDER BY sort_order, name;
 ;
 
+/// The tables on the floor. A table that is not in use is not shown:
+/// the board is what the floor looks like, not what it once looked like.
 pub const tables_sql =
     \\SELECT id, category_id, name, status, seats, pos_x, pos_y
     \\FROM dining_table
+    \\WHERE active = 1
     \\ORDER BY name;
 ;
 
@@ -104,9 +110,12 @@ pub const employees_sql =
     \\ORDER BY name;
 ;
 
+/// The customers the restaurant knows. One the restaurant has
+/// forgotten is not a customer.
 pub const customers_sql =
     \\SELECT id, name, phone, email, loyalty_points
     \\FROM customer
+    \\WHERE active = 1
     \\ORDER BY name;
 ;
 
@@ -172,8 +181,10 @@ pub const reservations_sql =
 ;
 
 /// The suppliers.
+/// The suppliers the restaurant buys from. One it no longer buys
+/// from is not on the list.
 pub const suppliers_sql =
-    \\SELECT id, name, phone, email, address, gstin, active FROM supplier ORDER BY name;
+    \\SELECT id, name, phone, email, address, gstin, active FROM supplier WHERE active = 1 ORDER BY name;
 ;
 
 /// The purchase orders.

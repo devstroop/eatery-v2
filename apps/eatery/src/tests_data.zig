@@ -1318,6 +1318,50 @@ test "a fresh database asks to be set up" {
     try testing.expectEqual(nav.Screen.setup, harness.model.screen());
 }
 
+test "a list shows what is in use" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A category, a table and a customer the restaurant has finished
+    // with.
+    harness.fx.dbExec(.{
+        .key = 930,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO product_category (id, name, sort_order, active) VALUES (9, 'Last season', 9, 0);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO dining_table (id, category_id, name, status, seats, pos_x, pos_y, active) VALUES (9, 1, 'T9', 0, 2, 0, 0, 0);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO customer (id, name, phone, email, loyalty_points, active, created_at) VALUES (9, 'Gone', '0', '', 0, 0, 0);",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    repos.loadCategories(harness.fx);
+    repos.loadTables(harness.fx);
+    repos.loadCustomers(harness.fx);
+    harness.drain();
+
+    // The menu a customer reads is the menu the kitchen cooks: a
+    // category the restaurant has finished with is not on it.
+    for (harness.model.categories) |category| {
+        try testing.expect(!std.mem.eql(u8, category.name, "Last season"));
+    }
+    for (harness.model.tables) |table| {
+        try testing.expect(!std.mem.eql(u8, table.name, "T9"));
+    }
+    for (harness.model.customers) |customer| {
+        try testing.expect(!std.mem.eql(u8, customer.name, "Gone"));
+    }
+}
+
 test "a fresh install becomes a restaurant through the app alone" {
     // A fresh database. Nothing is seeded: whatever the app needs, the
     // app makes.
