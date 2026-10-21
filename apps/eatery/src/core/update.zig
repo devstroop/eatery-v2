@@ -40,12 +40,12 @@ pub fn boot(model: *Model, fx: *Effects) void {
     // The first read: the settings the app needs before it can sign
     // anybody in, and the company - an empty database means a fresh
     // installation, and the app opens on the setup screen.
-    repos.loadConfig(fx);
-    repos.loadCompany(fx);
+    repos.loadConfig(model, fx);
+    repos.loadCompany(model, fx);
     // The tax slabs are read with the rest of the business's settings:
     // a sale's tax is worked out from them, and a sale that is placed
     // before they arrive would be taxed at nothing.
-    repos.loadTaxSlabs(fx);
+    repos.loadTaxSlabs(model, fx);
 }
 
 /// A new order on the board gets a sound. The kitchen hears the sale
@@ -120,7 +120,7 @@ fn selectTable(model: *Model, fx: *Effects, table_id: i64) void {
             .pending, .preparing, .ready, .served => {
                 model.active_order_id = order.id;
                 go(model, .waiter_menu);
-                repos.loadOrderLines(fx);
+                repos.loadOrderLines(model, fx);
                 return;
             },
             .completed, .voided => {},
@@ -531,6 +531,21 @@ fn createSalt(model: *Model, fx: *Effects) void {
 }
 
 pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
+    // A read that has come back is no longer on its way, and a read
+    // that failed is something the operator can try again. This is
+    // the ONE place that knows it, so every read behaves the same way
+    // whether it is the menu or the tables in the database.
+    if (msg.readOutcome()) |ok| {
+        model.reading = false;
+        if (!ok) {
+            model.read_failed = true;
+            model.failed_screen = model.screen();
+            if (model.error_text.len == 0) {
+                model.error_text = "The data could not be read - try again";
+            }
+        }
+    }
+
     switch (msg) {
         // -------------------------------------------------------- session
 
@@ -544,7 +559,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (role.needs_sign_in()) return;
             // Kiosk roles are signed in by device.
             model.signed_in = true;
-            repos.loadAll(fx);
+            repos.loadAll(model, fx);
             // The kitchen and the customer display watch the orders
             // instead of waiting for a refresh: a live query re-runs
             // itself when the `orders` table changes.
@@ -661,7 +676,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // in, and the till is not holding a grudge.
             model.login_failures = 0;
             model.login_locked_until = 0;
-            repos.loadAll(fx);
+            repos.loadAll(model, fx);
             // A hash from before bcrypt is rewritten in the modern
             // form, so the next sign-in of this employee is a slow
             // one and the old digest stops being worth anything.
@@ -755,7 +770,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // operator's PIN hash, so the salt in the model is now the
             // salt in the database. A sign-in may use it.
             model.salt_state = .confirmed;
-            repos.loadAll(fx);
+            repos.loadAll(model, fx);
         },
 
         // ----------------------------------------------------- navigation
@@ -776,7 +791,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // The screen loads what it shows: the effects channel has
             // sixteen slots, and loading everything at once fills them
             // and the late queries are refused.
-            repos.loadForScreen(fx, screen);
+            repos.loadForScreen(model, fx, screen);
         },
 
         .open_section => |ordinal| {
@@ -811,12 +826,12 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_payments => {
             go(model, .payments);
-            repos.loadPayments(fx);
+            repos.loadPayments(model, fx);
         },
 
         .open_reports => {
             go(model, .reports);
-            repos.loadReport(fx, model.report_day_start_ms());
+            repos.loadReport(model, fx, model.report_day_start_ms());
         },
 
         .open_dashboard => go(model, .admin_dashboard),
@@ -837,7 +852,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_customers => {
             go(model, .customers);
-            repos.loadCustomers(fx);
+            repos.loadCustomers(model, fx);
         },
 
         .new_customer => {
@@ -895,14 +910,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadCustomers(fx);
+            repos.loadCustomers(model, fx);
             go(model, .customers);
         },
 
         .open_modifier_groups => {
             go(model, .settings_modifiers);
-            repos.loadModifierGroups(fx);
-            repos.loadModifiers(fx);
+            repos.loadModifierGroups(model, fx);
+            repos.loadModifiers(model, fx);
         },
 
         .new_modifier_group => {
@@ -973,7 +988,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadModifierGroups(fx);
+            repos.loadModifierGroups(model, fx);
             go(model, .settings_modifiers);
         },
 
@@ -984,25 +999,25 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_inventory => {
             go(model, .inventory_items);
-            repos.loadStock(fx);
+            repos.loadStock(model, fx);
         },
 
         .open_db_inspector => {
             go(model, .db_inspector);
-            repos.loadTableCounts(fx);
+            repos.loadTableCounts(model, fx);
         },
 
         .open_control_center => {
             go(model, .control_center);
-            repos.loadDevices(fx);
-            repos.loadSyncState(fx);
+            repos.loadDevices(model, fx);
+            repos.loadSyncState(model, fx);
         },
 
         .open_kitchen_dishes => {
             go(model, .kitchen_dishes);
-            repos.loadProducts(fx);
-            repos.loadStations(fx);
-            repos.loadProductStations(fx);
+            repos.loadProducts(model, fx);
+            repos.loadStations(model, fx);
+            repos.loadProductStations(model, fx);
         },
 
         .select_dish => |id| model.selected_dish_id = id,
@@ -1047,7 +1062,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadProductStations(fx);
+            repos.loadProductStations(model, fx);
         },
 
         .count_stock => |id| {
@@ -1110,7 +1125,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadStock(fx);
+            repos.loadStock(model, fx);
             go(model, .inventory_items);
         },
 
@@ -1129,7 +1144,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .open_order => |id| {
             model.selected_order_id = id;
             go(model, .order_detail);
-            repos.loadOrderLines(fx);
+            repos.loadOrderLines(model, fx);
         },
 
         .pay_selected_order => {
@@ -1233,7 +1248,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // own id and its own request key.
             model.cart_attempt_id = 0;
             go(model, .order_confirmation);
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         // ----------------------------------------------------- the waiter
@@ -1255,7 +1270,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.active_order_id = model.pending_order_id;
             model.pending_order_id = 0;
             go(model, .waiter_menu);
-            repos.loadOrderLines(fx);
+            repos.loadOrderLines(model, fx);
         },
 
         .add_to_order => |product_id| addToOrder(model, fx, product_id),
@@ -1267,8 +1282,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             }
             // The line is on the order: read the order back so the
             // waiter sees the running total.
-            repos.loadOrderLines(fx);
-            repos.loadOrders(fx);
+            repos.loadOrderLines(model, fx);
+            repos.loadOrders(model, fx);
         },
 
         // ---------------------------------------------------- the payment
@@ -1304,7 +1319,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // The sale is done: back to the order list, where the
             // closed order is now a completed one.
             go(model, .orders);
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         // -------------------------------------------------------- the forms
@@ -1337,7 +1352,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadCompany(fx);
+            repos.loadCompany(model, fx);
         },
 
         .form_product_name_edit => |event| model.form_product_name_buf.apply(event),
@@ -1365,8 +1380,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadProducts(fx);
-            repos.loadCategories(fx);
+            repos.loadProducts(model, fx);
+            repos.loadCategories(model, fx);
             go(model, .product_categories);
         },
 
@@ -1426,7 +1441,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadEmployees(fx);
+            repos.loadEmployees(model, fx);
             go(model, .employees);
         },
 
@@ -1474,7 +1489,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadTaxSlabs(fx);
+            repos.loadTaxSlabs(model, fx);
             go(model, .settings_tax);
         },
 
@@ -1507,7 +1522,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadCategories(fx);
+            repos.loadCategories(model, fx);
             go(model, .product_categories);
         },
 
@@ -1528,7 +1543,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadDiscounts(fx);
+            repos.loadDiscounts(model, fx);
             go(model, .settings_discounts);
         },
 
@@ -1566,14 +1581,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.error_text = "";
             // Read it back: the form's buffers are the edit model, and
             // the company row is the truth.
-            repos.loadCompany(fx);
+            repos.loadCompany(model, fx);
         },
 
         // -------------------------------------------------- the kitchen board
 
         .refresh_orders => |timer| {
             if (timer.outcome != .fired) return;
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         .set_station_filter => |id| model.station_filter_field = id,
@@ -1641,7 +1656,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // The orders come back with the status the DATABASE has,
             // not the one the model guessed: the board shows the truth
             // and the next move is computed from it.
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         // -------------------------------------------------------------- data
@@ -1796,7 +1811,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // write alone is not proof: read the salt back, and let
                 // `config_loaded` confirm the one the database holds.
                 model.salt_state = .verifying;
-                repos.loadConfig(fx);
+                repos.loadConfig(model, fx);
                 return;
             }
             // The salt did not land. The model keeps the provisional
@@ -1843,6 +1858,18 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         // ----------------------------------------------------------- chrome
 
         .dismiss_error => model.error_text = "",
+
+        .retry_read => {
+            // The read that failed belongs to a screen, and the retry
+            // reads what THAT screen shows - not what is on the pane
+            // now, which may be somewhere else by now.
+            const screen = model.failed_screen;
+            model.read_failed = false;
+            model.error_text = "";
+            model.reading = true;
+            model.read_started_at = model.now_ms;
+            repos.loadForScreen(model, fx, screen);
+        },
 
         .toggle_theme => model.theme_dark = !model.theme_dark,
 

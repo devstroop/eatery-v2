@@ -498,6 +498,17 @@ pub const Model = struct {
     db_ready: bool = false,
     /// True while a write is in flight.
     busy: bool = false,
+    /// True while a read is on its way. The shell says so, so a screen
+    /// that shows nothing yet is a screen that is working.
+    reading: bool = false,
+    /// When the read started, in epoch milliseconds.
+    read_started_at: i64 = 0,
+    /// True when the last read failed.
+    read_failed: bool = false,
+    /// The screen the failed read was for. A failure belongs to the
+    /// screen that asked for the data, not to whatever is on the pane
+    /// now.
+    failed_screen: nav.Screen = .admin_dashboard,
     /// The last error worth showing the operator, or empty.
     error_text: []const u8 = "",
     /// Dark palette instead of the house light one.
@@ -560,6 +571,28 @@ pub const Model = struct {
     /// True when there is an error worth showing the operator.
     pub fn has_error(model: *const Model) bool {
         return model.error_text.len > 0;
+    }
+
+    /// True while the app is waiting for the database.
+    ///
+    /// The clock is the guard. A read whose answer never comes - the
+    /// slot was taken, the result was discarded - would otherwise leave
+    /// the app saying "loading" for ever, which is worse than saying
+    /// nothing.
+    pub fn is_loading(model: *const Model) bool {
+        if (!model.reading) return false;
+        if (model.now_ms <= 0) return true;
+        return model.now_ms - model.read_started_at < 10_000;
+    }
+
+    /// True when the screen on the pane is the one whose read failed.
+    pub fn read_failed_here(model: *const Model) bool {
+        return model.read_failed and model.failed_screen == model.screen();
+    }
+
+    /// True when there is something to try again.
+    pub fn can_retry(model: *const Model) bool {
+        return model.read_failed;
     }
 
     /// The error the operator needs to see.

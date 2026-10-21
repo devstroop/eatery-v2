@@ -360,47 +360,51 @@ pub const company_sql =
 
 // -------------------------------------------------------------- reads
 
-/// Ask for the menu. The result arrives as a `.products_loaded` message.
-pub fn loadProducts(fx: *Effects) void {
+/// Ask the database a question.
+///
+/// Every read goes through here, so this is the ONE place the app says
+/// it is loading. A screen that shows nothing while its data is on the
+/// way is a screen that looks broken; one that says "loading" is a
+/// screen that is working.
+fn query(
+    model: *Model,
+    fx: *Effects,
+    key: u64,
+    sql: []const u8,
+    params: []const native_sdk.EffectDbValue,
+    on_result: Effects.DbMsgFn,
+) void {
+    model.reading = true;
+    model.read_started_at = model.now_ms;
     fx.dbQuery(.{
-        .key = key_products,
-        .sql = products_sql,
-        .on_result = Effects.dbMsg(.products_loaded),
+        .key = key,
+        .sql = sql,
+        .params = params,
+        .on_result = on_result,
     });
 }
 
-pub fn loadCategories(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_categories,
-        .sql = categories_sql,
-        .on_result = Effects.dbMsg(.categories_loaded),
-    });
+/// Ask for the menu. The result arrives as a `.products_loaded` message.
+pub fn loadProducts(model: *Model, fx: *Effects) void {
+    query(model, fx, key_products, products_sql, &.{}, Effects.dbMsg(.products_loaded));
+}
+
+pub fn loadCategories(model: *Model, fx: *Effects) void {
+    query(model, fx, key_categories, categories_sql, &.{}, Effects.dbMsg(.categories_loaded));
 }
 
 /// Load the dining tables.
-pub fn loadTables(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_tables,
-        .sql = tables_sql,
-        .on_result = Effects.dbMsg(.tables_loaded),
-    });
+pub fn loadTables(model: *Model, fx: *Effects) void {
+    query(model, fx, key_tables, tables_sql, &.{}, Effects.dbMsg(.tables_loaded));
 }
 
 /// Load the tables in the DATABASE, and the row count of each.
-pub fn loadTableCounts(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_db_tables,
-        .sql = table_counts_sql,
-        .on_result = Effects.dbMsg(.db_tables_loaded),
-    });
+pub fn loadTableCounts(model: *Model, fx: *Effects) void {
+    query(model, fx, key_db_tables, table_counts_sql, &.{}, Effects.dbMsg(.db_tables_loaded));
 }
 
-pub fn loadEmployees(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_employees,
-        .sql = employees_sql,
-        .on_result = Effects.dbMsg(.employees_loaded),
-    });
+pub fn loadEmployees(model: *Model, fx: *Effects) void {
+    query(model, fx, key_employees, employees_sql, &.{}, Effects.dbMsg(.employees_loaded));
 }
 
 /// Watch the open orders. The kitchen board is the one screen that
@@ -415,12 +419,8 @@ pub fn watchOpenOrders(fx: *Effects) void {
     });
 }
 
-pub fn loadOrders(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_orders,
-        .sql = orders_sql,
-        .on_result = Effects.dbMsg(.orders_loaded),
-    });
+pub fn loadOrders(model: *Model, fx: *Effects) void {
+    query(model, fx, key_orders, orders_sql, &.{}, Effects.dbMsg(.orders_loaded));
 }
 
 /// Send a dish to a station.
@@ -455,29 +455,17 @@ pub fn saveDishStation(fx: *Effects, key: u64, product_id: i64, station_id: i64)
 
 /// Load the devices and the sync state, for the control centre.
 
-pub fn loadDevices(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_devices,
-        .sql = devices_sql,
-        .on_result = Effects.dbMsg(.devices_loaded),
-    });
+pub fn loadDevices(model: *Model, fx: *Effects) void {
+    query(model, fx, key_devices, devices_sql, &.{}, Effects.dbMsg(.devices_loaded));
 }
 
-pub fn loadSyncState(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_sync_state,
-        .sql = sync_state_sql,
-        .on_result = Effects.dbMsg(.sync_state_loaded),
-    });
+pub fn loadSyncState(model: *Model, fx: *Effects) void {
+    query(model, fx, key_sync_state, sync_state_sql, &.{}, Effects.dbMsg(.sync_state_loaded));
 }
 
 /// Load the stock on the shelf.
-pub fn loadStock(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_stock,
-        .sql = stock_sql,
-        .on_result = Effects.dbMsg(.stock_loaded),
-    });
+pub fn loadStock(model: *Model, fx: *Effects) void {
+    query(model, fx, key_stock, stock_sql, &.{}, Effects.dbMsg(.stock_loaded));
 }
 
 /// Write a count of the stock, and say why it changed.
@@ -524,45 +512,23 @@ pub fn saveStockCount(
 }
 
 /// Load the day's takings, and the way they were paid.
-pub fn loadReport(fx: *Effects, day_start_ms: i64) void {
+pub fn loadReport(model: *Model, fx: *Effects, day_start_ms: i64) void {
     var params: [1]native_sdk.EffectDbValue = .{.{ .integer = day_start_ms }};
-    fx.dbQuery(.{
-        .key = key_report,
-        .sql = report_sql,
-        .params = &params,
-        .on_result = Effects.dbMsg(.report_loaded),
-    });
-    fx.dbQuery(.{
-        .key = key_report_modes,
-        .sql = report_modes_sql,
-        .params = &params,
-        .on_result = Effects.dbMsg(.report_modes_loaded),
-    });
+    query(model, fx, key_report, report_sql, &params, Effects.dbMsg(.report_loaded));
+    query(model, fx, key_report_modes, report_modes_sql, &params, Effects.dbMsg(.report_modes_loaded));
 }
 
 /// Load the payments the restaurant has taken.
-pub fn loadPayments(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_payments,
-        .sql = payments_sql,
-        .on_result = Effects.dbMsg(.payments_loaded),
-    });
+pub fn loadPayments(model: *Model, fx: *Effects) void {
+    query(model, fx, key_payments, payments_sql, &.{}, Effects.dbMsg(.payments_loaded));
 }
 
-pub fn loadOrderLines(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_order_lines,
-        .sql = order_lines_sql,
-        .on_result = Effects.dbMsg(.order_lines_loaded),
-    });
+pub fn loadOrderLines(model: *Model, fx: *Effects) void {
+    query(model, fx, key_order_lines, order_lines_sql, &.{}, Effects.dbMsg(.order_lines_loaded));
 }
 
-pub fn loadConfig(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_config,
-        .sql = config_sql,
-        .on_result = Effects.dbMsg(.config_loaded),
-    });
+pub fn loadConfig(model: *Model, fx: *Effects) void {
+    query(model, fx, key_config, config_sql, &.{}, Effects.dbMsg(.config_loaded));
 }
 
 /// Store the installation salt, if the database does not have one yet.
@@ -596,70 +562,125 @@ pub fn saveSalt(fx: *Effects, key: u64, salt: []const u8, at: i64) void {
     });
 }
 
-pub fn loadProductStations(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_product_stations,
-        .sql = product_stations_sql,
-        .on_result = Effects.dbMsg(.product_stations_loaded),
-    });
+pub fn loadProductStations(model: *Model, fx: *Effects) void {
+    query(model, fx, key_product_stations, product_stations_sql, &.{}, Effects.dbMsg(.product_stations_loaded));
 }
 
-pub fn loadReservations(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_reservations,
-        .sql = reservations_sql,
-        .on_result = Effects.dbMsg(.reservations_loaded),
-    });
+pub fn loadReservations(model: *Model, fx: *Effects) void {
+    query(model, fx, key_reservations, reservations_sql, &.{}, Effects.dbMsg(.reservations_loaded));
 }
 
-pub fn loadSuppliers(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_suppliers,
-        .sql = suppliers_sql,
-        .on_result = Effects.dbMsg(.suppliers_loaded),
-    });
+pub fn loadSuppliers(model: *Model, fx: *Effects) void {
+    query(model, fx, key_suppliers, suppliers_sql, &.{}, Effects.dbMsg(.suppliers_loaded));
 }
 
-pub fn loadPurchaseOrders(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_purchase_orders,
-        .sql = purchase_orders_sql,
-        .on_result = Effects.dbMsg(.purchase_orders_loaded),
-    });
+pub fn loadPurchaseOrders(model: *Model, fx: *Effects) void {
+    query(model, fx, key_purchase_orders, purchase_orders_sql, &.{}, Effects.dbMsg(.purchase_orders_loaded));
 }
 
-pub fn loadInventory(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_inventory,
-        .sql = inventory_sql,
-        .on_result = Effects.dbMsg(.inventory_loaded),
-    });
+pub fn loadInventory(model: *Model, fx: *Effects) void {
+    query(model, fx, key_inventory, inventory_sql, &.{}, Effects.dbMsg(.inventory_loaded));
 }
 
 /// The settings and the lists, loaded when their screen is opened.
 /// The effects channel has sixteen slots: loading everything at once
 /// fills them, and the queries that arrive late are refused.
-pub fn loadForScreen(fx: *Effects, screen: nav.Screen) void {
+/// The data a screen shows.
+///
+/// This is the ONE place that knows what a screen reads, so opening a
+/// screen and trying it again after a failure read the same things.
+pub fn loadForScreen(model: *Model, fx: *Effects, screen: nav.Screen) void {
     switch (screen) {
-        .settings_printers => loadPrinters(fx),
-        .settings_tax => loadTaxSlabs(fx),
-        .settings_modifiers => loadModifierGroups(fx),
-        .settings_discounts => loadDiscounts(fx),
-        .customers => loadCustomers(fx),
-        .pos => loadDiscounts(fx),
-        .reservations => loadReservations(fx),
-        .suppliers => loadSuppliers(fx),
-        .purchase_orders => loadPurchaseOrders(fx),
+        // the admin's screens
+        .admin_dashboard => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+            loadTables(model, fx);
+            loadEmployees(model, fx);
+        },
+        .pos => {
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+            loadDiscounts(model, fx);
+        },
+        .orders => loadOrders(model, fx),
+        .order_detail => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+        },
+        .order_confirmation => loadOrders(model, fx),
+        .payments => loadPayments(model, fx),
+        .reports => loadReport(model, fx, model.report_day_start_ms()),
+        .customers => loadCustomers(model, fx),
+        .dining_tables => loadTables(model, fx),
+        .reservations => loadReservations(model, fx),
+        .suppliers => loadSuppliers(model, fx),
+        .purchase_orders => loadPurchaseOrders(model, fx),
+        .employees => loadEmployees(model, fx),
+        .product_categories => {
+            loadCategories(model, fx);
+            loadProducts(model, fx);
+        },
+        .categories => {
+            loadCategories(model, fx);
+            loadProducts(model, fx);
+        },
+        .kitchen_dishes => {
+            loadProducts(model, fx);
+            loadStations(model, fx);
+            loadProductStations(model, fx);
+        },
+        .inventory_items => loadStock(model, fx),
+        .settings => {},
+        .settings_company => loadCompany(model, fx),
+        .settings_currency => loadCompany(model, fx),
+        .settings_printers => loadPrinters(model, fx),
+        .settings_tax => loadTaxSlabs(model, fx),
+        .settings_modifiers => {
+            loadModifierGroups(model, fx);
+            loadModifiers(model, fx);
+        },
+        .settings_discounts => loadDiscounts(model, fx),
+        .data_management => {
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+            loadTables(model, fx);
+            loadOrders(model, fx);
+            loadEmployees(model, fx);
+        },
+        .db_inspector => loadTableCounts(model, fx),
+        .control_center => {
+            loadDevices(model, fx);
+            loadSyncState(model, fx);
+        },
+
+        // the kitchen and the waiter
+        .kds_board => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+            loadStations(model, fx);
+            loadProductStations(model, fx);
+        },
+        .waiter_tables => loadTables(model, fx),
+        .waiter_menu => {
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+        },
+        .waiter_cart => {},
+        .waiter_orders => loadOrders(model, fx),
+        .display_board => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+        },
+
         else => {},
     }
 }
 
-pub fn loadCustomers(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_customers,
-        .sql = customers_sql,
-        .on_result = Effects.dbMsg(.customers_loaded),
-    });
+pub fn loadCustomers(model: *Model, fx: *Effects) void {
+    query(model, fx, key_customers, customers_sql, &.{}, Effects.dbMsg(.customers_loaded));
 }
 
 /// Replace an employee's PIN.
@@ -763,37 +784,21 @@ pub fn saveTaxSlab(
     });
 }
 
-pub fn loadPrinters(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_printers,
-        .sql = printers_sql,
-        .on_result = Effects.dbMsg(.printers_loaded),
-    });
+pub fn loadPrinters(model: *Model, fx: *Effects) void {
+    query(model, fx, key_printers, printers_sql, &.{}, Effects.dbMsg(.printers_loaded));
 }
 
-pub fn loadTaxSlabs(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_tax_slabs,
-        .sql = tax_slabs_sql,
-        .on_result = Effects.dbMsg(.tax_slabs_loaded),
-    });
+pub fn loadTaxSlabs(model: *Model, fx: *Effects) void {
+    query(model, fx, key_tax_slabs, tax_slabs_sql, &.{}, Effects.dbMsg(.tax_slabs_loaded));
 }
 
-pub fn loadModifierGroups(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_modifier_groups,
-        .sql = modifier_groups_sql,
-        .on_result = Effects.dbMsg(.modifier_groups_loaded),
-    });
+pub fn loadModifierGroups(model: *Model, fx: *Effects) void {
+    query(model, fx, key_modifier_groups, modifier_groups_sql, &.{}, Effects.dbMsg(.modifier_groups_loaded));
 }
 
 /// Load the choices in the modifier groups.
-pub fn loadModifiers(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_modifiers,
-        .sql = modifiers_sql,
-        .on_result = Effects.dbMsg(.modifiers_loaded),
-    });
+pub fn loadModifiers(model: *Model, fx: *Effects) void {
+    query(model, fx, key_modifiers, modifiers_sql, &.{}, Effects.dbMsg(.modifiers_loaded));
 }
 
 /// The employee has left.
@@ -876,43 +881,31 @@ pub fn saveModifierGroup(
     });
 }
 
-pub fn loadDiscounts(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_discounts,
-        .sql = discounts_sql,
-        .on_result = Effects.dbMsg(.discounts_loaded),
-    });
+pub fn loadDiscounts(model: *Model, fx: *Effects) void {
+    query(model, fx, key_discounts, discounts_sql, &.{}, Effects.dbMsg(.discounts_loaded));
 }
 
-pub fn loadStations(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_stations,
-        .sql = stations_sql,
-        .on_result = Effects.dbMsg(.stations_loaded),
-    });
+pub fn loadStations(model: *Model, fx: *Effects) void {
+    query(model, fx, key_stations, stations_sql, &.{}, Effects.dbMsg(.stations_loaded));
 }
 
-pub fn loadCompany(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_company,
-        .sql = company_sql,
-        .on_result = Effects.dbMsg(.company_loaded),
-    });
+pub fn loadCompany(model: *Model, fx: *Effects) void {
+    query(model, fx, key_company, company_sql, &.{}, Effects.dbMsg(.company_loaded));
 }
 
 /// Load everything the shell needs on boot. One arm, one place.
-pub fn loadAll(fx: *Effects) void {
-    loadCompany(fx);
-    loadStations(fx);
-    loadProductStations(fx);
+pub fn loadAll(model: *Model, fx: *Effects) void {
+    loadCompany(model, fx);
+    loadStations(model, fx);
+    loadProductStations(model, fx);
 
-    loadCategories(fx);
-    loadProducts(fx);
-    loadTables(fx);
-    loadEmployees(fx);
-    loadCustomers(fx);
-    loadOrders(fx);
-    loadOrderLines(fx);
+    loadCategories(model, fx);
+    loadProducts(model, fx);
+    loadTables(model, fx);
+    loadEmployees(model, fx);
+    loadCustomers(model, fx);
+    loadOrders(model, fx);
+    loadOrderLines(model, fx);
 }
 
 // ------------------------------------------------------------ decoding

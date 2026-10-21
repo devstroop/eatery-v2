@@ -392,6 +392,8 @@ pub const Msg = union(enum) {
 
     /// Dismiss the error banner.
     dismiss_error,
+    /// Try the read that failed again.
+    retry_read,
     /// Flip between the light and dark palette.
     toggle_theme,
     /// The wall clock tick: the model keeps `now_ms` fresh so the
@@ -401,6 +403,44 @@ pub const Msg = union(enum) {
     /// Messages the view never dispatches. The runtime delivers these
     /// (database results) or `update` raises them; no markup binds
     /// them, so they are declared here to keep the lint honest.
+    /// Whether this message is a read, and how it went.
+    ///
+    /// Null for anything that is not a read. The list is the one place
+    /// that knows which messages carry a read's answer, so the app's
+    /// loading state and its retry do not have to be told twice.
+    pub fn readOutcome(msg: Msg) ?bool {
+        return switch (msg) {
+            .products_loaded => |r| r.outcome == .ok,
+            .categories_loaded => |r| r.outcome == .ok,
+            .tables_loaded => |r| r.outcome == .ok,
+            .db_tables_loaded => |r| r.outcome == .ok,
+            .employees_loaded => |r| r.outcome == .ok,
+            .orders_loaded => |r| r.outcome == .ok,
+            .order_lines_loaded => |r| r.outcome == .ok,
+            .customers_loaded => |r| r.outcome == .ok,
+            .company_loaded => |r| r.outcome == .ok,
+            .config_loaded => |r| r.outcome == .ok,
+            .payments_loaded => |r| r.outcome == .ok,
+            .report_loaded => |r| r.outcome == .ok,
+            .report_modes_loaded => |r| r.outcome == .ok,
+            .stock_loaded => |r| r.outcome == .ok,
+            .devices_loaded => |r| r.outcome == .ok,
+            .sync_state_loaded => |r| r.outcome == .ok,
+            .modifiers_loaded => |r| r.outcome == .ok,
+            .modifier_groups_loaded => |r| r.outcome == .ok,
+            .discounts_loaded => |r| r.outcome == .ok,
+            .printers_loaded => |r| r.outcome == .ok,
+            .tax_slabs_loaded => |r| r.outcome == .ok,
+            .reservations_loaded => |r| r.outcome == .ok,
+            .suppliers_loaded => |r| r.outcome == .ok,
+            .purchase_orders_loaded => |r| r.outcome == .ok,
+            .inventory_loaded => |r| r.outcome == .ok,
+            .stations_loaded => |r| r.outcome == .ok,
+            .product_stations_loaded => |r| r.outcome == .ok,
+            else => null,
+        };
+    }
+
     pub const view_unbound = .{
         "login_checked",
         "products_loaded",
