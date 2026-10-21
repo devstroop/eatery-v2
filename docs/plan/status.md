@@ -18,19 +18,19 @@
 
 | Measure | Value | Evidence |
 |---|---|---|
-| `Screen` variants | 52 | `src/core/navigation.zig` |
-| Screen templates | 47 | `src/screens/*.native` (ten area files) |
-| Templates mounted in the shell | 47, each gated on the screen ordinal | `src/app.native` |
-| Screens that render at all | 47 | every mounted template builds; a test asserts it |
-| Templates with a render test | 47 | `src/tests.zig` (the screen-coverage test builds each one, and finds a landmark of its own) |
-| `Msg` variants | 178 | `src/core/msg.zig` |
+| `Screen` variants | 53 | `src/core/navigation.zig` |
+| Screen templates | 53 | `src/screens/*.native` (ten area files) |
+| Templates mounted in the shell | 53 - 46 on the screen ordinal, seven session screens on their own condition | `src/app.native` |
+| Screens that render at all | 53 | every mounted template builds; a test asserts it |
+| Templates with a render test | 53 | `src/tests.zig` (the screen-coverage test builds each one, and finds a landmark of its own) |
+| `Msg` variants | 190 | `src/core/msg.zig` |
 | Tables | 44 | `src/schema/*.sql` |
 | Migrations | 15 | `migrations.lock.json` version 15 |
-| Read queries | 27 | `src/data/repos.zig` (one named constant each, and one place that says the app is loading) |
+| Read queries | 28 | `src/data/repos.zig` (one named constant each, and one place that says the app is loading) |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, employee PIN, employee removal, customer, category, tax slab, discount, modifier group, dish station, stock count, payment | `repos.zig` |
-| Effect keys | 53, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 115, green | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 78, green | `src/tests_data.zig` |
+| Effect keys | 56, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
+| Headless tests | 119 authored (120 reported with the generated one), green | `src/tests.zig`, `src/tests_data.zig` |
+| Database integration tests | 83, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -43,7 +43,7 @@
 | App model | Implemented | Model, Msg, update, boot, effects keys |
 | Role picker and login | Partial | Salted SHA-256, kiosk sign-in and first-run setup exist; the sign-in now checks the employee's stored role (B-002) and waits for the database to confirm the salt (B-003); the PIN is still a fast digest with no lockout (B-027) |
 | RBAC and navigation | Implemented core | 45 screens, 4 roles, one guard, a session-scoped stack ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
-| Screen coverage | Partial | 47 of 52 screens are mounted and render; five have no template: `landing`, `upgrade`, `pos_cart`, `table_categories`, `floor_plan` - the last two are floor features the app has not built |
+| Screen coverage | Implemented | every screen in the enum is mounted, renders, and has a landmark of its own; the seven session screens are mounted on their own condition, the other forty-six on their ordinal gate |
 | Theming | Implemented | Light/dark semantic tokens; every text pair is asserted against WCAG AA |
 | Shell layout | Partial | Fixed rail + content; no responsive mode. The shell says "Loading..." while a read is on its way, and a failed read replaces the screen with the reason and a way to try again |
 | Dashboard | Implemented | Counts, recent orders, shortcuts; money is hard-coded to 2 decimals (B-013) |
@@ -61,7 +61,7 @@
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 115 tests pass (37 markup and model, 78 against the database); no sale smoke through the UI |
+| Testing | Partial | 119 tests pass (36 markup and model, 83 against the database); no sale smoke through the UI |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
