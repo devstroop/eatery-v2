@@ -588,14 +588,29 @@ pub const Model = struct {
         return model.reservations_list;
     }
 
+    /// How many reservations are on the book.
+    pub fn reservation_count(model: *const Model) usize {
+        return model.reservations_list.len;
+    }
+
     /// The suppliers.
     pub fn suppliers(model: *const Model) []const domain.Supplier {
         return model.suppliers_list;
     }
 
+    /// How many suppliers the restaurant buys from.
+    pub fn supplier_count(model: *const Model) usize {
+        return model.suppliers_list.len;
+    }
+
     /// The purchase orders.
     pub fn purchase_orders(model: *const Model) []const domain.PurchaseOrder {
         return model.purchase_orders_list;
+    }
+
+    /// How many purchase orders are open.
+    pub fn purchase_order_count(model: *const Model) usize {
+        return model.purchase_orders_list.len;
     }
 
     /// The printers the restaurant has.
@@ -766,6 +781,11 @@ pub const Model = struct {
     /// How many tables the floor has.
     pub fn table_count(model: *const Model) usize {
         return model.tables.len;
+    }
+
+    /// How many customers the restaurant has.
+    pub fn customer_count(model: *const Model) usize {
+        return model.customers.len;
     }
 
     /// How many orders are on the board.

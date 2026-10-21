@@ -25,8 +25,16 @@ const Model = model_mod.Model;
 const Effects = native_sdk.Effects(@import("../core/msg.zig").Msg);
 
 // --------------------------------------------------------------- keys
-
-/// Effect keys. One per long-running read plus one per write family.
+//
+// Effect keys. One per long-running read plus one per write family.
+//
+// A key is an effect's identity in the channel: two live effects cannot
+// share one. A write that reuses a live key is REFUSED (the outcome is
+// `.rejected`), so a collision is a write that silently never happens -
+// the worst kind of bug in a till. Every key below is used exactly once.
+//
+// `28` is not used: it was the reservation for the printer write that
+// became `key_save_printer`.
 pub const key_products = 1;
 pub const key_tables = 2;
 pub const key_employees = 3;
@@ -43,6 +51,7 @@ pub const key_watch_orders = 13;
 pub const key_open_order = 14;
 pub const key_add_line = 15;
 pub const key_stations = 16;
+pub const key_chime = 17;
 pub const key_product_stations = 18;
 pub const key_board_refresh = 19;
 pub const key_save_company = 20;
@@ -57,10 +66,11 @@ pub const key_reservations = 29;
 pub const key_suppliers = 30;
 pub const key_purchase_orders = 31;
 pub const key_inventory = 32;
-pub const key_chime = 17;
-pub const key_write_order = 20;
-pub const key_write_product = 21;
-pub const key_write_table = 22;
+pub const key_write_order = 33;
+pub const key_write_product = 34;
+pub const key_write_table = 35;
+pub const key_save_salt = 36;
+pub const key_save_currency = 37;
 
 // ------------------------------------------------------------ queries
 

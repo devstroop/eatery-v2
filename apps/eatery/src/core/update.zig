@@ -727,7 +727,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.busy = true;
-            repos.saveCurrency(fx, repos.key_save_company, code, if (symbol.len == 0) "$" else symbol);
+            repos.saveCurrency(fx, repos.key_save_currency, code, if (symbol.len == 0) "$" else symbol);
         },
 
         .currency_saved => |result| {
