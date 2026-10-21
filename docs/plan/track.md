@@ -64,7 +64,7 @@ machine, a second process, or hardware to be believed.
 
 ### Why the tracks are branches
 
-Each track is a branch off `main`, and each branch is developed in its
+Each track is a branch off `develop`, and each branch is developed in its
 own worktree. Two reasons:
 
 - a track that touches `core/update.zig` and a track that only touches
@@ -72,13 +72,26 @@ own worktree. Two reasons:
 - the branch is the unit of review, and a review reads better when the
   diff is one concern.
 
-The branch names are the vocabulary. A commit that lands on `main`
+The branch names are the vocabulary. A commit that lands on `develop`
 directly is a commit that was too small to be reviewed; a commit that
 touches two tracks is a commit that needs splitting.
 
+## The branches
+
+| Branch | What it is |
+|---|---|
+| `main` | What is released. It moves when `develop` is promoted. |
+| `develop` | The integration branch. Every track merges here, and every commit on it is green. |
+| `feat/…`, `chore/…` | A track. Cut from `develop`, merged back into `develop`. |
+
+Two tracks can be in flight at once - in two worktrees, on two
+branches - and neither waits for the other. The promotion is a pull
+request like any other: `develop` to `main`, and its review is the
+review of everything the tracks landed since the last one.
+
 ## How work lands
 
-1. **A branch, cut from `main`:** `git worktree add ../eatery-v2-worktrees/<name> -b <type>/<name> main`.
+1. **A branch, cut from `develop`:** `git worktree add ../eatery-v2-worktrees/<name> -b <type>/<name> develop`.
 2. **A test that fails first.** Every rule this repository protects is a
    test. A fix without a test is a fix that comes back.
 3. **Conventional Commits,** one concern per commit, in the imperative:
@@ -87,8 +100,10 @@ touches two tracks is a commit that needs splitting.
    what the slice establishes, what is in it, what is deliberately not
    in it, and what it sets up for the next slice.
 5. **`scripts/verify-all.sh` green, `scripts/build.sh` green.**
-6. **A pull request** that says what was verified and how. The
-   contributor guide has the checklist.
+6. **A pull request into `develop`** that says what was verified and
+   how. The contributor guide has the checklist.
+7. **The promotion:** `develop` to `main`, when the tracks have landed
+   something worth releasing.
 
 ## The tracker
 
