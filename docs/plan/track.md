@@ -115,15 +115,17 @@ there are two sets of those numbers:
 - **The 2026-10-20 audit** - `B-001` to `B-037`, `G-001` to `G-026`,
   `E-001` to `E-020`, `D-001` to `D-018`. These are the findings in
   [`review/archive/`](../review/archive/), and they are the numbers the
-  commits and the decisions use.
-- **The v1 app's inventory** - `B-036`, `G-027` to `G-034`, `E-021` and
-  the rest: what the Flutter app still owed, carried over as it is.
+  commits and the decisions use. Every one of them carries the label
+  `source/audit`.
+- **The v1 app's inventory** - what the Flutter app still owed, carried
+  over as it is. Their titles are prefixed `V1-`, because the two sets
+  overlap by name and not by finding: the v1's `B-036` is the accounting
+  date, and the audit's `B-036` is two effects sharing an effect key.
+  Every one of them carries the label `source/v1`.
 
-The two sets overlap by accident and by name, not by finding: the v1's
-`B-036` is the accounting date, and the audit's `B-036` is two effects
-sharing an effect key. The issue NUMBER is what identifies an issue -
-`#77` is the v1's accounting date, `#1` is the audit's order ids - and
-that is the number a commit closes.
+The issue NUMBER is what identifies an issue - `#77` is the v1's
+accounting date, `#1` is the audit's order ids - and that is the number
+a commit closes.
 
 ## The findings, and the issues they became
 
