@@ -180,6 +180,8 @@ pub const Msg = union(enum) {
     open_customers,
     /// Edit the customer with this id.
     edit_customer: i64,
+    /// The employee with this id has left.
+    deactivate_employee: i64,
     /// Start a new customer.
     new_customer,
     /// The customer's name changed.

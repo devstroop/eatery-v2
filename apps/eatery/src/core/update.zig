@@ -821,6 +821,20 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_dashboard => go(model, .admin_dashboard),
 
+        .deactivate_employee => |id| {
+            if (id == 0) return;
+            // The last admin cannot be deactivated: a restaurant with
+            // no admin cannot open the back office, and the owner
+            // would have no way back in.
+            if (model.is_last_admin(id)) {
+                model.error_text = "The last admin cannot be removed - make someone else an admin first";
+                return;
+            }
+            model.busy = true;
+            model.error_text = "";
+            repos.deactivateEmployee(fx, repos.key_deactivate_employee, id);
+        },
+
         .open_customers => {
             go(model, .customers);
             repos.loadCustomers(fx);

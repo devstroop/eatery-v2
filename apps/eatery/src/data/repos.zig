@@ -85,6 +85,7 @@ pub const key_db_tables = 48;
 pub const key_modifiers = 51;
 pub const key_save_modifier_group = 52;
 pub const key_save_customer = 53;
+pub const key_deactivate_employee = 54;
 pub const key_devices = 49;
 pub const key_sync_state = 50;
 
@@ -792,6 +793,24 @@ pub fn loadModifiers(fx: *Effects) void {
         .key = key_modifiers,
         .sql = modifiers_sql,
         .on_result = Effects.dbMsg(.modifiers_loaded),
+    });
+}
+
+/// The employee has left.
+///
+/// The row stays: the orders they took still name them, and a bill
+/// that cannot say who served it is a bill nobody can defend. What
+/// changes is that the employee is no longer on the team and can no
+/// longer sign in - the sign-in query asks for `active = 1`.
+pub fn deactivateEmployee(fx: *Effects, key: u64, id: i64) void {
+    var params: [1]native_sdk.EffectDbValue = .{.{ .integer = id }};
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET active = 0 WHERE id = ?1;",
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.employee_saved),
     });
 }
 

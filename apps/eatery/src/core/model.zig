@@ -1208,6 +1208,22 @@ pub const Model = struct {
         return model.tax_slabs_list;
     }
 
+    /// Whether the employee with this id is the last admin.
+    ///
+    /// A restaurant with no admin cannot open the back office, and
+    /// the owner would have no way back in. So the last admin cannot
+    /// be deactivated until someone else is one.
+    pub fn is_last_admin(model: *const Model, id: i64) bool {
+        var admins: usize = 0;
+        var is_admin = false;
+        for (model.employees) |employee| {
+            if (employee.role != @intFromEnum(domain.EmployeeRole.admin)) continue;
+            admins += 1;
+            if (employee.id == id) is_admin = true;
+        }
+        return is_admin and admins <= 1;
+    }
+
     /// The customer being edited, by name.
     pub fn form_customer_name(model: *const Model) []const u8 {
         return model.form_customer_name_buf.text();

@@ -30,6 +30,7 @@
             <text grow="1" on-press="edit_employee:{employee.id}">{employee.name}</text>
             <badge>{employee.role_label}</badge>
             <button size="sm" variant="ghost" on-press="reset_employee_pin:{employee.id}">Reset PIN</button>
+            <button size="sm" variant="ghost" on-press="deactivate_employee:{employee.id}">Remove</button>
           </row>
         </for>
       </column>

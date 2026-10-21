@@ -1525,6 +1525,61 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
+test "an employee who has left is not on the team and cannot sign in" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A waiter, and an admin, so the guard has something to protect.
+    harness.fx.dbExec(.{
+        .key = 948,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (8, 'Ravi', 1, 'x', 1, 1700000000000), (9, 'Meera', 0, 'y', 1, 1700000000000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadEmployees(harness.fx);
+    harness.drain();
+
+    // The waiter leaves.
+    harness.send(Msg{ .deactivate_employee = 8 });
+    harness.drain();
+
+    // The row is still there - the orders they took still name them -
+    // but they are not on the team any more.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM employee WHERE id = 8 AND active = 0;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+    repos.loadEmployees(harness.fx);
+    harness.drain();
+    var found = false;
+    for (harness.model.employees) |employee| {
+        if (employee.id == 8) found = true;
+    }
+    try testing.expect(!found);
+
+    // And they cannot sign in: the sign-in asks for an active employee.
+    const signins = try countRows(&harness, "SELECT COUNT(*) AS n FROM employee WHERE id = 8 AND active = 1;", &.{});
+    try testing.expectEqual(@as(i64, 0), signins);
+}
+
+test "the last admin cannot be removed" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    repos.loadEmployees(harness.fx);
+    harness.drain();
+
+    // The seeded restaurant has one admin, and that admin is 7.
+    harness.send(Msg{ .deactivate_employee = 7 });
+    harness.drain();
+
+    // The owner is told, and the admin is still there.
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM employee WHERE id = 7 AND active = 1;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
 test "the owner writes a customer" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
