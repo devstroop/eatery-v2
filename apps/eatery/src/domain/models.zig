@@ -149,6 +149,9 @@ pub const Company = struct {
     currency_code: []const u8,
     currency_symbol: []const u8,
     tax_inclusive: bool,
+    address: []const u8,
+    phone: []const u8,
+    tax_number: []const u8,
 };
 
 /// A staff member. The PIN hash never enters this struct: the login
@@ -157,6 +160,8 @@ pub const Employee = struct {
     id: i64,
     name: []const u8,
     role: i64,
+    /// The role, as text.
+    role_label: []const u8,
     active: bool,
 };
 
@@ -170,6 +175,8 @@ pub const Product = struct {
     id: i64,
     category_id: i64,
     name: []const u8,
+    /// The food marking, as text: the markup binds fields, not methods.
+    food_label: []const u8,
     /// Price in minor units (cents, paise, yen...).
     price_minor: i64,
     product_type: ProductType,
@@ -204,6 +211,8 @@ pub const Customer = struct {
     phone: []const u8,
     email: []const u8,
     loyalty_points: i64,
+    /// The points, as the row shows them.
+    points_label: []const u8,
 };
 
 pub const TaxSlab = struct {
@@ -212,12 +221,109 @@ pub const TaxSlab = struct {
     /// Rate in basis points (5% == 500).
     rate_bps: i64,
     inclusive: bool,
+    active: bool,
+    /// "Inclusive" or "Exclusive", as the row shows it.
+    tax_label: []const u8,
 };
 
 pub const KdsStation = struct {
     id: i64,
     name: []const u8,
     sort_order: i64,
+};
+
+/// The roles an employee can have.
+pub const EmployeeRole = enum(i64) {
+    admin = 0,
+    waiter = 1,
+    kitchen = 2,
+    display = 3,
+
+    pub fn label(self: EmployeeRole) []const u8 {
+        return switch (self) {
+            .admin => "Admin",
+            .waiter => "Waiter",
+            .kitchen => "Kitchen",
+            .display => "Display",
+        };
+    }
+};
+
+/// A reservation for a table.
+pub const Reservation = struct {
+    id: i64,
+    name: []const u8,
+    phone: []const u8,
+    guests: i64,
+    reserved_at: i64,
+    /// The same moment in epoch SECONDS - the markup's time() takes
+    /// seconds, and a division would make it a float.
+    reserved_seconds: i64,
+    /// 'booked', 'seated' or 'cancelled'.
+    status: i64,
+    status_label: []const u8,
+    notes: []const u8,
+};
+
+/// A supplier the restaurant buys from.
+pub const Supplier = struct {
+    id: i64,
+    name: []const u8,
+    phone: []const u8,
+    email: []const u8,
+    address: []const u8,
+    gstin: []const u8,
+    active: bool,
+};
+
+/// An order placed with a supplier.
+pub const PurchaseOrder = struct {
+    id: i64,
+    order_no: []const u8,
+    status: i64,
+    status_label: []const u8,
+    total_minor: i64,
+    ordered_at: i64,
+    /// The same moment in epoch SECONDS.
+    ordered_seconds: i64,
+    expected_at: i64,
+    notes: []const u8,
+};
+
+/// A receipt or kitchen printer.
+pub const Printer = struct {
+    id: i64,
+    name: []const u8,
+    /// 'escpos' or 'system'.
+    kind: []const u8,
+    /// 'ble', 'tcp', 'usb' or 'file'.
+    transport: []const u8,
+    address: []const u8,
+    /// 'receipt', 'kot' or 'report'.
+    job: []const u8,
+    active: bool,
+};
+
+/// A group of choices on a dish.
+pub const ModifierGroup = struct {
+    id: i64,
+    name: []const u8,
+    required: bool,
+    max_select: i64,
+    active: bool,
+    /// "Required" or "Optional", as the row shows it.
+    required_label: []const u8,
+};
+
+/// A discount: a percentage, a fixed amount, or both.
+pub const Discount = struct {
+    id: i64,
+    name: []const u8,
+    percent_bps: i64,
+    amount_minor: i64,
+    active: bool,
+    /// The discount as the row shows it: "10%" or "₹50.00".
+    value_label: []const u8,
 };
 
 /// Which station cooks which product.

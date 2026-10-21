@@ -44,6 +44,18 @@
       <button variant="ghost" on-press="sign_out">Sign out</button>
     </row>
 
+    <text size="lg">Everything else</text>
+    <grid columns="3" gap="8">
+      <for each="overview_links" key="id" as="link">
+        <card padding="12" on-press="open_screen:{link.id}">
+          <column gap="2">
+            <text>{link.title}</text>
+            <text size="sm" foreground="text_muted">{link.detail}</text>
+          </column>
+        </card>
+      </for>
+    </grid>
+
     <text size="lg">Recent orders</text>
     <if test="{order_count == 0}">
       <column background="surface" radius="md" padding="16">

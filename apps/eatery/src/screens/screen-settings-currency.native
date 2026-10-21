@@ -1,0 +1,32 @@
+<!-- The currency the restaurant trades in. It is on every price, so
+     it is set once here rather than per product. -->
+
+<template name="screen-settings-currency">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Currency</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <card padding="16" width="440">
+      <column gap="8">
+        <text-field
+          text="{form_currency_code}"
+          placeholder="USD"
+          label="Currency code"
+          on-input="form_currency_code_edit"
+        />
+        <text-field
+          text="{form_currency_symbol}"
+          placeholder="$"
+          label="Symbol"
+          on-input="form_currency_symbol_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_currency">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>

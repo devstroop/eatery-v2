@@ -195,8 +195,8 @@ test "the cart adds, counts and totals in minor units" {
 
     var model = main.initialModel();
     model.products = &.{
-        .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
-        .{ .id = 2, .category_id = 0, .name = "Masala Chai", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 2, .category_id = 0, .name = "Masala Chai", .food_label = "Veg", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
     };
 
     main.update(&model, .{ .add_to_cart = 1 }, &fx);
@@ -221,7 +221,7 @@ test "money stays integer: two hundred and fifty cents is never a float" {
 
     var model = main.initialModel();
     model.products = &.{
-        .{ .id = 7, .category_id = 0, .name = "Coffee", .price_minor = 250, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 7, .category_id = 0, .name = "Coffee", .food_label = "Veg", .price_minor = 250, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
     };
     main.update(&model, .{ .add_to_cart = 7 }, &fx);
     try testing.expectEqual(@as(i64, 250), model.cart_total_minor());
@@ -299,8 +299,8 @@ test "the POS screen renders with a menu and a cart" {
     model.signed_in = true;
     model.screen_index = 10; // the POS
     model.products = &.{
-        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
-        .{ .id = 2, .category_id = 1, .name = "Masala Chai", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 2, .category_id = 1, .name = "Masala Chai", .food_label = "Veg", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
     };
     model.categories = &.{
         .{ .id = 1, .name = "Starters", .sort_order = 1 },
@@ -356,7 +356,8 @@ test "the layout survives a resize" {
     model.screen_index = nav.Screen.admin_dashboard.index();
 
     const tree = try buildTree(arena, &model);
-    var nodes: [64]canvas.WidgetLayoutNode = undefined;
+    // The dashboard has grown; the layout buffer follows the widget budget.
+    var nodes: [512]canvas.WidgetLayoutNode = undefined;
     const layout = try canvas.layoutWidgetTree(tree.root, native_sdk.geometry.RectF.init(0, 0, 1280, 800), &nodes);
     try testing.expect(layout.nodes.len > 0);
 }

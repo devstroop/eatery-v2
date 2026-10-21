@@ -97,6 +97,9 @@ pub const Model = struct {
     company_id: i64 = 0,
     /// The company name, owned by `company_buf`.
     company_name_field: []const u8 = "",
+    company_address_field: []const u8 = "",
+    company_phone_field: []const u8 = "",
+    company_tax_field: []const u8 = "",
     currency_code: []const u8 = "USD",
     currency_symbol: []const u8 = "$",
     /// True when the menu's prices already include tax.
@@ -141,6 +144,55 @@ pub const Model = struct {
     selected_category: i64 = 0,
     /// The search text in the POS.
     search: canvas.TextBuffer(64) = .{},
+
+    // -------------------------------------------------------- the forms
+
+    /// The forms the settings and the catalogue edit.
+    form_currency_code_buf: canvas.TextBuffer(8) = .{},
+    form_currency_symbol_buf: canvas.TextBuffer(8) = .{},
+    form_product_name_buf: canvas.TextBuffer(64) = .{},
+    form_product_price_buf: canvas.TextBuffer(16) = .{},
+    form_product_category_id: i64 = 0,
+    form_product_food_id: i64 = 0,
+    /// The product being edited; zero means a new one.
+    form_product_id: i64 = 0,
+    form_employee_name_buf: canvas.TextBuffer(64) = .{},
+    form_employee_role_id: i64 = 0,
+    /// The employee being edited; zero means a new one.
+    form_employee_id: i64 = 0,
+
+    // ------------------------------------------------------ the order
+
+    /// The order the order-detail screen is showing.
+    selected_order_id: i64 = 0,
+
+    // ------------------------------------------------- the settings data
+
+    printers_list: []const domain.Printer = &.{},
+    tax_slabs_list: []const domain.TaxSlab = &.{},
+    modifier_groups_list: []const domain.ModifierGroup = &.{},
+    discounts_list: []const domain.Discount = &.{},
+    reservations_list: []const domain.Reservation = &.{},
+    suppliers_list: []const domain.Supplier = &.{},
+    purchase_orders_list: []const domain.PurchaseOrder = &.{},
+
+    /// Storage for the settings rows the screens show.
+    printers_buf: bump.Bump(8192) = .{},
+    tax_slabs_buf: bump.Bump(4096) = .{},
+    modifier_groups_buf: bump.Bump(4096) = .{},
+    discounts_buf: bump.Bump(4096) = .{},
+    reservations_buf: bump.Bump(8192) = .{},
+    suppliers_buf: bump.Bump(8192) = .{},
+    purchase_orders_buf: bump.Bump(8192) = .{},
+
+    // ------------------------------------------------- the company form
+
+    /// The company's editable details, held as buffers so the form can
+    /// be typed into before it is saved.
+    form_name_buf: canvas.TextBuffer(64) = .{},
+    form_address_buf: canvas.TextBuffer(128) = .{},
+    form_phone_buf: canvas.TextBuffer(32) = .{},
+    form_tax_buf: canvas.TextBuffer(32) = .{},
 
     // ------------------------------------------------------ the kitchen
 
@@ -349,6 +401,228 @@ pub const Model = struct {
         return total;
     }
 
+    /// How many people are on the team.
+    pub fn employee_count(model: *const Model) usize {
+        return model.employees.len;
+    }
+
+    /// The company form's fields, one binding each.
+    pub fn form_company_name(model: *const Model) []const u8 {
+        return model.form_name_buf.text();
+    }
+
+    pub fn form_company_address(model: *const Model) []const u8 {
+        return model.form_address_buf.text();
+    }
+
+    pub fn form_company_phone(model: *const Model) []const u8 {
+        return model.form_phone_buf.text();
+    }
+
+    pub fn form_company_tax(model: *const Model) []const u8 {
+        return model.form_tax_buf.text();
+    }
+
+    /// The settings menu. This method lives INSIDE the struct on
+    /// purpose: the binding resolver only sees the declarations in the
+    /// struct body, and a method at file scope is invisible to the
+    /// markup.
+    pub fn settings_items(_: *const Model) []const SettingsItem {
+        return &settings_menu;
+    }
+
+    /// The currency the restaurant trades in.
+    pub fn company_currency_code(model: *const Model) []const u8 {
+        return model.currency_code;
+    }
+
+    /// The currency code in the currency form.
+    pub fn form_currency_code(model: *const Model) []const u8 {
+        return model.form_currency_code_buf.text();
+    }
+
+    /// The currency symbol in the currency form.
+    pub fn form_currency_symbol(model: *const Model) []const u8 {
+        return model.form_currency_symbol_buf.text();
+    }
+
+    /// The product name in the product form.
+    pub fn form_product_name(model: *const Model) []const u8 {
+        return model.form_product_name_buf.text();
+    }
+
+    /// The product price in the product form, as typed.
+    pub fn form_product_price(model: *const Model) []const u8 {
+        return model.form_product_price_buf.text();
+    }
+
+    /// The category the product form is set to.
+    pub fn form_product_category(model: *const Model) i64 {
+        return model.form_product_category_id;
+    }
+
+    /// The food marking the product form is set to.
+    pub fn form_product_food(model: *const Model) i64 {
+        return model.form_product_food_id;
+    }
+
+    /// The title of the product form: "New product" or the name.
+    pub fn product_form_title(model: *const Model) []const u8 {
+        if (model.form_product_id == 0) return "New product";
+        for (model.products) |product| {
+            if (product.id == model.form_product_id) return product.name;
+        }
+        return "Product";
+    }
+
+    /// The employee name in the employee form.
+    pub fn form_employee_name(model: *const Model) []const u8 {
+        return model.form_employee_name_buf.text();
+    }
+
+    /// The role the employee form is set to.
+    pub fn form_employee_role(model: *const Model) i64 {
+        return model.form_employee_role_id;
+    }
+
+    /// The title of the employee form: "New employee" or the name.
+    pub fn employee_form_title(model: *const Model) []const u8 {
+        if (model.form_employee_id == 0) return "New employee";
+        for (model.employees) |employee| {
+            if (employee.id == model.form_employee_id) return employee.name;
+        }
+        return "Employee";
+    }
+
+    /// The food markings, as the product form offers them.
+    pub fn food_types(_: *const Model) []const FoodTypeOption {
+        return &food_type_options;
+    }
+
+    /// The roles an employee can have, as the form offers them.
+    pub fn employee_roles(_: *const Model) []const RoleOption {
+        return &employee_role_options;
+    }
+
+    /// How many printers there are.
+    pub fn printer_count(model: *const Model) usize {
+        return model.printers_list.len;
+    }
+
+    /// How many tax slabs there are.
+    pub fn tax_slab_count(model: *const Model) usize {
+        return model.tax_slabs_list.len;
+    }
+
+    /// How many modifier groups there are.
+    pub fn modifier_group_count(model: *const Model) usize {
+        return model.modifier_groups_list.len;
+    }
+
+    /// How many discounts there are.
+    pub fn discount_count(model: *const Model) usize {
+        return model.discounts_list.len;
+    }
+
+    /// How many categories there are.
+    pub fn category_count(model: *const Model) usize {
+        return model.categories.len;
+    }
+
+    /// The order the detail screen is showing, if any.
+    pub fn selected_order(model: *const Model) ?domain.Order {
+        for (model.orders) |order| {
+            if (order.id == model.selected_order_id) return order;
+        }
+        return null;
+    }
+
+    /// The lines of the order the detail screen is showing.
+    pub fn selected_order_lines(model: *const Model, arena: std.mem.Allocator) []const domain.OrderLine {
+        var count: usize = 0;
+        for (model.order_lines) |line| {
+            if (line.order_id == model.selected_order_id) count += 1;
+        }
+        const out = arena.alloc(domain.OrderLine, count) catch return &.{};
+        var index: usize = 0;
+        for (model.order_lines) |line| {
+            if (line.order_id != model.selected_order_id) continue;
+            out[index] = line;
+            index += 1;
+        }
+        return out[0..index];
+    }
+
+    /// The order number of the order being shown.
+    pub fn selected_order_no(model: *const Model) []const u8 {
+        const order = model.selected_order() orelse return "";
+        return order.order_no;
+    }
+
+    /// The status of the order being shown.
+    pub fn selected_order_status(model: *const Model) []const u8 {
+        const order = model.selected_order() orelse return "";
+        return order.status_label;
+    }
+
+    /// The kind of sale the order being shown is.
+    pub fn selected_order_type(model: *const Model) []const u8 {
+        const order = model.selected_order() orelse return "";
+        return order.type_label;
+    }
+
+    /// When the order being shown was taken, in epoch seconds.
+    pub fn selected_order_when(model: *const Model) i64 {
+        const order = model.selected_order() orelse return 0;
+        return @divTrunc(order.placed_at, 1000);
+    }
+
+    /// The total of the order being shown.
+    pub fn selected_order_total(model: *const Model) i64 {
+        const order = model.selected_order() orelse return 0;
+        return order.total_minor;
+    }
+
+    /// The reservations.
+    pub fn reservations(model: *const Model) []const domain.Reservation {
+        return model.reservations_list;
+    }
+
+    /// The suppliers.
+    pub fn suppliers(model: *const Model) []const domain.Supplier {
+        return model.suppliers_list;
+    }
+
+    /// The purchase orders.
+    pub fn purchase_orders(model: *const Model) []const domain.PurchaseOrder {
+        return model.purchase_orders_list;
+    }
+
+    /// The printers the restaurant has.
+    pub fn printers(model: *const Model) []const domain.Printer {
+        return model.printers_list;
+    }
+
+    /// The tax slabs the menu prices against.
+    pub fn tax_slabs(model: *const Model) []const domain.TaxSlab {
+        return model.tax_slabs_list;
+    }
+
+    /// The modifier groups on the menu.
+    pub fn modifier_groups(model: *const Model) []const domain.ModifierGroup {
+        return model.modifier_groups_list;
+    }
+
+    /// The discounts the cashier can apply.
+    pub fn discounts(model: *const Model) []const domain.Discount {
+        return model.discounts_list;
+    }
+
+    /// The tiles on the overview.
+    pub fn overview_links(_: *const Model) []const LinkItem {
+        return &dashboard_links;
+    }
+
     /// The order number of the order just placed.
     pub fn last_order_no(model: *const Model) []const u8 {
         return model.last_order_no_field;
@@ -381,6 +655,11 @@ pub const Model = struct {
     }
 
     /// Why the last payment failed, or empty.
+    /// The error the operator needs to see.
+    pub fn error_text_text(model: *const Model) []const u8 {
+        return model.error_text;
+    }
+
     pub fn payment_error_text(model: *const Model) []const u8 {
         return model.payment_error;
     }
@@ -708,6 +987,67 @@ pub const CartRow = struct {
     name: []const u8,
     qty: i64,
     total_minor: i64,
+};
+
+/// One food marking, as the product form offers it.
+pub const FoodTypeOption = struct {
+    id: usize,
+    label: []const u8,
+};
+
+const food_type_options = [_]FoodTypeOption{
+    .{ .id = @intFromEnum(domain.FoodType.non_veg), .label = domain.FoodType.non_veg.label() },
+    .{ .id = @intFromEnum(domain.FoodType.veg), .label = domain.FoodType.veg.label() },
+    .{ .id = @intFromEnum(domain.FoodType.egg), .label = domain.FoodType.egg.label() },
+    .{ .id = @intFromEnum(domain.FoodType.jain), .label = domain.FoodType.jain.label() },
+};
+
+/// One employee role, as the form offers it.
+pub const RoleOption = struct {
+    id: usize,
+    label: []const u8,
+};
+
+const employee_role_options = [_]RoleOption{
+    .{ .id = @intFromEnum(domain.EmployeeRole.admin), .label = domain.EmployeeRole.admin.label() },
+    .{ .id = @intFromEnum(domain.EmployeeRole.waiter), .label = domain.EmployeeRole.waiter.label() },
+    .{ .id = @intFromEnum(domain.EmployeeRole.kitchen), .label = domain.EmployeeRole.kitchen.label() },
+    .{ .id = @intFromEnum(domain.EmployeeRole.display), .label = domain.EmployeeRole.display.label() },
+};
+
+/// One tile on the overview: a screen the owner can reach from the
+/// front page.
+pub const LinkItem = struct {
+    id: usize,
+    title: []const u8,
+    detail: []const u8,
+};
+
+const dashboard_links = [_]LinkItem{
+    .{ .id = @intFromEnum(Screen.customers), .title = "Customers", .detail = "Who came back" },
+    .{ .id = @intFromEnum(Screen.reservations), .title = "Reservations", .detail = "Who is coming" },
+    .{ .id = @intFromEnum(Screen.suppliers), .title = "Suppliers", .detail = "Who you buy from" },
+    .{ .id = @intFromEnum(Screen.purchase_orders), .title = "Purchase orders", .detail = "What is on its way" },
+    .{ .id = @intFromEnum(Screen.settings), .title = "Settings", .detail = "The restaurant's setup" },
+};
+
+/// One row of the settings menu.
+pub const SettingsItem = struct {
+    /// The screen the row opens. Computed from the enum, so a
+    /// reordering of `Screen` breaks the build instead of the menu.
+    id: usize,
+    title: []const u8,
+    detail: []const u8,
+};
+
+const settings_menu = [_]SettingsItem{
+    .{ .id = @intFromEnum(Screen.settings_company), .title = "Company", .detail = "Name, address, tax number" },
+    .{ .id = @intFromEnum(Screen.settings_printers), .title = "Printers", .detail = "Receipt and kitchen printers" },
+    .{ .id = @intFromEnum(Screen.settings_tax), .title = "Tax slabs", .detail = "The rates and the slabs" },
+    .{ .id = @intFromEnum(Screen.settings_currency), .title = "Currency", .detail = "Currency and region" },
+    .{ .id = @intFromEnum(Screen.settings_modifiers), .title = "Modifier groups", .detail = "The choices on a dish" },
+    .{ .id = @intFromEnum(Screen.settings_discounts), .title = "Discounts", .detail = "Percent and fixed discounts" },
+    .{ .id = @intFromEnum(Screen.data_management), .title = "Data", .detail = "Import, export and backup" },
 };
 
 /// One card on the customer display.

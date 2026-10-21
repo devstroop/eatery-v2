@@ -268,8 +268,8 @@ test "an order is written, read back, and its status advances" {
     // Sign in as the operator taking the order.
     harness.model.employee_id = 7;
     harness.model.products = &.{
-        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
-        .{ .id = 2, .category_id = 2, .name = "Masala Chai", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 2, .category_id = 2, .name = "Masala Chai", .food_label = "Veg", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
     };
 
     harness.send(.{ .add_to_cart = 1 });
@@ -512,7 +512,7 @@ test "taking the payment closes the order and records the money" {
 
     harness.model.employee_id = 7;
     harness.model.products = &.{
-        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
     };
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
@@ -543,7 +543,7 @@ test "the waiter opens an order for a free table and adds to it" {
         .{ .id = 2, .category_id = 1, .name = "T2", .status = .free, .status_label = "Free", .seats = 2, .pos_x = 1, .pos_y = 0 },
     };
     harness.model.products = &.{
-        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
     };
 
     // A free table gets a new order, numbered after the clock.
@@ -655,4 +655,239 @@ test "the kitchen board filters by station" {
     harness.model.station_filter_field = 2;
     try testing.expectEqual(@as(usize, 1), harness.model.kitchen_tickets(arena).len);
     try testing.expectEqual(@as(i64, 2), harness.model.kitchen_tickets(arena)[0].id);
+}
+
+test "the company details are saved and read back" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The form starts from what is stored: opening the screen seeds
+    // the form from the saved company.
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    harness.send(.{ .open_screen = @intCast(nav.Screen.settings_company.index()) });
+    try testing.expectEqualStrings("Test Diner", harness.model.form_company_name());
+
+    // The form is edited and saved.
+    harness.model.form_name_buf.set("Sharma Restaurant and Bar");
+    harness.model.form_address_buf.set("12 MG Road");
+    harness.model.form_phone_buf.set("+91 98765 43210");
+    harness.model.form_tax_buf.set("29ABCDE1234F1Z5");
+    harness.send(Msg{ .save_company = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    // And the database has the new details.
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("Sharma Restaurant and Bar", harness.model.company_name_field);
+    try testing.expectEqualStrings("12 MG Road", harness.model.company_address_field);
+    try testing.expectEqualStrings("+91 98765 43210", harness.model.company_phone_field);
+    try testing.expectEqualStrings("29ABCDE1234F1Z5", harness.model.company_tax_field);
+}
+
+test "a company cannot be saved without a name" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_name_buf.set("   ");
+    harness.send(Msg{ .save_company = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
+test "a product is saved, read back, and the menu shows it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The form starts from a new product.
+    harness.send(Msg{ .new_product = {} });
+    try testing.expectEqual(nav.Screen.product_form, harness.model.screen());
+
+    // It is filled in and saved.
+    harness.model.form_product_name_buf.set("Garlic Naan");
+    harness.model.form_product_price_buf.set("60.50");
+    harness.model.form_product_category_id = 1;
+    harness.model.form_product_food_id = 1;
+    harness.send(Msg{ .save_product = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    // The catalogue has it, at the price that was typed: sixty rupees
+    // and fifty paise, in minor units, exactly.
+    try testing.expectEqual(@as(usize, 3), harness.model.products.len);
+    const naan = findProductNamed(&harness.model, "Garlic Naan") orelse return error.ProductNotFound;
+    try testing.expectEqual(@as(i64, 6050), naan.price_minor);
+}
+
+test "a price that is not a number is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_product_name_buf.set("Something");
+    harness.model.form_product_price_buf.set("sixty");
+    harness.model.form_product_category_id = 1;
+    harness.send(Msg{ .save_product = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
+test "an employee is saved and can sign in" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_employee = {} });
+    harness.model.form_employee_name_buf.set("Ravi");
+    harness.model.form_employee_role_id = 1;
+    harness.send(Msg{ .save_employee = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    try testing.expectEqual(@as(usize, 2), harness.model.employees.len);
+    const ravi = findEmployeeNamed(&harness.model, "Ravi") orelse return error.EmployeeNotFound;
+    try testing.expectEqual(@as(i64, 1), ravi.role);
+    try testing.expectEqualStrings("Waiter", ravi.role_label);
+}
+
+test "the currency is saved" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_currency_code_buf.set("EUR");
+    harness.model.form_currency_symbol_buf.set("€");
+    harness.send(Msg{ .save_currency = {} });
+    try testing.expectEqualStrings("", harness.model.error_text_text());
+
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("EUR", harness.model.currency_code);
+    try testing.expectEqualStrings("€", harness.model.currency_symbol);
+}
+
+test "the settings data loads: printers, tax slabs, groups and discounts" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 970,
+        .statements = &.{
+            .{
+                // Slab 0 is the "No tax" slab the migration creates.
+                .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 5%', 500, 0, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO printer (id, name, kind, transport, address, job, active, created_at) VALUES (1, 'Counter', 'escpos', 'tcp', '192.168.1.9:9100', 'receipt', 1, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO modifier_group (id, name, required, min_select, max_select, sort_order, active) VALUES (1, 'Spice', 0, 0, 1, 1, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO discount (id, name, percent_bps, amount_minor, active, created_at) VALUES (1, 'Staff', 1000, 0, 1, 1);",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    repos.loadTaxSlabs(harness.fx);
+    repos.loadPrinters(harness.fx);
+    repos.loadModifierGroups(harness.fx);
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+
+    try testing.expectEqual(@as(usize, 2), harness.model.tax_slabs_list.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.printers_list.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.modifier_groups_list.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.discounts_list.len);
+    try testing.expectEqualStrings("Counter", harness.model.printers_list[0].name);
+    try testing.expectEqualStrings("receipt", harness.model.printers_list[0].job);
+}
+
+/// The product with this name, or null.
+fn findProductNamed(model: *const Model, name: []const u8) ?domain.Product {
+    for (model.products) |product| {
+        if (std.mem.eql(u8, product.name, name)) return product;
+    }
+    return null;
+}
+
+/// The employee with this name, or null.
+fn findEmployeeNamed(model: *const Model, name: []const u8) ?domain.Employee {
+    for (model.employees) |employee| {
+        if (std.mem.eql(u8, employee.name, name)) return employee;
+    }
+    return null;
+}
+
+test "an order can be opened, and paid from the order list" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // An order is placed, so there is something to open.
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    repos.loadOrderLines(harness.fx);
+    harness.drain();
+
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+    const order_id = harness.model.orders[0].id;
+
+    // The order opens, and the detail screen knows what is on it.
+    harness.send(.{ .open_order = order_id });
+    try testing.expectEqual(nav.Screen.order_detail, harness.model.screen());
+    try testing.expectEqualStrings(harness.model.orders[0].order_no, harness.model.selected_order_no());
+    try testing.expectEqual(@as(i64, 24500), harness.model.selected_order_total());
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    try testing.expectEqual(@as(usize, 1), harness.model.selected_order_lines(arena_state.allocator()).len);
+
+    // Paying it goes to the confirmation screen, carrying the order.
+    harness.send(Msg{ .pay_selected_order = {} });
+    try testing.expectEqual(nav.Screen.order_confirmation, harness.model.screen());
+    try testing.expectEqual(order_id, harness.model.last_order_id);
+    try testing.expectEqual(@as(i64, 24500), harness.model.last_order_total());
+}
+
+test "a list screen loads its own data when it is opened" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 975,
+        .statements = &.{.{
+            .sql = "INSERT INTO customer (id, name, phone, email, loyalty_points, active, created_at) VALUES (1, 'Meera', '+91 90000 00000', '', 120, 1, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The customers screen is not loaded until it is opened.
+    try testing.expectEqual(@as(usize, 0), harness.model.customers.len);
+    harness.send(.{ .open_screen = @intCast(nav.Screen.customers.index()) });
+    try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
+    try testing.expectEqualStrings("Meera", harness.model.customers[0].name);
+    try testing.expectEqual(nav.Screen.customers, harness.model.screen());
+}
+
+test "the effects channel has sixteen slots, so the loads are lazy" {
+    // The lesson this test records: loading everything at once fills
+    // the channel and the queries that arrive late are refused with a
+    // "busy" that is not the database's fault.
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    var messages: usize = 0;
+    repos.loadAll(harness.fx);
+    while (harness.fx.takeMsg()) |_| messages += 1;
+    // Every query answers with a page and a terminal, so the queries
+    // are half the messages. Sixteen slots is the channel's limit, and
+    // the timers and the live subscription take three of them.
+    const queries = messages / 2;
+    try testing.expect(queries <= 12);
 }

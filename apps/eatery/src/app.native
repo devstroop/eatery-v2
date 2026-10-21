@@ -16,11 +16,28 @@
 <import src="screens/screen-login.native"/>
 <import src="screens/screen-dashboard.native"/>
 <import src="screens/screen-pos.native"/>
+<import src="screens/screen-order-detail.native"/>
 <import src="screens/screen-orders.native"/>
+<import src="screens/screen-customers.native"/>
+<import src="screens/screen-reservations.native"/>
+<import src="screens/screen-suppliers.native"/>
+<import src="screens/screen-purchase-orders.native"/>
 <import src="screens/screen-tables.native"/>
 <import src="screens/screen-kitchen.native"/>
 <import src="screens/screen-order-confirmation.native"/>
 <import src="screens/screen-display.native"/>
+<import src="screens/screen-settings.native"/>
+<import src="screens/screen-settings-printers.native"/>
+<import src="screens/screen-settings-tax.native"/>
+<import src="screens/screen-settings-modifiers.native"/>
+<import src="screens/screen-settings-discounts.native"/>
+<import src="screens/screen-settings-currency.native"/>
+<import src="screens/screen-settings-data.native"/>
+<import src="screens/screen-catalogue-list.native"/>
+<import src="screens/screen-employees-list.native"/>
+<import src="screens/screen-product-form.native"/>
+<import src="screens/screen-employee-form.native"/>
+<import src="screens/screen-settings-company.native"/>
 <import src="screens/screen-waiter-tables.native"/>
 <import src="screens/screen-waiter-menu.native"/>
 <import src="screens/screen-waiter-cart.native"/>
@@ -66,6 +83,11 @@
         <if test="{screen_index == 8}"><use template="screen-dashboard"/></if>
         <if test="{screen_index == 10}"><use template="screen-pos"/></if>
         <if test="{screen_index == 13}"><use template="screen-orders"/></if>
+        <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
+        <if test="{screen_index == 16}"><use template="screen-customers"/></if>
+        <if test="{screen_index == 20}"><use template="screen-reservations"/></if>
+        <if test="{screen_index == 24}"><use template="screen-suppliers"/></if>
+        <if test="{screen_index == 25}"><use template="screen-purchase-orders"/></if>
         <if test="{screen_index == 17}"><use template="screen-tables"/></if>
         <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
         <if test="{screen_index == 37}"><use template="screen-waiter-tables"/></if>
@@ -73,7 +95,19 @@
         <if test="{screen_index == 39}"><use template="screen-waiter-cart"/></if>
         <if test="{screen_index == 40}"><use template="screen-waiter-orders"/></if>
         <if test="{screen_index == 41}"><use template="screen-kitchen"/></if>
+        <if test="{screen_index == 23}"><use template="screen-catalogue-list"/></if>
+        <if test="{screen_index == 26}"><use template="screen-employees-list"/></if>
+        <if test="{screen_index == 30}"><use template="screen-settings-printers"/></if>
+        <if test="{screen_index == 31}"><use template="screen-settings-tax"/></if>
+        <if test="{screen_index == 32}"><use template="screen-settings-currency"/></if>
+        <if test="{screen_index == 33}"><use template="screen-settings-modifiers"/></if>
+        <if test="{screen_index == 34}"><use template="screen-settings-discounts"/></if>
+        <if test="{screen_index == 35}"><use template="screen-settings-data"/></if>
+        <if test="{screen_index == 43}"><use template="screen-product-form"/></if>
+        <if test="{screen_index == 44}"><use template="screen-employee-form"/></if>
         <if test="{screen_index == 42}"><use template="screen-display"/></if>
+        <if test="{screen_index == 28}"><use template="screen-settings"/></if>
+        <if test="{screen_index == 29}"><use template="screen-settings-company"/></if>
       </column>
     </split>
   </if>

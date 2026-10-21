@@ -148,6 +148,143 @@ fn addToOrder(model: *Model, fx: *Effects, product_id: i64) void {
     );
 }
 
+/// Open the product form: an existing product, or a new one.
+fn openProductForm(model: *Model, id: i64) void {
+    model.form_product_id = id;
+    model.form_product_name_buf.set("");
+    model.form_product_price_buf.set("");
+    model.form_product_category_id = 0;
+    model.form_product_food_id = 0;
+    if (id != 0) {
+        for (model.products) |product| {
+            if (product.id != id) continue;
+            model.form_product_name_buf.set(product.name);
+            model.form_product_price_buf.set(priceAsTyped(product.price_minor));
+            model.form_product_category_id = product.category_id;
+            model.form_product_food_id = @intFromEnum(product.food_type);
+            break;
+        }
+    }
+    go(model, .product_form);
+}
+
+/// Open the employee form: an existing employee, or a new one.
+fn openEmployeeForm(model: *Model, id: i64) void {
+    model.form_employee_id = id;
+    model.form_employee_name_buf.set("");
+    model.form_employee_role_id = 0;
+    if (id != 0) {
+        for (model.employees) |employee| {
+            if (employee.id != id) continue;
+            model.form_employee_name_buf.set(employee.name);
+            model.form_employee_role_id = employee.role;
+            break;
+        }
+    }
+    go(model, .employee_form);
+}
+
+/// A price in minor units, as the form shows it: the amount with two
+/// decimals and no currency symbol.
+fn priceAsTyped(minor: i64) []const u8 {
+    var buffer: [24]u8 = undefined;
+    const whole = @divTrunc(minor, 100);
+    const cents = @mod(minor, 100);
+    const written = std.fmt.bufPrint(&buffer, "{d}.{d:0>2}", .{ whole, cents }) catch return "";
+    return written;
+}
+
+/// Save the product the form is editing.
+fn saveProduct(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_product_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The product needs a name";
+        return;
+    }
+    const price = parsePrice(model.form_product_price_buf.text()) orelse {
+        model.error_text = "The price is not a number";
+        return;
+    };
+    if (model.form_product_category_id == 0) {
+        model.error_text = "Pick a category";
+        return;
+    }
+    const id = if (model.form_product_id != 0) model.form_product_id else fx.wallMs();
+    model.busy = true;
+    model.error_text = "";
+    repos.saveProduct(
+        fx,
+        repos.key_save_product,
+        id,
+        model.form_product_category_id,
+        name,
+        price,
+        model.form_product_food_id,
+        fx.wallMs(),
+    );
+}
+
+/// Save the employee the form is editing.
+fn saveEmployee(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_employee_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The employee needs a name";
+        return;
+    }
+    const id = if (model.form_employee_id != 0) model.form_employee_id else fx.wallMs();
+    model.busy = true;
+    model.error_text = "";
+    repos.saveEmployee(fx, repos.key_save_employee, id, name, model.form_employee_role_id, fx.wallMs());
+}
+
+/// The price as typed, in minor units. A price is a decimal amount, and
+/// a decimal amount is never a float in this app.
+fn parsePrice(text: []const u8) ?i64 {
+    const trimmed = std.mem.trim(u8, text, " ");
+    if (trimmed.len == 0) return null;
+    var whole: i64 = 0;
+    var cents: i64 = 0;
+    var after_dot = false;
+    var digits: usize = 0;
+    for (trimmed) |char| {
+        if (char == '.') {
+            if (after_dot) return null;
+            after_dot = true;
+            continue;
+        }
+        if (!std.ascii.isDigit(char)) return null;
+        if (after_dot) {
+            if (digits == 0) cents += (char - '0') * 10;
+            if (digits == 1) cents += (char - '0');
+            digits += 1;
+        } else {
+            whole = whole * 10 + (char - '0');
+        }
+    }
+    if (digits == 1) cents *= 10;
+    return whole * 100 + cents;
+}
+
+/// Save the company. The name is the one field that must not be empty:
+/// it is on every receipt.
+fn saveCompany(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The restaurant needs a name";
+        return;
+    }
+    model.busy = true;
+    model.error_text = "";
+    repos.updateCompany(
+        fx,
+        repos.key_save_company,
+        name,
+        std.mem.trim(u8, model.form_address_buf.text(), " "),
+        std.mem.trim(u8, model.form_phone_buf.text(), " "),
+        std.mem.trim(u8, model.form_tax_buf.text(), " "),
+    );
+}
+
 /// Take the payment for the order that was just placed and close it.
 fn takePayment(model: *Model, fx: *Effects) void {
     if (model.last_order_id == 0) {
@@ -369,7 +506,21 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_screen => |index| {
             const screen = std.enums.fromInt(Screen, index) orelse return;
+            // The company form starts from what is stored: opening the
+            // settings shows the saved details, not an empty form. It
+            // is seeded HERE, when the screen is opened - seeding it on
+            // every load would wipe what the operator is typing.
+            if (screen == .settings_company and model.company_id != 0) {
+                model.form_name_buf.set(model.company_name_field);
+                model.form_address_buf.set(model.company_address_field);
+                model.form_phone_buf.set(model.company_phone_field);
+                model.form_tax_buf.set(model.company_tax_field);
+            }
             go(model, screen);
+            // The screen loads what it shows: the effects channel has
+            // sixteen slots, and loading everything at once fills them
+            // and the late queries are refused.
+            repos.loadForScreen(fx, screen);
         },
 
         .open_section => |ordinal| {
@@ -405,6 +556,49 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .open_tables => go(model, .dining_tables),
 
         // ---------------------------------------------------------- the POS
+        .open_order => |id| {
+            model.selected_order_id = id;
+            go(model, .order_detail);
+            repos.loadOrderLines(fx);
+        },
+
+        .pay_selected_order => {
+            const id = model.selected_order_id;
+            if (id == 0) return;
+            const order = findOrder(model, id) orelse return;
+            model.sale_buf.reset();
+            model.last_order_id = order.id;
+            model.last_order_no_field = model.sale_buf.dupe(order.order_no) orelse "";
+            model.last_order_type_field = model.sale_buf.dupe(order.type_label) orelse "";
+            model.last_order_total_minor = order.total_minor;
+            model.last_order_items_count = 0;
+            for (model.order_lines) |line| {
+                if (line.order_id != order.id) continue;
+                model.last_order_items_count += line.qty;
+            }
+            model.last_order_at = order.placed_at;
+            model.payment_error = "";
+            go(model, .order_confirmation);
+        },
+
+        .pay_order => |id| {
+            // The confirmation screen takes the money, so the sale state
+            // is filled in from the order that is being paid.
+            const order = findOrder(model, id) orelse return;
+            model.sale_buf.reset();
+            model.last_order_id = order.id;
+            model.last_order_no_field = model.sale_buf.dupe(order.order_no) orelse "";
+            model.last_order_type_field = model.sale_buf.dupe(order.type_label) orelse "";
+            model.last_order_total_minor = order.total_minor;
+            model.last_order_items_count = 0;
+            for (model.order_lines) |line| {
+                if (line.order_id != order.id) continue;
+                model.last_order_items_count += line.qty;
+            }
+            model.last_order_at = order.placed_at;
+            model.payment_error = "";
+            go(model, .order_confirmation);
+        },
 
         .search_edit => |event| model.search.apply(event),
 
@@ -517,6 +711,150 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // closed order is now a completed one.
             go(model, .orders);
             repos.loadOrders(fx);
+        },
+
+        // -------------------------------------------------------- the forms
+
+        .form_currency_code_edit => |event| model.form_currency_code_buf.apply(event),
+
+        .form_currency_symbol_edit => |event| model.form_currency_symbol_buf.apply(event),
+
+        .save_currency => {
+            const code = std.mem.trim(u8, model.form_currency_code_buf.text(), " ");
+            const symbol = std.mem.trim(u8, model.form_currency_symbol_buf.text(), " ");
+            if (code.len == 0) {
+                model.error_text = "The currency needs a code";
+                return;
+            }
+            model.busy = true;
+            repos.saveCurrency(fx, repos.key_save_company, code, if (symbol.len == 0) "$" else symbol);
+        },
+
+        .currency_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the currency";
+                return;
+            }
+            model.error_text = "";
+            repos.loadCompany(fx);
+        },
+
+        .form_product_name_edit => |event| model.form_product_name_buf.apply(event),
+
+        .form_product_price_edit => |event| model.form_product_price_buf.apply(event),
+
+        .form_product_category => |id| model.form_product_category_id = id,
+
+        .form_product_food => |id| model.form_product_food_id = id,
+
+        .open_catalogue => go(model, .product_categories),
+
+        .open_employees => go(model, .employees),
+
+        .edit_product => |id| openProductForm(model, id),
+
+        .new_product => openProductForm(model, 0),
+
+        .save_product => saveProduct(model, fx),
+
+        .product_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the product";
+                return;
+            }
+            model.error_text = "";
+            repos.loadProducts(fx);
+            repos.loadCategories(fx);
+            go(model, .product_categories);
+        },
+
+        .form_employee_name_edit => |event| model.form_employee_name_buf.apply(event),
+
+        .form_employee_role => |id| model.form_employee_role_id = id,
+
+        .edit_employee => |id| openEmployeeForm(model, id),
+
+        .new_employee => openEmployeeForm(model, 0),
+
+        .save_employee => saveEmployee(model, fx),
+
+        .employee_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the employee";
+                return;
+            }
+            model.error_text = "";
+            repos.loadEmployees(fx);
+            go(model, .employees);
+        },
+
+        .reservations_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeReservations(model, result.bytes);
+        },
+
+        .suppliers_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeSuppliers(model, result.bytes);
+        },
+
+        .purchase_orders_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodePurchaseOrders(model, result.bytes);
+        },
+
+        .inventory_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeProducts(model, result.bytes);
+        },
+
+        .printers_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodePrinters(model, result.bytes);
+        },
+
+        .tax_slabs_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeTaxSlabs(model, result.bytes);
+        },
+
+        .modifier_groups_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeModifierGroups(model, result.bytes);
+        },
+
+        .discounts_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeDiscounts(model, result.bytes);
+        },
+
+        // ------------------------------------------------ the company form
+
+        .form_company_name_edit => |event| model.form_name_buf.apply(event),
+
+        .form_company_address_edit => |event| model.form_address_buf.apply(event),
+
+        .form_company_phone_edit => |event| model.form_phone_buf.apply(event),
+
+        .form_company_tax_edit => |event| model.form_tax_buf.apply(event),
+
+        .save_company => saveCompany(model, fx),
+
+        .open_settings => go(model, .settings),
+
+        .company_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the company";
+                return;
+            }
+            model.error_text = "";
+            // Read it back: the form's buffers are the edit model, and
+            // the company row is the truth.
+            repos.loadCompany(fx);
         },
 
         // -------------------------------------------------- the kitchen board

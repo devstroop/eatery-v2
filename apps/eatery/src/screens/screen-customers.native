@@ -1,0 +1,32 @@
+<!-- The customers. A POS without customers is a POS that cannot
+     remember who came back - the list is where the loyalty points
+     live. -->
+
+<template name="screen-customers">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Customers</text>
+      <text foreground="text_muted">{customer_count}</text>
+    </row>
+
+    <if test="{customer_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No customers yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="customers" key="id" as="customer">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <column gap="2" grow="1">
+              <text>{customer.name}</text>
+              <text size="sm" foreground="text_muted">{customer.phone}</text>
+            </column>
+            <badge>{customer.points_label}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

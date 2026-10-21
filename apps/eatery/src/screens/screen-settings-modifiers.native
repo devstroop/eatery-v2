@@ -1,0 +1,23 @@
+<!-- The modifier groups: the choices on a dish - size, spice, side. -->
+
+<template name="screen-settings-modifiers">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Modifier groups</text>
+      <badge>{modifier_group_count} groups</badge>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="modifier_groups" key="id" as="group">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1">{group.name}</text>
+            <text size="sm" foreground="text_muted">up to {group.max_select}</text>
+            <badge>{group.required_label}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

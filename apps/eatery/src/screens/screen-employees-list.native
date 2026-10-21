@@ -1,0 +1,30 @@
+<!-- The people who work here, and what they can do. The PIN is never
+     shown here: a screen that could show it would be a screen that
+     could leak it. -->
+
+<template name="screen-employees-list">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Employees</text>
+      <text foreground="text_muted">{employee_count} on the team</text>
+      <button size="sm" variant="primary" on-press="new_employee">New</button>
+    </row>
+
+    <if test="{employee_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nobody on the team yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="employees" key="id" as="employee">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_employee:{employee.id}">
+            <text grow="1">{employee.name}</text>
+            <badge>{employee.role_label}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

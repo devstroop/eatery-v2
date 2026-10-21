@@ -17,6 +17,7 @@ const native_sdk = @import("native_sdk");
 
 const model_mod = @import("../core/model.zig");
 const domain = @import("../domain/models.zig");
+const nav = @import("../core/navigation.zig");
 pub const page = @import("page.zig");
 const starter = @import("starter.zig");
 
@@ -44,6 +45,18 @@ pub const key_add_line = 15;
 pub const key_stations = 16;
 pub const key_product_stations = 18;
 pub const key_board_refresh = 19;
+pub const key_save_company = 20;
+pub const key_printers = 21;
+pub const key_tax_slabs = 22;
+pub const key_modifier_groups = 23;
+pub const key_discounts = 24;
+pub const key_save_product = 25;
+pub const key_save_employee = 26;
+pub const key_save_printer = 27;
+pub const key_reservations = 29;
+pub const key_suppliers = 30;
+pub const key_purchase_orders = 31;
+pub const key_inventory = 32;
 pub const key_chime = 17;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
@@ -117,9 +130,52 @@ pub const stations_sql =
     \\SELECT id, name, sort_order FROM kds_station WHERE active = 1 ORDER BY sort_order, name;
 ;
 
+/// The reservations.
+pub const reservations_sql =
+    \\SELECT id, name, phone, guests, reserved_at, status, notes FROM reservation ORDER BY reserved_at;
+;
+
+/// The suppliers.
+pub const suppliers_sql =
+    \\SELECT id, name, phone, email, address, gstin, active FROM supplier ORDER BY name;
+;
+
+/// The purchase orders.
+pub const purchase_orders_sql =
+    \\SELECT id, supplier_id, order_no, status, total_minor, ordered_at, expected_at, notes
+    \\FROM purchase_order ORDER BY ordered_at DESC;
+;
+
+/// The stock on the shelf.
+pub const inventory_sql =
+    \\SELECT id, name, stock_qty, track_stock, active FROM product
+    \\WHERE track_stock = 1 ORDER BY name;
+;
+
+/// The printers the restaurant has.
+pub const printers_sql =
+    \\SELECT id, name, kind, transport, address, job, active FROM printer ORDER BY name;
+;
+
+/// The tax slabs the menu prices against.
+pub const tax_slabs_sql =
+    \\SELECT id, name, rate_bps, inclusive, active FROM tax_slab ORDER BY name;
+;
+
+/// The modifier groups on the menu.
+pub const modifier_groups_sql =
+    \\SELECT id, name, required, max_select, active FROM modifier_group ORDER BY sort_order, name;
+;
+
+/// The discounts the cashier can apply.
+pub const discounts_sql =
+    \\SELECT id, name, percent_bps, amount_minor, active FROM discount ORDER BY name;
+;
+
 /// The company row. A v2 database holds exactly one company.
 pub const company_sql =
-    \\SELECT id, name, currency_code, currency_symbol, tax_inclusive
+    \\SELECT id, name, currency_code, currency_symbol, tax_inclusive,
+    \\       address, phone, tax_number
     \\FROM company
     \\LIMIT 1;
 ;
@@ -156,14 +212,6 @@ pub fn loadEmployees(fx: *Effects) void {
         .key = key_employees,
         .sql = employees_sql,
         .on_result = Effects.dbMsg(.employees_loaded),
-    });
-}
-
-pub fn loadCustomers(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_customers,
-        .sql = customers_sql,
-        .on_result = Effects.dbMsg(.customers_loaded),
     });
 }
 
@@ -232,6 +280,95 @@ pub fn loadProductStations(fx: *Effects) void {
     });
 }
 
+pub fn loadReservations(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_reservations,
+        .sql = reservations_sql,
+        .on_result = Effects.dbMsg(.reservations_loaded),
+    });
+}
+
+pub fn loadSuppliers(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_suppliers,
+        .sql = suppliers_sql,
+        .on_result = Effects.dbMsg(.suppliers_loaded),
+    });
+}
+
+pub fn loadPurchaseOrders(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_purchase_orders,
+        .sql = purchase_orders_sql,
+        .on_result = Effects.dbMsg(.purchase_orders_loaded),
+    });
+}
+
+pub fn loadInventory(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_inventory,
+        .sql = inventory_sql,
+        .on_result = Effects.dbMsg(.inventory_loaded),
+    });
+}
+
+/// The settings and the lists, loaded when their screen is opened.
+/// The effects channel has sixteen slots: loading everything at once
+/// fills them, and the queries that arrive late are refused.
+pub fn loadForScreen(fx: *Effects, screen: nav.Screen) void {
+    switch (screen) {
+        .settings_printers => loadPrinters(fx),
+        .settings_tax => loadTaxSlabs(fx),
+        .settings_modifiers => loadModifierGroups(fx),
+        .settings_discounts => loadDiscounts(fx),
+        .customers => loadCustomers(fx),
+        .reservations => loadReservations(fx),
+        .suppliers => loadSuppliers(fx),
+        .purchase_orders => loadPurchaseOrders(fx),
+        else => {},
+    }
+}
+
+pub fn loadCustomers(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_customers,
+        .sql = customers_sql,
+        .on_result = Effects.dbMsg(.customers_loaded),
+    });
+}
+
+pub fn loadPrinters(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_printers,
+        .sql = printers_sql,
+        .on_result = Effects.dbMsg(.printers_loaded),
+    });
+}
+
+pub fn loadTaxSlabs(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_tax_slabs,
+        .sql = tax_slabs_sql,
+        .on_result = Effects.dbMsg(.tax_slabs_loaded),
+    });
+}
+
+pub fn loadModifierGroups(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_modifier_groups,
+        .sql = modifier_groups_sql,
+        .on_result = Effects.dbMsg(.modifier_groups_loaded),
+    });
+}
+
+pub fn loadDiscounts(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_discounts,
+        .sql = discounts_sql,
+        .on_result = Effects.dbMsg(.discounts_loaded),
+    });
+}
+
 pub fn loadStations(fx: *Effects) void {
     fx.dbQuery(.{
         .key = key_stations,
@@ -253,6 +390,7 @@ pub fn loadAll(fx: *Effects) void {
     loadCompany(fx);
     loadStations(fx);
     loadProductStations(fx);
+
     loadCategories(fx);
     loadProducts(fx);
     loadTables(fx);
@@ -277,6 +415,7 @@ pub fn decodeProducts(model: *Model, bytes: []const u8) void {
             .id = reader.intOf(&values, "id", 0),
             .category_id = reader.intOf(&values, "category_id", 0),
             .name = model.products_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .food_label = enumFromInt(domain.FoodType, reader.intOf(&values, "food_type", 0)).label(),
             .price_minor = reader.intOf(&values, "price_minor", 0),
             .product_type = enumFromInt(domain.ProductType, reader.intOf(&values, "product_type", 0)),
             .food_type = enumFromInt(domain.FoodType, reader.intOf(&values, "food_type", 0)),
@@ -342,6 +481,7 @@ pub fn decodeEmployees(model: *Model, bytes: []const u8) void {
             .id = reader.intOf(&values, "id", 0),
             .name = model.employees_buf.dupe(reader.textOf(&values, "name")) orelse "",
             .role = reader.intOf(&values, "role", 0),
+            .role_label = enumFromInt(domain.EmployeeRole, reader.intOf(&values, "role", 0)).label(),
             .active = reader.boolOf(&values, "active"),
         };
     }
@@ -363,6 +503,7 @@ pub fn decodeCustomers(model: *Model, bytes: []const u8) void {
             .phone = model.customers_buf.dupe(reader.textOf(&values, "phone")) orelse "",
             .email = model.customers_buf.dupe(reader.textOf(&values, "email")) orelse "",
             .loyalty_points = reader.intOf(&values, "loyalty_points", 0),
+            .points_label = "points",
         };
     }
     model.customers = list[0..index];
@@ -457,6 +598,187 @@ pub fn decodeStations(model: *Model, bytes: []const u8) void {
     model.stations_list = list[0..index];
 }
 
+pub fn decodeReservations(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.reservations_buf.reset();
+    const count = reader.rows_left;
+    const list = model.reservations_buf.allocSlice(domain.Reservation, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        const status = reader.intOf(&values, "status", 0);
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.reservations_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .phone = model.reservations_buf.dupe(reader.textOf(&values, "phone")) orelse "",
+            .guests = reader.intOf(&values, "guests", 0),
+            .reserved_at = reader.intOf(&values, "reserved_at", 0),
+            .reserved_seconds = @divTrunc(reader.intOf(&values, "reserved_at", 0), 1000),
+            .status = status,
+            .status_label = reservationStatusLabel(status),
+            .notes = model.reservations_buf.dupe(reader.textOf(&values, "notes")) orelse "",
+        };
+    }
+    model.reservations_list = list[0..index];
+}
+
+pub fn decodeSuppliers(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.suppliers_buf.reset();
+    const count = reader.rows_left;
+    const list = model.suppliers_buf.allocSlice(domain.Supplier, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.suppliers_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .phone = model.suppliers_buf.dupe(reader.textOf(&values, "phone")) orelse "",
+            .email = model.suppliers_buf.dupe(reader.textOf(&values, "email")) orelse "",
+            .address = model.suppliers_buf.dupe(reader.textOf(&values, "address")) orelse "",
+            .gstin = model.suppliers_buf.dupe(reader.textOf(&values, "gstin")) orelse "",
+            .active = reader.boolOf(&values, "active"),
+        };
+    }
+    model.suppliers_list = list[0..index];
+}
+
+pub fn decodePurchaseOrders(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.purchase_orders_buf.reset();
+    const count = reader.rows_left;
+    const list = model.purchase_orders_buf.allocSlice(domain.PurchaseOrder, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        const status = reader.intOf(&values, "status", 0);
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .order_no = model.purchase_orders_buf.dupe(reader.textOf(&values, "order_no")) orelse "",
+            .status = status,
+            .status_label = purchaseStatusLabel(status),
+            .total_minor = reader.intOf(&values, "total_minor", 0),
+            .ordered_at = reader.intOf(&values, "ordered_at", 0),
+            .ordered_seconds = @divTrunc(reader.intOf(&values, "ordered_at", 0), 1000),
+            .expected_at = reader.intOf(&values, "expected_at", 0),
+            .notes = model.purchase_orders_buf.dupe(reader.textOf(&values, "notes")) orelse "",
+        };
+    }
+    model.purchase_orders_list = list[0..index];
+}
+
+/// A reservation's status, as the row shows it.
+fn reservationStatusLabel(status: i64) []const u8 {
+    return switch (status) {
+        0 => "Booked",
+        1 => "Seated",
+        2 => "Cancelled",
+        else => "Booked",
+    };
+}
+
+/// A purchase order's status, as the row shows it.
+fn purchaseStatusLabel(status: i64) []const u8 {
+    return switch (status) {
+        0 => "Ordered",
+        1 => "Part received",
+        2 => "Received",
+        3 => "Cancelled",
+        else => "Ordered",
+    };
+}
+
+pub fn decodePrinters(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.printers_buf.reset();
+    const count = reader.rows_left;
+    const list = model.printers_buf.allocSlice(domain.Printer, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.printers_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .kind = model.printers_buf.dupe(reader.textOf(&values, "kind")) orelse "",
+            .transport = model.printers_buf.dupe(reader.textOf(&values, "transport")) orelse "",
+            .address = model.printers_buf.dupe(reader.textOf(&values, "address")) orelse "",
+            .job = model.printers_buf.dupe(reader.textOf(&values, "job")) orelse "",
+            .active = reader.boolOf(&values, "active"),
+        };
+    }
+    model.printers_list = list[0..index];
+}
+
+pub fn decodeTaxSlabs(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.tax_slabs_buf.reset();
+    const count = reader.rows_left;
+    const list = model.tax_slabs_buf.allocSlice(domain.TaxSlab, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.tax_slabs_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .rate_bps = reader.intOf(&values, "rate_bps", 0),
+            .inclusive = reader.boolOf(&values, "inclusive"),
+            .active = reader.boolOf(&values, "active"),
+            .tax_label = if (reader.boolOf(&values, "inclusive")) "Inclusive" else "Exclusive",
+        };
+    }
+    model.tax_slabs_list = list[0..index];
+}
+
+pub fn decodeModifierGroups(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.modifier_groups_buf.reset();
+    const count = reader.rows_left;
+    const list = model.modifier_groups_buf.allocSlice(domain.ModifierGroup, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.modifier_groups_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .required = reader.boolOf(&values, "required"),
+            .max_select = reader.intOf(&values, "max_select", 1),
+            .active = reader.boolOf(&values, "active"),
+            .required_label = if (reader.boolOf(&values, "required")) "Required" else "Optional",
+        };
+    }
+    model.modifier_groups_list = list[0..index];
+}
+
+pub fn decodeDiscounts(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.discounts_buf.reset();
+    const count = reader.rows_left;
+    const list = model.discounts_buf.allocSlice(domain.Discount, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.discounts_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .percent_bps = reader.intOf(&values, "percent_bps", 0),
+            .amount_minor = reader.intOf(&values, "amount_minor", 0),
+            .active = reader.boolOf(&values, "active"),
+            .value_label = discountValueLabel(
+                reader.intOf(&values, "percent_bps", 0),
+                reader.intOf(&values, "amount_minor", 0),
+            ),
+        };
+    }
+    model.discounts_list = list[0..index];
+}
+
 pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     var reader = page.Reader.init(bytes);
     if (!reader.readHeader()) return;
@@ -467,6 +789,9 @@ pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     model.company_buf.reset();
     model.company_id = reader.intOf(&values, "id", 0);
     model.company_name_field = model.company_buf.dupe(reader.textOf(&values, "name")) orelse "";
+    model.company_address_field = model.company_buf.dupe(reader.textOf(&values, "address")) orelse "";
+    model.company_phone_field = model.company_buf.dupe(reader.textOf(&values, "phone")) orelse "";
+    model.company_tax_field = model.company_buf.dupe(reader.textOf(&values, "tax_number")) orelse "";
     model.currency_code = model.company_buf.dupe(reader.textOf(&values, "currency_code")) orelse "";
     model.currency_symbol = model.company_buf.dupe(reader.textOf(&values, "currency_symbol")) orelse "";
     model.tax_inclusive = reader.boolOf(&values, "tax_inclusive");
@@ -551,6 +876,121 @@ pub fn addOrderLine(
             },
         },
         .on_result = Effects.dbMsg(.order_line_added),
+    });
+}
+
+/// Save the company's details. One statement, one row.
+pub fn updateCompany(
+    fx: *Effects,
+    key: u64,
+    name: []const u8,
+    address: []const u8,
+    phone: []const u8,
+    tax_number: []const u8,
+) void {
+    // The parameters match the placeholders EXACTLY: the engine refuses
+    // a statement whose parameter count differs from the placeholders it
+    // uses, and the refusal is a silent no-write.
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .text = name },
+        .{ .text = address },
+        .{ .text = phone },
+        .{ .text = tax_number },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\UPDATE company SET name = ?1, address = ?2, phone = ?3, tax_number = ?4
+            \\WHERE id = (SELECT id FROM company LIMIT 1);
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.company_saved),
+    });
+}
+
+/// Save a product. A product of id zero is a new one.
+pub fn saveProduct(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    category_id: i64,
+    name: []const u8,
+    price_minor: i64,
+    food_type: i64,
+    at: i64,
+) void {
+    var params: [7]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .integer = category_id },
+        .{ .text = name },
+        .{ .integer = price_minor },
+        .{ .integer = food_type },
+        .{ .integer = at },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO product (id, category_id, name, price_minor, product_type, food_type,
+            \\  tax_slab_id, stock_qty, track_stock, active, created_at, updated_at)
+            \\VALUES (?1, ?2, ?3, ?4, 0, ?5, 0, NULL, 0, 1, ?6, ?7)
+            \\ON CONFLICT(id) DO UPDATE SET category_id = ?2, name = ?3, price_minor = ?4,
+            \\  food_type = ?5, updated_at = ?7;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.product_saved),
+    });
+}
+
+/// Save an employee. An employee of id zero is a new one.
+pub fn saveEmployee(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    role: i64,
+    at: i64,
+) void {
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = role },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO employee (id, name, role, pin_hash, active, created_at)
+            \\VALUES (?1, ?2, ?3, '', 1, ?4)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, role = ?3;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.employee_saved),
+    });
+}
+
+/// Save the currency the restaurant trades in.
+pub fn saveCurrency(fx: *Effects, key: u64, code: []const u8, symbol: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = code },
+        .{ .text = symbol },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\UPDATE company SET currency_code = ?1, currency_symbol = ?2
+            \\WHERE id = (SELECT id FROM company LIMIT 1);
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.currency_saved),
     });
 }
 
@@ -879,6 +1319,14 @@ pub fn setOrderStatus(fx: *Effects, order_id: i64, status: domain.OrderStatus, a
 /// exist, and the write fails.
 fn idParam(value: i64) native_sdk.EffectDbValue {
     return if (value == 0) .null_value else .{ .integer = value };
+}
+
+/// A discount as the row shows it: the percentage, the amount, or both.
+fn discountValueLabel(percent_bps: i64, amount_minor: i64) []const u8 {
+    if (percent_bps > 0 and amount_minor > 0) return "both";
+    if (percent_bps > 0) return "percent";
+    if (amount_minor > 0) return "amount";
+    return "none";
 }
 
 /// The labels the markup binds. Resolved at decode time because the
