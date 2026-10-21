@@ -30,6 +30,19 @@ pub const Msg = union(enum) {
     /// Back to the role picker (from the sign-in screen).
     pick_role_again,
 
+    // ------------------------------------------------------- first run
+
+    /// The setup form changed.
+    setup_company_edit: canvas.TextInputEvent,
+    setup_admin_edit: canvas.TextInputEvent,
+    setup_pin_edit: canvas.TextInputEvent,
+    setup_pin2_edit: canvas.TextInputEvent,
+    setup_currency_edit: canvas.TextInputEvent,
+    /// Set up the restaurant.
+    setup_submit,
+    /// The setup write came back.
+    setup_created: native_sdk.EffectDbResult,
+
     // --------------------------------------------------------- navigation
 
     /// Open a screen by index (see `core/navigation.zig`).
@@ -65,6 +78,17 @@ pub const Msg = union(enum) {
     place_order,
     /// The order write came back.
     order_placed: native_sdk.EffectDbResult,
+
+    // -------------------------------------------------------- the payment
+
+    /// The payment mode the cashier picked.
+    set_payment_mode: i64,
+    /// Take the payment for the order that was just placed.
+    take_payment,
+    /// Back to the point of sale for the next order.
+    back_to_pos,
+    /// The payment write came back.
+    payment_taken: native_sdk.EffectDbResult,
 
     // ------------------------------------------------------ shortcuts
 
@@ -122,6 +146,8 @@ pub const Msg = union(enum) {
         "company_loaded",
         "config_loaded",
         "config_saved",
+        "setup_created",
+        "payment_taken",
         "db_failed",
         "order_placed",
         "order_status_saved",

@@ -289,6 +289,62 @@ test "the model reports its own numbers instead of storing them" {
     try testing.expectEqual(@as(usize, 1), model.ticket_count());
 }
 
+test "the POS screen renders with a menu and a cart" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.role_chosen = true;
+    model.signed_in = true;
+    model.screen_index = 10; // the POS
+    model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+        .{ .id = 2, .category_id = 1, .name = "Masala Chai", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    model.categories = &.{
+        .{ .id = 1, .name = "Starters", .sort_order = 1 },
+        .{ .id = 2, .name = "Mains", .sort_order = 2 },
+    };
+    model.cart[0] = .{ .product_id = 1, .name = "Paneer Tikka", .price_minor = 24500, .qty = 2 };
+    model.cart_len = 1;
+
+    const tree = try buildTree(arena, &model);
+    _ = try expectByText(tree.root, .text, "Paneer Tikka");
+}
+
+test "the order confirmation screen renders after a sale" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.role_chosen = true;
+    model.signed_in = true;
+    model.screen_index = 12; // the order confirmation
+    model.last_order_no_field = "1700000000";
+    model.last_order_type_field = "Dine in";
+    model.last_order_total_minor = 24500;
+    model.last_order_items_count = 2;
+
+    const tree = try buildTree(arena, &model);
+    _ = try expectByText(tree.root, .text, "Order 1700000000");
+    _ = try expectByText(tree.root, .button, "Take $245.00");
+}
+
+test "the setup screen renders on a fresh installation" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.needs_setup = true;
+
+    const tree = try buildTree(arena, &model);
+    _ = try expectByText(tree.root, .text, "Set up your restaurant");
+    _ = try expectByText(tree.root, .button, "Create the restaurant");
+}
+
 test "the layout survives a resize" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();

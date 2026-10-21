@@ -44,6 +44,7 @@ pub const orders_buffer = 48 * 1024;
 pub const customers_buffer = 32 * 1024;
 pub const categories_buffer = 16 * 1024;
 pub const order_lines_buffer = 48 * 1024;
+pub const company_buffer = 1024;
 /// The most lines one cart may carry.
 pub const max_cart_lines = 50;
 
@@ -94,7 +95,8 @@ pub const Model = struct {
     // ------------------------------------------------------------ company
 
     company_id: i64 = 0,
-    company_name: []const u8 = "",
+    /// The company name, owned by `company_buf`.
+    company_name_field: []const u8 = "",
     currency_code: []const u8 = "USD",
     currency_symbol: []const u8 = "$",
     /// True when the menu's prices already include tax.
@@ -110,6 +112,12 @@ pub const Model = struct {
     customers_buf: bump.Bump(customers_buffer) = .{},
     categories_buf: bump.Bump(categories_buffer) = .{},
     order_lines_buf: bump.Bump(order_lines_buffer) = .{},
+    /// Storage for the order just placed.
+    sale_buf: bump.Bump(1024) = .{},
+    /// Storage for the company row's text. The page bytes are drain
+    /// scratch: a name read from the database has to be COPIED before
+    /// the model keeps it.
+    company_buf: bump.Bump(company_buffer) = .{},
 
     products: []const domain.Product = &.{},
     tables: []const domain.DiningTable = &.{},
@@ -123,6 +131,36 @@ pub const Model = struct {
     selected_category: i64 = 0,
     /// The search text in the POS.
     search: canvas.TextBuffer(64) = .{},
+
+    // ------------------------------------------------------- the sale
+
+    /// The order that was just placed: the confirmation screen shows
+    /// it and the payment is taken against it.
+    last_order_id: i64 = 0,
+    last_order_no_field: []const u8 = "",
+    last_order_type_field: []const u8 = "",
+    last_order_total_minor: i64 = 0,
+    last_order_items_count: i64 = 0,
+    last_order_at: i64 = 0,
+    /// The payment mode the cashier picked.
+    payment_mode_field: i64 = 0,
+    /// Why the payment failed, or empty.
+    payment_error: []const u8 = "",
+
+    // ------------------------------------------------------- first run
+
+    /// True when the database has no company yet: the app opens on the
+    /// setup screen instead of the role picker.
+    needs_setup: bool = false,
+    /// The setup form's fields.
+    setup_company_name: canvas.TextBuffer(64) = .{},
+    setup_admin_name: canvas.TextBuffer(64) = .{},
+    setup_pin: canvas.TextBuffer(8) = .{},
+    setup_pin2: canvas.TextBuffer(8) = .{},
+    setup_currency_code: canvas.TextBuffer(8) = .{},
+    setup_currency_symbol: canvas.TextBuffer(8) = .{},
+    /// Why the setup failed, or empty.
+    setup_error: []const u8 = "",
 
     // ---------------------------------------------------------- sign-in
 
@@ -198,14 +236,119 @@ pub const Model = struct {
         return model.error_text;
     }
 
+    /// The order number of the order just placed.
+    pub fn last_order_no(model: *const Model) []const u8 {
+        return model.last_order_no_field;
+    }
+
+    /// The kind of the order just placed.
+    pub fn last_order_type(model: *const Model) []const u8 {
+        return model.last_order_type_field;
+    }
+
+    /// The total of the order just placed, in minor units.
+    pub fn last_order_total(model: *const Model) i64 {
+        return model.last_order_total_minor;
+    }
+
+    /// How many items the order just placed carries.
+    pub fn last_order_items(model: *const Model) i64 {
+        return model.last_order_items_count;
+    }
+
+    /// When the order just placed was taken, in epoch SECONDS - the
+    /// markup's `time()` and `date()` functions take seconds.
+    pub fn last_order_time(model: *const Model) i64 {
+        return @divTrunc(model.last_order_at, 1000);
+    }
+
+    /// The payment mode the cashier picked.
+    pub fn payment_mode(model: *const Model) i64 {
+        return model.payment_mode_field;
+    }
+
+    /// Why the last payment failed, or empty.
+    pub fn payment_error_text(model: *const Model) []const u8 {
+        return model.payment_error;
+    }
+
+    /// True when the last payment failed.
+    pub fn payment_failed(model: *const Model) bool {
+        return model.payment_error.len > 0;
+    }
+
+    /// The payment modes the cashier can pick.
+    pub fn payment_modes(_: *const Model) []const PaymentModeOption {
+        return &payment_mode_options;
+    }
+
+    /// True when the app is waiting for a first-run setup.
+    pub fn show_setup(model: *const Model) bool {
+        return model.needs_setup;
+    }
+
+    /// The setup form's company name.
+    pub fn setup_company_text(model: *const Model) []const u8 {
+        return model.setup_company_name.text();
+    }
+
+    /// The setup form's operator name.
+    pub fn setup_admin_text(model: *const Model) []const u8 {
+        return model.setup_admin_name.text();
+    }
+
+    /// The setup form's PIN. The buffer is the edit model; the view
+    /// binds the text.
+    pub fn setup_pin_text(model: *const Model) []const u8 {
+        return model.setup_pin.text();
+    }
+
+    /// The setup form's confirmation PIN.
+    pub fn setup_pin2_text(model: *const Model) []const u8 {
+        return model.setup_pin2.text();
+    }
+
+    /// The setup form's currency code.
+    pub fn setup_currency_text(model: *const Model) []const u8 {
+        return model.setup_currency_code.text();
+    }
+
+    /// The setup form's currency symbol.
+    pub fn setup_symbol_text(model: *const Model) []const u8 {
+        return model.setup_currency_symbol.text();
+    }
+
+    /// True when the last setup attempt failed.
+    pub fn setup_failed(model: *const Model) bool {
+        return model.setup_error.len > 0;
+    }
+
+    /// Why the setup failed.
+    pub fn setup_error_text(model: *const Model) []const u8 {
+        return model.setup_error;
+    }
+
+    /// Whether the setup form is complete enough to submit: a company
+    /// name, an operator name, a PIN, and the same PIN twice.
+    pub fn setup_can_submit(model: *const Model) bool {
+        const name = std.mem.trim(u8, model.setup_company_name.text(), " ");
+        const admin = std.mem.trim(u8, model.setup_admin_name.text(), " ");
+        const pin = model.setup_pin.text();
+        const pin2 = model.setup_pin2.text();
+        if (name.len == 0 or admin.len == 0 or pin.len == 0) return false;
+        return std.mem.eql(u8, pin, pin2);
+    }
+
     /// True when the last sign-in attempt failed.
     pub fn login_failed(model: *const Model) bool {
         return model.login_error.len > 0;
     }
 
     /// True before a role has been chosen: the role picker is showing.
+    /// A fresh installation shows the setup screen first, so the picker
+    /// waits for it.
     pub fn show_role_picker(model: *const Model) bool {
-        return !model.role_chosen;
+        return !model.role_chosen and !model.needs_setup;
     }
 
     /// True when a role is chosen but nobody has signed in yet.
@@ -262,8 +405,13 @@ pub const Model = struct {
     /// The company name, or a neutral fallback while the database is
     /// still loading.
     pub fn company_label(model: *const Model) []const u8 {
-        if (model.company_name.len == 0) return "Eatery";
-        return model.company_name;
+        if (model.company_name_field.len == 0) return "Eatery";
+        return model.company_name_field;
+    }
+
+    /// The company name, as a slice.
+    pub fn company_name(model: *const Model) []const u8 {
+        return model.company_name_field;
     }
 
     /// The installation salt, as a slice.
@@ -328,53 +476,75 @@ pub const Model = struct {
 
     /// The menu after the category and search filters. A view binds
     /// this with `<for each="visible_products">`.
+    ///
+    /// The rows are allocated in the view's arena and are NEVER freed:
+    /// Zig 0.16's arena `free` rewinds the arena when the block is the
+    /// most recent allocation, so a `deinit` here would hand the rows
+    /// back to the allocator and the NEXT allocation would overwrite
+    /// them - the view would read a menu of garbage. The arena owns
+    /// this memory; nothing in this function frees anything.
     pub fn visible_products(model: *const Model, arena: std.mem.Allocator) []const domain.Product {
         const needle = std.mem.trim(u8, model.search.text(), " ");
-        var out: std.ArrayList(domain.Product) = .empty;
-        defer out.deinit(arena);
+        var count: usize = 0;
         for (model.products) |product| {
-            if (model.selected_category != 0 and product.category_id != model.selected_category) continue;
-            if (needle.len > 0 and !containsIgnoreCase(product.name, needle)) continue;
-            out.append(arena, product) catch break;
+            if (!productMatches(product, model.selected_category, needle)) continue;
+            count += 1;
         }
-        return out.items;
+        const out = arena.alloc(domain.Product, count) catch return &.{};
+        var index: usize = 0;
+        for (model.products) |product| {
+            if (!productMatches(product, model.selected_category, needle)) continue;
+            out[index] = product;
+            index += 1;
+        }
+        return out[0..index];
     }
 
     /// The cart as the view renders it: one row per line, with the
-    /// line total.
+    /// line total. Allocated in the view's arena, never freed (see
+    /// `visible_products` for why).
     pub fn cart_lines(model: *const Model, arena: std.mem.Allocator) []const CartRow {
-        var out: std.ArrayList(CartRow) = .empty;
-        defer out.deinit(arena);
+        const out = arena.alloc(CartRow, model.cart_len) catch return &.{};
+        var index: usize = 0;
         for (model.cart[0..model.cart_len]) |line| {
-            out.append(arena, .{
+            out[index] = .{
                 .product_id = line.product_id,
                 .name = line.name,
                 .qty = line.qty,
                 .total_minor = line.price_minor * line.qty,
-            }) catch break;
+            };
+            index += 1;
         }
-        return out.items;
+        return out[0..index];
     }
 
     /// The kitchen board: the orders the kitchen still owes, oldest
     /// first, with a one-line summary of what to cook.
     pub fn kitchen_tickets(model: *const Model, arena: std.mem.Allocator) []const Ticket {
-        var out: std.ArrayList(Ticket) = .empty;
-        defer out.deinit(arena);
+        var count: usize = 0;
+        for (model.orders) |order| {
+            switch (order.status) {
+                .pending, .preparing, .ready => count += 1,
+                .served, .completed, .voided => {},
+            }
+        }
+        const out = arena.alloc(Ticket, count) catch return &.{};
+        var index: usize = 0;
         for (model.orders) |order| {
             switch (order.status) {
                 .pending, .preparing, .ready => {},
                 .served, .completed, .voided => continue,
             }
-            out.append(arena, .{
+            out[index] = .{
                 .id = order.id,
                 .order_no = order.order_no,
                 .status_label = order.status_label,
                 .summary = summariseOrder(model, order, arena),
                 .waiting_label = waitingLabel(model, order, arena),
-            }) catch break;
+            };
+            index += 1;
         }
-        return out.items;
+        return out[0..index];
     }
 
     /// How many tickets are on the kitchen board.
@@ -388,6 +558,19 @@ pub const Model = struct {
         }
         return count;
     }
+};
+
+/// One payment mode, as the confirmation screen sees it.
+pub const PaymentModeOption = struct {
+    id: usize,
+    label: []const u8,
+};
+
+const payment_mode_options = [_]PaymentModeOption{
+    .{ .id = @intFromEnum(domain.PaymentMode.cash), .label = domain.PaymentMode.cash.label() },
+    .{ .id = @intFromEnum(domain.PaymentMode.card), .label = domain.PaymentMode.card.label() },
+    .{ .id = @intFromEnum(domain.PaymentMode.upi), .label = domain.PaymentMode.upi.label() },
+    .{ .id = @intFromEnum(domain.PaymentMode.wallet), .label = domain.PaymentMode.wallet.label() },
 };
 
 /// One order type, as the POS filter sees it.
@@ -421,15 +604,21 @@ pub const Ticket = struct {
 
 /// "2x Paneer Tikka, 1x Dal" - what the kitchen has to cook.
 fn summariseOrder(model: *const Model, order: domain.Order, arena: std.mem.Allocator) []const u8 {
-    var parts: std.ArrayList([]const u8) = .empty;
-    defer parts.deinit(arena);
+    // Counted first, then filled: the parts live in the view's arena and
+    // are never freed (see `visible_products`).
+    var count: usize = 0;
+    for (model.order_lines) |line| {
+        if (line.order_id == order.id) count += 1;
+    }
+    if (count == 0) return order.notes;
+    const parts = arena.alloc([]const u8, count) catch return order.notes;
+    var index: usize = 0;
     for (model.order_lines) |line| {
         if (line.order_id != order.id) continue;
-        const part = std.fmt.allocPrint(arena, "{d}x {s}", .{ line.qty, line.product_name }) catch continue;
-        parts.append(arena, part) catch break;
+        parts[index] = std.fmt.allocPrint(arena, "{d}x {s}", .{ line.qty, line.product_name }) catch order.notes;
+        index += 1;
     }
-    if (parts.items.len == 0) return order.notes;
-    return std.mem.join(arena, ", ", parts.items) catch order.notes;
+    return std.mem.join(arena, ", ", parts) catch order.notes;
 }
 
 /// How long the ticket has been waiting, in minutes.
@@ -437,6 +626,13 @@ fn waitingLabel(model: *const Model, order: domain.Order, arena: std.mem.Allocat
     if (model.now_ms <= 0 or order.placed_at <= 0) return "just now";
     const minutes = @divTrunc(model.now_ms - order.placed_at, 60_000);
     return std.fmt.allocPrint(arena, "{d} min", .{minutes}) catch "";
+}
+
+/// Whether a product passes the category and search filters.
+fn productMatches(product: domain.Product, category: i64, needle: []const u8) bool {
+    if (category != 0 and product.category_id != category) return false;
+    if (needle.len > 0 and !containsIgnoreCase(product.name, needle)) return false;
+    return true;
 }
 
 /// A case-insensitive substring test. The menu is small enough that a

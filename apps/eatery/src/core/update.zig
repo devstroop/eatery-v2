@@ -38,8 +38,75 @@ pub fn boot(model: *Model, fx: *Effects) void {
         .on_fire = Effects.timerMsg(.tick),
     });
     // The first read: the settings the app needs before it can sign
-    // anybody in, then the rest of the shell's data.
+    // anybody in, and the company - an empty database means a fresh
+    // installation, and the app opens on the setup screen.
     repos.loadConfig(fx);
+    repos.loadCompany(fx);
+}
+
+/// Take the payment for the order that was just placed and close it.
+fn takePayment(model: *Model, fx: *Effects) void {
+    if (model.last_order_id == 0) {
+        model.payment_error = "There is no order to pay for";
+        return;
+    }
+    const mode = std.enums.fromInt(domain.PaymentMode, model.payment_mode_field) orelse domain.PaymentMode.cash;
+    model.busy = true;
+    model.payment_error = "";
+    repos.takePayment(
+        fx,
+        repos.key_payment,
+        model.last_order_id,
+        mode,
+        model.last_order_total_minor,
+        fx.wallMs(),
+    );
+}
+
+/// Set up the restaurant: the company, the first operator, and the
+/// starter menu and floor. One transaction, in `repos.setupCompany`.
+fn submitSetup(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.setup_company_name.text(), " ");
+    const admin = std.mem.trim(u8, model.setup_admin_name.text(), " ");
+    const pin = model.setup_pin.text();
+
+    if (name.len == 0) {
+        model.setup_error = "Give the restaurant a name";
+        return;
+    }
+    if (admin.len == 0) {
+        model.setup_error = "Give the operator a name";
+        return;
+    }
+    if (pin.len == 0) {
+        model.setup_error = "Choose a PIN";
+        return;
+    }
+    if (!std.mem.eql(u8, pin, model.setup_pin2.text())) {
+        model.setup_error = "The two PINs do not match";
+        return;
+    }
+
+    // The PIN is hashed with the installation salt, exactly as it is
+    // at every other sign-in. The plaintext never reaches the disk.
+    var hash: [auth.hex_len]u8 = undefined;
+    auth.hashPin(model.pin_salt(), pin, &hash);
+
+    const code = std.mem.trim(u8, model.setup_currency_code.text(), " ");
+    const symbol = std.mem.trim(u8, model.setup_currency_symbol.text(), " ");
+
+    model.busy = true;
+    model.setup_error = "";
+    repos.setupCompany(
+        fx,
+        repos.key_setup,
+        name,
+        if (code.len == 0) "USD" else code,
+        if (symbol.len == 0) "$" else symbol,
+        admin,
+        &hash,
+        fx.wallMs(),
+    );
 }
 
 /// A fresh installation keeps the salt made at boot and writes it once.
@@ -138,6 +205,45 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.screen_index = Screen.login.index();
         },
 
+        // ------------------------------------------------------- first run
+
+        .setup_company_edit => |event| model.setup_company_name.apply(event),
+
+        .setup_admin_edit => |event| model.setup_admin_name.apply(event),
+
+        .setup_pin_edit => |event| model.setup_pin.apply(event),
+
+        .setup_pin2_edit => |event| model.setup_pin2.apply(event),
+
+        .setup_currency_edit => |event| model.setup_currency_code.apply(event),
+
+        .setup_submit => submitSetup(model, fx),
+
+        .setup_created => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.setup_error = switch (result.outcome) {
+                    .constraint => "That setup breaks a data rule - try different names",
+                    .busy => "The database is busy - try again",
+                    else => "Could not set up the restaurant",
+                };
+                return;
+            }
+            // The restaurant exists: the operator is signed in, and the
+            // app becomes a POS.
+            model.setup_error = "";
+            model.needs_setup = false;
+            model.signed_in = true;
+            model.employee_id = 1;
+            model.employee_name = model.operator_buf.dupe(model.setup_admin_name.text()) orelse "";
+            model.role_chosen = true;
+            model.role = .admin;
+            model.stack.resetTo(.admin_dashboard);
+            model.screen_index = Screen.admin_dashboard.index();
+            model.nav_section = 0;
+            repos.loadAll(fx);
+        },
+
         // ----------------------------------------------------- navigation
 
         .open_screen => |index| {
@@ -203,12 +309,57 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .order_placed => |result| {
             model.busy = false;
             if (result.outcome != .ok) {
-                model.error_text = "Could not save the order";
+                // The operator is told WHAT failed, not just that
+                // something did: a rejected order is a data problem
+                // (a table that no longer exists, a product that was
+                // deleted mid-sale) and a busy database is not.
+                model.error_text = switch (result.outcome) {
+                    .constraint => "The order broke a data rule - check the table and the products",
+                    .busy => "The database is busy - try again",
+                    .misuse => "The order was malformed",
+                    .io_failed => "Storage error - the order was not saved",
+                    else => "Could not save the order",
+                };
                 return;
             }
             model.cart_len = 0;
             model.cart_buf.reset();
             go(model, .order_confirmation);
+            repos.loadOrders(fx);
+        },
+
+        // ---------------------------------------------------- the payment
+
+        .set_payment_mode => |id| model.payment_mode_field = id,
+
+        .take_payment => takePayment(model, fx),
+
+        .back_to_pos => {
+            // The sale is over: the confirmation state goes, and the
+            // next order starts from an empty cart.
+            model.last_order_id = 0;
+            model.last_order_no_field = "";
+            model.last_order_type_field = "";
+            model.last_order_total_minor = 0;
+            model.last_order_items_count = 0;
+            model.payment_error = "";
+            go(model, .pos);
+        },
+
+        .payment_taken => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.payment_error = switch (result.outcome) {
+                    .constraint => "The payment broke a data rule",
+                    .busy => "The database is busy - try again",
+                    else => "Could not take the payment",
+                };
+                return;
+            }
+            model.payment_error = "";
+            // The sale is done: back to the order list, where the
+            // closed order is now a completed one.
+            go(model, .orders);
             repos.loadOrders(fx);
         },
 
@@ -274,24 +425,30 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .config_loaded => |result| {
             if (result.outcome != .ok) return;
-            if (result.kind != .page) return;
-            var reader = page.Reader.init(result.bytes);
-            var values: [page.max_columns]page.Value = undefined;
-            if (!reader.readHeader() or !reader.nextRow(&values)) {
-                // No salt yet: this is a fresh installation. Make one.
-                createSalt(model, fx);
-                return;
+            switch (result.kind) {
+                .page => {
+                    var reader = page.Reader.init(result.bytes);
+                    var values: [page.max_columns]page.Value = undefined;
+                    if (!reader.readHeader() or !reader.nextRow(&values)) return;
+                    const salt = reader.textOf(&values, "value");
+                    if (salt.len == 0) return;
+                    const copied = model.pin_salt_buf[0..];
+                    const length = @min(salt.len, copied.len);
+                    @memcpy(copied[0..length], salt[0..length]);
+                    model.pin_salt_len = length;
+                    // The database has the salt now: it is not the
+                    // provisional one any more.
+                    model.salt_is_provisional = false;
+                },
+                .done => {
+                    // The settings query finished. If the database had
+                    // no salt, this is a fresh installation and the
+                    // provisional salt the app made at boot is the one
+                    // that counts - so store it.
+                    if (model.salt_is_provisional) createSalt(model, fx);
+                },
+                .exec => {},
             }
-            const salt = reader.textOf(&values, "value");
-            if (salt.len == 0) {
-                createSalt(model, fx);
-                return;
-            }
-            const copied = model.pin_salt_buf[0..];
-            const length = @min(salt.len, copied.len);
-            @memcpy(copied[0..length], salt[0..length]);
-            model.pin_salt_len = length;
-            model.salt_is_provisional = false;
         },
 
         .config_saved => {},
@@ -300,6 +457,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeCompany(model, result.bytes);
             model.db_ready = true;
+            // No company row: this is a fresh installation, and the
+            // app's first job is to become a restaurant.
+            if (model.company_id == 0 and !model.needs_setup) {
+                model.needs_setup = true;
+                model.setup_currency_code.set("USD");
+                model.setup_currency_symbol.set("$");
+                model.stack.resetTo(.setup);
+                model.screen_index = Screen.setup.index();
+            }
         },
 
         .db_failed => |result| {
@@ -457,6 +623,18 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         };
         count += 1;
     }
+
+    // The confirmation screen shows this order and the payment is
+    // taken against it.
+    model.sale_buf.reset();
+    model.last_order_id = order.id;
+    model.last_order_no_field = model.sale_buf.dupe(order.order_no) orelse "";
+    model.last_order_type_field = model.sale_buf.dupe(order.order_type.label()) orelse "";
+    model.last_order_total_minor = order.total_minor;
+    model.last_order_items_count = 0;
+    for (lines[0..count]) |line| model.last_order_items_count += line.qty;
+    model.last_order_at = order.placed_at;
+    model.payment_error = "";
 
     model.busy = true;
     repos.saveOrder(fx, order, lines[0..count]);

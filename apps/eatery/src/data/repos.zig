@@ -17,7 +17,8 @@ const native_sdk = @import("native_sdk");
 
 const model_mod = @import("../core/model.zig");
 const domain = @import("../domain/models.zig");
-const page = @import("page.zig");
+pub const page = @import("page.zig");
+const starter = @import("starter.zig");
 
 const Model = model_mod.Model;
 const Effects = native_sdk.Effects(@import("../core/msg.zig").Msg);
@@ -35,6 +36,8 @@ pub const key_company = 7;
 pub const key_login = 8;
 pub const key_order_lines = 9;
 pub const key_config = 10;
+pub const key_setup = 11;
+pub const key_payment = 12;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
 pub const key_write_table = 22;
@@ -376,11 +379,201 @@ pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     if (!reader.readHeader()) return;
     var values: [page.max_columns]page.Value = undefined;
     if (!reader.nextRow(&values)) return;
+    // The page bytes are drain scratch: the model keeps these strings,
+    // so they are COPIED into its own buffer.
+    model.company_buf.reset();
     model.company_id = reader.intOf(&values, "id", 0);
-    model.company_name = reader.textOf(&values, "name");
-    model.currency_code = reader.textOf(&values, "currency_code");
-    model.currency_symbol = reader.textOf(&values, "currency_symbol");
+    model.company_name_field = model.company_buf.dupe(reader.textOf(&values, "name")) orelse "";
+    model.currency_code = model.company_buf.dupe(reader.textOf(&values, "currency_code")) orelse "";
+    model.currency_symbol = model.company_buf.dupe(reader.textOf(&values, "currency_symbol")) orelse "";
     model.tax_inclusive = reader.boolOf(&values, "tax_inclusive");
+}
+
+/// Take the payment for an order and close it. ONE transaction: the
+/// money and the closed order land together, or neither does. A paid
+/// order that is still open is a cashier's worst day.
+pub fn takePayment(fx: *Effects, key: u64, order_id: i64, mode: domain.PaymentMode, amount_minor: i64, at: i64) void {
+    // Each statement carries its OWN parameters: the engine checks that
+    // a statement's parameter count matches the placeholders it uses,
+    // and one shared array for three different statements never does.
+    var payment_params: [5]native_sdk.EffectDbValue = .{
+        .{ .integer = at },
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(mode) },
+        .{ .integer = amount_minor },
+        .{ .integer = at },
+    };
+    var order_params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
+        .{ .integer = at },
+    };
+    var history_params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
+        .{ .integer = at },
+    };
+
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{
+            .{
+                .sql =
+                \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
+                \\VALUES (?1, ?2, ?3, ?4, '', ?5, ?5);
+                ,
+                .params = &payment_params,
+            },
+            .{
+                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1;",
+                .params = &order_params,
+            },
+            .{
+                .sql = "INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?1, ?2, ?3);",
+                .params = &history_params,
+            },
+        },
+        .on_result = Effects.dbMsg(.payment_taken),
+    });
+}
+
+/// The first-run setup: the company, the first operator, and a starter
+/// menu and floor. ONE transaction - a restaurant that exists with no
+/// company, or a company with no operator, is worse than a setup that
+/// failed and can be retried.
+pub fn setupCompany(
+    fx: *Effects,
+    key: u64,
+    name: []const u8,
+    currency_code: []const u8,
+    currency_symbol: []const u8,
+    admin_name: []const u8,
+    pin_hash: []const u8,
+    at: i64,
+) void {
+    const statement_count = comptime 2 + starter.categories.len + starter.dishes.len + 1 + starter.tables.len;
+    var statements: [statement_count]native_sdk.EffectDbStatement = undefined;
+    var count: usize = 0;
+
+    var company_params: [6]native_sdk.EffectDbValue = .{
+        .{ .integer = 1 },
+        .{ .text = name },
+        .{ .text = currency_code },
+        .{ .text = currency_symbol },
+        .{ .integer = 0 },
+        .{ .integer = at },
+    };
+    statements[count] = .{
+        .sql =
+        \\INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive, created_at)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6);
+        ,
+        .params = &company_params,
+    };
+    count += 1;
+
+    var employee_params: [6]native_sdk.EffectDbValue = .{
+        .{ .integer = 1 },
+        .{ .text = admin_name },
+        .{ .integer = 0 },
+        .{ .text = pin_hash },
+        .{ .integer = 1 },
+        .{ .integer = at },
+    };
+    statements[count] = .{
+        .sql =
+        \\INSERT INTO employee (id, name, role, pin_hash, active, created_at)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6);
+        ,
+        .params = &employee_params,
+    };
+    count += 1;
+
+    // The parameter arrays are declared HERE, not inside the loops: a
+    // parameter array declared in a loop body dies at the end of the
+    // iteration, and the statement would then point at dead memory.
+    var category_params: [starter.categories.len][3]native_sdk.EffectDbValue = undefined;
+    var product_params: [starter.dishes.len][8]native_sdk.EffectDbValue = undefined;
+    var table_params: [starter.tables.len][5]native_sdk.EffectDbValue = undefined;
+
+    // The categories, in menu order.
+    for (starter.categories, 0..) |category, index| {
+        category_params[index] = .{
+            .{ .integer = @intCast(index + 1) },
+            .{ .text = category },
+            .{ .integer = @intCast(index + 1) },
+        };
+        statements[count] = .{
+            .sql = "INSERT INTO product_category (id, name, sort_order) VALUES (?1, ?2, ?3);",
+            .params = &category_params[index],
+        };
+        count += 1;
+    }
+
+    // The dishes, each against its category.
+    for (starter.dishes, 0..) |dish, index| {
+        const category_id = categoryIdOf(dish.category);
+        product_params[index] = .{
+            .{ .integer = @intCast(index + 1) },
+            .{ .integer = category_id },
+            .{ .text = dish.name },
+            .{ .integer = dish.price_minor },
+            .{ .integer = @intFromEnum(dish.product_type) },
+            .{ .integer = @intFromEnum(dish.food_type) },
+            .{ .integer = 0 },
+            .{ .integer = at },
+        };
+        statements[count] = .{
+            .sql =
+            \\INSERT INTO product (id, category_id, name, price_minor, product_type, food_type,
+            \\  tax_slab_id, stock_qty, track_stock, active, created_at, updated_at)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 0, 1, ?8, ?8);
+            ,
+            .params = &product_params[index],
+        };
+        count += 1;
+    }
+
+    // The floor: one category, and the tables in it.
+    var table_category_params: [1]native_sdk.EffectDbValue = .{.{ .text = starter.table_category }};
+    statements[count] = .{
+        .sql = "INSERT INTO dining_table_category (id, name) VALUES (1, ?1);",
+        .params = &table_category_params,
+    };
+    count += 1;
+
+    for (starter.tables, 0..) |table, index| {
+        table_params[index] = .{
+            .{ .integer = @intCast(index + 1) },
+            .{ .integer = 1 },
+            .{ .text = table.name },
+            .{ .integer = table.seats },
+            .{ .integer = @intCast(index) },
+        };
+        statements[count] = .{
+            .sql =
+            \\INSERT INTO dining_table (id, category_id, name, status, seats, pos_x, pos_y, active)
+            \\VALUES (?1, ?2, ?3, 0, ?4, ?5, 0, 1);
+            ,
+            .params = &table_params[index],
+        };
+        count += 1;
+    }
+
+    fx.dbExec(.{
+        .key = key,
+        .statements = statements[0..count],
+        .on_result = Effects.dbMsg(.setup_created),
+    });
+}
+
+/// The id of a starter category. The categories are written in menu
+/// order, so the id is the position in that list.
+fn categoryIdOf(name: []const u8) i64 {
+    for (starter.categories, 0..) |category, index| {
+        if (std.mem.eql(u8, category, name)) return @intCast(index + 1);
+    }
+    return 1;
 }
 
 // -------------------------------------------------------------- writes
@@ -406,9 +599,12 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
         .{ .text = order.order_no },
         .{ .integer = @intFromEnum(order.order_type) },
         .{ .integer = @intFromEnum(order.status) },
-        .{ .integer = order.dining_table_id },
-        .{ .integer = order.customer_id },
-        .{ .integer = order.employee_id },
+        // A table or a customer of zero means "none" - and "none" is
+        // NULL, not the id zero: a foreign key that points at zero
+        // points at a row that does not exist, and the write fails.
+        idParam(order.dining_table_id),
+        idParam(order.customer_id),
+        idParam(order.employee_id),
         .{ .integer = order.subtotal_minor },
         .{ .integer = order.tax_minor },
         .{ .integer = order.discount_minor },
@@ -420,8 +616,8 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
         .sql =
         \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
         \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
-        \\  total_minor, placed_at, notes, created_at)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12)
+        \\  total_minor, placed_at, notes, created_at, updated_at)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?12)
         \\ON CONFLICT(id) DO UPDATE SET status = ?4, notes = ?13, updated_at = ?12;
         ,
         .params = &order_params,
@@ -434,7 +630,7 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
         line_params[slot] = .{
             .{ .integer = line.id },
             .{ .integer = order.id },
-            .{ .integer = line.product_id },
+            idParam(line.product_id),
             .{ .text = line.product_name },
             .{ .integer = line.qty },
             .{ .integer = line.unit_price_minor },
@@ -485,6 +681,13 @@ pub fn setOrderStatus(fx: *Effects, order_id: i64, status: domain.OrderStatus, a
 }
 
 // ------------------------------------------------------------- helpers
+
+/// An id for a foreign key. Zero means "no row", and "no row" is NULL:
+/// a foreign key that points at zero points at a row that does not
+/// exist, and the write fails.
+fn idParam(value: i64) native_sdk.EffectDbValue {
+    return if (value == 0) .null_value else .{ .integer = value };
+}
 
 /// The labels the markup binds. Resolved at decode time because the
 /// markup binds fields, not methods.

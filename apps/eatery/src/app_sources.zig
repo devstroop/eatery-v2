@@ -10,11 +10,13 @@ const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 
 pub const sources = [_]canvas.ui_markup.SourceFile{
+    .{ .path = "screens/screen-setup.native", .source = @embedFile("screens/screen-setup.native") },
     .{ .path = "screens/screen-role-picker.native", .source = @embedFile("screens/screen-role-picker.native") },
     .{ .path = "screens/screen-login.native", .source = @embedFile("screens/screen-login.native") },
     .{ .path = "screens/screen-dashboard.native", .source = @embedFile("screens/screen-dashboard.native") },
     .{ .path = "screens/screen-pos.native", .source = @embedFile("screens/screen-pos.native") },
     .{ .path = "screens/screen-orders.native", .source = @embedFile("screens/screen-orders.native") },
     .{ .path = "screens/screen-tables.native", .source = @embedFile("screens/screen-tables.native") },
+    .{ .path = "screens/screen-order-confirmation.native", .source = @embedFile("screens/screen-order-confirmation.native") },
     .{ .path = "screens/screen-kitchen.native", .source = @embedFile("screens/screen-kitchen.native") },
 };
