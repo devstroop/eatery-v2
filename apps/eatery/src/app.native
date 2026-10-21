@@ -1,0 +1,65 @@
+<!-- The app shell: a title bar, the role's navigation rail, the current
+     screen, and a status bar.
+
+     The rail is a list of the sections the CURRENT ROLE may open, so it
+     can never show a destination the role is not allowed to use. The
+     content pane is a set of <if> gates over the screen templates -
+     only the active screen is mounted, which is what keeps the widget
+     budget (1024 nodes per view) within reach.
+
+     The screen positions are the `core/navigation.zig` enum indices.
+     That enum is append-only: adding a screen means appending it, so
+     the numbers here stay true. -->
+
+<import src="screens/screen-role-picker.native"/>
+<import src="screens/screen-login.native"/>
+<import src="screens/screen-dashboard.native"/>
+<import src="screens/screen-pos.native"/>
+<import src="screens/screen-orders.native"/>
+<import src="screens/screen-tables.native"/>
+<import src="screens/screen-kitchen.native"/>
+
+<column grow="1" background="background">
+  <row padding="12" gap="8" cross="center" background="surface">
+    <text size="lg" grow="1">{company_label}</text>
+    <badge>{role_label}</badge>
+    <button size="sm" variant="ghost" on-press="toggle_theme">Theme</button>
+  </row>
+
+  <if test="{has_error}">
+    <row padding="8" gap="8" cross="center" background="destructive">
+      <text foreground="destructive_text" grow="1">{error_message}</text>
+      <button size="sm" variant="ghost" on-press="dismiss_error">Dismiss</button>
+    </row>
+  </if>
+
+  <if test="{show_role_picker}">
+    <use template="screen-role-picker"/>
+  </if>
+
+  <if test="{show_login}">
+    <use template="screen-login"/>
+  </if>
+
+  <if test="{show_shell}">
+    <split grow="1" value="{rail_split}" on-resize="rail_resized">
+      <column width="200" gap="2" padding="12" background="surface">
+        <text size="sm" foreground="text_muted">NAVIGATION</text>
+        <for each="nav_sections" key="id" as="section">
+          <list-item selected="{section.id == nav_section}" on-press="open_section:{section.id}">{section.label}</list-item>
+        </for>
+        <separator/>
+        <text size="sm" foreground="text_muted">{operator_label}</text>
+      </column>
+      <column grow="1">
+        <if test="{screen_index == 8}"><use template="screen-dashboard"/></if>
+        <if test="{screen_index == 10}"><use template="screen-pos"/></if>
+        <if test="{screen_index == 13}"><use template="screen-orders"/></if>
+        <if test="{screen_index == 17}"><use template="screen-tables"/></if>
+        <if test="{screen_index == 41}"><use template="screen-kitchen"/></if>
+      </column>
+    </split>
+  </if>
+
+  <status-bar>{screen_title} | {company_label} | {operator_label}</status-bar>
+</column>
