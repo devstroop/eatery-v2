@@ -268,6 +268,37 @@ test "a PIN is hashed, never stored" {
     try testing.expect(!auth.equal(&hash_a, &hash_c));
 }
 
+test "the tax is rounded half up, and an inclusive price keeps it inside" {
+    var model = main.initialModel();
+    model.tax_slabs_list = &.{
+        .{ .id = 1, .name = "Half", .rate_bps = 5000, .inclusive = false, .active = true, .tax_label = "Exclusive" },
+        .{ .id = 2, .name = "Just under half", .rate_bps = 4999, .inclusive = false, .active = true, .tax_label = "Exclusive" },
+        .{ .id = 3, .name = "Inclusive", .rate_bps = 1800, .inclusive = false, .active = true, .tax_label = "Inclusive" },
+    };
+    model.products = &.{
+        .{ .id = 1, .category_id = 0, .name = "Half", .food_label = "Veg", .price_minor = 1, .product_type = .dish, .food_type = .veg, .tax_slab_id = 1, .stock_qty = 0, .active = true },
+        .{ .id = 2, .category_id = 0, .name = "Just under", .food_label = "Veg", .price_minor = 1, .product_type = .dish, .food_type = .veg, .tax_slab_id = 2, .stock_qty = 0, .active = true },
+        .{ .id = 3, .category_id = 0, .name = "Inclusive", .food_label = "Veg", .price_minor = 100, .product_type = .dish, .food_type = .veg, .tax_slab_id = 3, .stock_qty = 0, .active = true },
+    };
+
+    // One minor unit at fifty percent is half a minor unit, and half
+    // up is one: the restaurant is not short-changed by a fraction.
+    try testing.expectEqual(@as(i64, 1), model.line_tax(1, 1));
+    // Just under half is still under half.
+    try testing.expectEqual(@as(i64, 0), model.line_tax(2, 1));
+
+    // An exclusive price does not carry its tax: it is added on top.
+    try testing.expectEqual(@as(i64, 18), model.line_tax(3, 100));
+
+    // An inclusive price does: the tax is what is left once the net
+    // is taken out. 100.00 at eighteen percent holds 84.75 and 15.25.
+    model.tax_inclusive = true;
+    try testing.expectEqual(@as(i64, 15), model.line_tax(3, 100));
+
+    // A product with no slab is not taxed.
+    try testing.expectEqual(@as(i64, 0), model.line_tax(99, 100));
+}
+
 test "a failed salt write does not make the salt look confirmed" {
     var fx = try fakeFx();
     defer fx.deinit();

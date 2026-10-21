@@ -42,6 +42,10 @@ pub fn boot(model: *Model, fx: *Effects) void {
     // installation, and the app opens on the setup screen.
     repos.loadConfig(fx);
     repos.loadCompany(fx);
+    // The tax slabs are read with the rest of the business's settings:
+    // a sale's tax is worked out from them, and a sale that is placed
+    // before they arrive would be taxed at nothing.
+    repos.loadTaxSlabs(fx);
 }
 
 /// A new order on the board gets a sound. The kitchen hears the sale
@@ -1254,6 +1258,15 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         model.cart_attempt_id = nextOrderId(model, now);
     }
     const order_id = model.cart_attempt_id;
+
+    // The tax, worked out line by line from each product's own slab.
+    // It is worked out before the order is built, because the order
+    // carries it.
+    var tax_minor: i64 = 0;
+    for (model.cart[0..model.cart_len]) |line| {
+        tax_minor += model.line_tax(line.product_id, line.price_minor) * line.qty;
+    }
+
     var order = domain.Order{
         .id = order_id,
         // The order number is a sequence, and the database assigns it:
@@ -1267,9 +1280,12 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         .customer_id = 0,
         .employee_id = model.employee_id,
         .subtotal_minor = model.cart_total_minor(),
-        .tax_minor = 0,
+        .tax_minor = tax_minor,
         .discount_minor = 0,
-        .total_minor = model.cart_total_minor(),
+        // The total is what the customer pays. An exclusive price does
+        // not carry its tax, so the tax is added; an inclusive one
+        // does, so the tax is a memo and the price is the total.
+        .total_minor = model.cart_total_minor() + (if (model.tax_inclusive) 0 else tax_minor),
         .placed_at = now,
         .notes = "",
     };
@@ -1287,7 +1303,9 @@ fn placeOrder(model: *Model, fx: *Effects) void {
             .product_name = line.name,
             .qty = line.qty,
             .unit_price_minor = line.price_minor,
-            .tax_bps = 0,
+            // The rate is a snapshot: a slab that changes tomorrow must
+            // not rewrite the bill of yesterday.
+            .tax_bps = model.product_tax_bps(line.product_id),
             .notes = "",
         };
         count += 1;

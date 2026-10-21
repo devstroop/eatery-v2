@@ -68,6 +68,24 @@ pub const SaltState = enum {
     confirmed,
 };
 
+/// The tax on a price, in minor units.
+///
+/// `rate_bps` is in basis points, so 500 is five percent. An inclusive
+/// price already carries the tax - 100.00 at eighteen percent holds
+/// 84.75 of price and 15.25 of tax - so the tax is what is LEFT once
+/// the net is taken out. An exclusive price does not, so the tax is
+/// added on top.
+///
+/// The rounding is half up in both cases.
+fn taxOn(price_minor: i64, rate_bps: i64, inclusive: bool) i64 {
+    if (price_minor <= 0 or rate_bps <= 0) return 0;
+    if (inclusive) {
+        const divisor = 10000 + rate_bps;
+        return @divTrunc(price_minor * rate_bps + @divTrunc(divisor, 2), divisor);
+    }
+    return @divTrunc(price_minor * rate_bps + 5000, 10000);
+}
+
 pub const Model = struct {
     /// Fields the view never binds directly. Keep this list honest:
     /// it is the boundary between "the model" and the interface.
@@ -435,6 +453,51 @@ pub const Model = struct {
     /// The station the board is filtered by.
     pub fn station_filter(model: *const Model) i64 {
         return model.station_filter_field;
+    }
+
+    /// The tax on a line, in minor units.
+    ///
+    /// The RATE comes from the product's own tax slab: a restaurant
+    /// that taxes its food at one rate and its drinks at another has a
+    /// slab per product, and the rate is part of the price the customer
+    /// was quoted.
+    ///
+    /// The MODE - whether the price already carries the tax - is the
+    /// business's, not the slab's: a restaurant is either inclusive or
+    /// it is not, and its menu says so.
+    ///
+    /// The rounding is half up. A fraction of a minor unit is not a
+    /// fraction of a rupee, and the restaurant is not short-changed by
+    /// one.
+    pub fn line_tax(model: *const Model, product_id: i64, price_minor: i64) i64 {
+        const product = model.find_product(product_id) orelse return 0;
+        const slab = model.tax_slab(product.tax_slab_id) orelse return 0;
+        return taxOn(price_minor, slab.rate_bps, model.tax_inclusive);
+    }
+
+    /// The rate a product is taxed at, in basis points. Zero for a
+    /// product with no slab.
+    pub fn product_tax_bps(model: *const Model, product_id: i64) i64 {
+        const product = model.find_product(product_id) orelse return 0;
+        const slab = model.tax_slab(product.tax_slab_id) orelse return 0;
+        return slab.rate_bps;
+    }
+
+    /// The product with this id, or null.
+    pub fn find_product(model: *const Model, product_id: i64) ?domain.Product {
+        for (model.products) |product| {
+            if (product.id == product_id) return product;
+        }
+        return null;
+    }
+
+    /// The tax slab with this id, or null.
+    pub fn tax_slab(model: *const Model, slab_id: i64) ?domain.TaxSlab {
+        if (slab_id == 0) return null;
+        for (model.tax_slabs_list) |slab| {
+            if (slab.id == slab_id) return slab;
+        }
+        return null;
     }
 
     /// The lines of the open order the waiter is serving.

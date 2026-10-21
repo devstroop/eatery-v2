@@ -405,6 +405,109 @@ test "a move that does not apply leaves the order where it is" {
     try testing.expectEqual(@as(i64, 0), rows);
 }
 
+test "the tax is worked out line by line, from the product's own slab" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A slab at five percent, and a dish that is taxed at it. The
+    // drink stays on the "no tax" slab.
+    harness.fx.dbExec(.{
+        .key = 908,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 5%', 500, 0, 1);",
+                .params = &.{},
+            },
+            .{
+                .sql = "UPDATE product SET tax_slab_id = 2 WHERE id = 1;",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    // 245.00 at five percent is 12.25, and the 40.00 drink is not
+    // taxed at all.
+    try testing.expectEqual(@as(i64, 24500 + 4000), order.subtotal_minor);
+    try testing.expectEqual(@as(i64, 1225), order.tax_minor);
+    try testing.expectEqual(@as(i64, 24500 + 4000 + 1225), order.total_minor);
+
+    // The rate is a snapshot on the line: a slab that changes tomorrow
+    // must not rewrite the bill of yesterday.
+    repos.loadOrderLines(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(i64, 500), harness.model.order_lines[0].tax_bps);
+    try testing.expectEqual(@as(i64, 0), harness.model.order_lines[1].tax_bps);
+}
+
+test "an inclusive price already carries its tax" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A restaurant whose menu shows the price with the tax inside.
+    harness.fx.dbExec(.{
+        .key = 909,
+        .statements = &.{.{
+            .sql = "UPDATE company SET tax_inclusive = 1 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadCompany(harness.fx);
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.tax_inclusive);
+
+    harness.fx.dbExec(.{
+        .key = 910,
+        .statements = &.{.{
+            .sql = "INSERT INTO tax_slab (id, name, rate_bps, inclusive, active) VALUES (2, 'GST 18%', 1800, 0, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    harness.fx.dbExec(.{
+        .key = 911,
+        .statements = &.{.{
+            .sql = "UPDATE product SET tax_slab_id = 2 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadProducts(harness.fx);
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+
+    harness.model.employee_id = 7;
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+
+    const order = harness.model.orders[0];
+    // 245.00 at eighteen percent holds 207.63 of price and 37.37 of
+    // tax. The customer pays the 245.00 that was on the menu.
+    try testing.expectEqual(@as(i64, 24500), order.subtotal_minor);
+    try testing.expectEqual(@as(i64, 3737), order.tax_minor);
+    try testing.expectEqual(@as(i64, 24500), order.total_minor);
+}
+
 test "a payment is taken once" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
