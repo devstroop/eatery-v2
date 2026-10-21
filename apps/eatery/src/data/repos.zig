@@ -71,6 +71,7 @@ pub const key_write_product = 34;
 pub const key_write_table = 35;
 pub const key_save_salt = 36;
 pub const key_save_currency = 37;
+pub const key_save_tax_slab = 39;
 pub const key_save_pin_hash = 38;
 
 // ------------------------------------------------------------ queries
@@ -379,6 +380,35 @@ pub fn loadCustomers(fx: *Effects) void {
         .key = key_customers,
         .sql = customers_sql,
         .on_result = Effects.dbMsg(.customers_loaded),
+    });
+}
+
+/// Write a tax slab: a new one, or the one the form is editing.
+pub fn saveTaxSlab(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    rate_bps: i64,
+    inclusive: bool,
+) void {
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = rate_bps },
+        .{ .integer = if (inclusive) 1 else 0 },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO tax_slab (id, name, rate_bps, inclusive, active)
+            \\VALUES (?1, ?2, ?3, ?4, 1)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, rate_bps = ?3, inclusive = ?4;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.tax_slab_saved),
     });
 }
 

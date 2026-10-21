@@ -196,6 +196,18 @@ pub const Msg = union(enum) {
     printers_loaded: native_sdk.EffectDbResult,
     /// The tax slabs were loaded.
     tax_slabs_loaded: native_sdk.EffectDbResult,
+    /// The tax slab form changed.
+    form_tax_slab_name_edit: canvas.TextInputEvent,
+    form_tax_slab_rate_edit: canvas.TextInputEvent,
+    form_tax_slab_inclusive,
+    /// Open the tax slab form: an existing slab, or a new one.
+    edit_tax_slab: i64,
+    new_tax_slab,
+    save_tax_slab,
+    /// Back to the tax slabs.
+    open_tax_slabs,
+    /// The tax slab was saved.
+    tax_slab_saved: native_sdk.EffectDbResult,
     /// The modifier groups were loaded.
     modifier_groups_loaded: native_sdk.EffectDbResult,
     /// The discounts were loaded.

@@ -1359,6 +1359,61 @@ test "the setup refuses a PIN that does not match" {
     try testing.expect(!harness.model.signed_in);
 }
 
+test "a tax slab is saved, and the rate the owner typed is the rate stored" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A restaurant that charges five percent, the way an owner types it.
+    harness.model.form_tax_slab_name_buf.set("GST 5%");
+    harness.model.form_tax_slab_rate_buf.set("5");
+    harness.send(Msg{ .save_tax_slab = {} });
+
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+
+    var found = false;
+    for (harness.model.tax_slabs_list) |slab| {
+        if (!std.mem.eql(u8, slab.name, "GST 5%")) continue;
+        found = true;
+        // Five percent is five hundred basis points.
+        try testing.expectEqual(@as(i64, 500), slab.rate_bps);
+        try testing.expect(!slab.inclusive);
+    }
+    try testing.expect(found);
+
+    // A rate with decimals, and a price that already carries the tax.
+    harness.model.form_tax_slab_name_buf.set("VAT 12.75%");
+    harness.model.form_tax_slab_rate_buf.set("12.75");
+    harness.model.form_tax_slab_inclusive = true;
+    harness.send(Msg{ .save_tax_slab = {} });
+
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+    var inclusive = false;
+    for (harness.model.tax_slabs_list) |slab| {
+        if (!std.mem.eql(u8, slab.name, "VAT 12.75%")) continue;
+        inclusive = true;
+        try testing.expectEqual(@as(i64, 1275), slab.rate_bps);
+        try testing.expect(slab.inclusive);
+    }
+    try testing.expect(inclusive);
+}
+
+test "a tax slab needs a name and a rate that is a number" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_tax_slab_name_buf.set("GST 5%");
+    harness.model.form_tax_slab_rate_buf.set("five");
+    harness.send(Msg{ .save_tax_slab = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+
+    harness.model.form_tax_slab_name_buf.set("");
+    harness.model.form_tax_slab_rate_buf.set("5");
+    harness.send(Msg{ .save_tax_slab = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
 test "the customers load into the model" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

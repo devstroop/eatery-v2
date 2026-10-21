@@ -243,6 +243,10 @@ pub const Model = struct {
     /// The forms the settings and the catalogue edit.
     form_currency_code_buf: canvas.TextBuffer(8) = .{},
     form_currency_symbol_buf: canvas.TextBuffer(8) = .{},
+    form_tax_slab_name_buf: canvas.TextBuffer(64) = .{},
+    form_tax_slab_rate_buf: canvas.TextBuffer(16) = .{},
+    form_tax_slab_inclusive: bool = false,
+    form_tax_slab_id: i64 = 0,
     form_product_name_buf: canvas.TextBuffer(64) = .{},
     form_product_price_buf: canvas.TextBuffer(16) = .{},
     form_product_category_id: i64 = 0,
@@ -711,6 +715,27 @@ pub const Model = struct {
     }
 
     /// The product name in the product form.
+    /// The name of the tax slab being edited.
+    pub fn form_tax_slab_name(model: *const Model) []const u8 {
+        return model.form_tax_slab_name_buf.text();
+    }
+
+    /// The rate of the tax slab being edited, as the owner typed it.
+    pub fn form_tax_slab_rate(model: *const Model) []const u8 {
+        return model.form_tax_slab_rate_buf.text();
+    }
+
+    /// True when the price already carries this tax.
+    pub fn form_tax_slab_is_inclusive(model: *const Model) bool {
+        return model.form_tax_slab_inclusive;
+    }
+
+    /// The heading of the tax slab form.
+    pub fn tax_slab_form_title(model: *const Model) []const u8 {
+        if (model.form_tax_slab_id == 0) return "New tax slab";
+        return "Edit tax slab";
+    }
+
     pub fn form_product_name(model: *const Model) []const u8 {
         return model.form_product_name_buf.text();
     }
