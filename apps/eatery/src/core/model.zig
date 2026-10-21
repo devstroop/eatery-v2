@@ -48,17 +48,36 @@ pub const company_buffer = 1024;
 /// The most lines one cart may carry.
 pub const max_cart_lines = 50;
 
+/// Where the installation salt stands.
+///
+/// The salt is the one piece of state a PIN hash cannot be checked
+/// without, and there is exactly one right answer to "which salt?" - the
+/// one in the database. These three states say how sure the app is about
+/// that, because the difference between "the database has no salt" and
+/// "the database has not answered yet" is the difference between
+/// installing a salt and guessing one.
+pub const SaltState = enum {
+    /// The database has not answered yet. The salt in the model is a
+    /// guess: nothing may be hashed with it.
+    unknown,
+    /// The database has no salt. The salt in the model is the one this
+    /// installation will use, and it is written with the operator.
+    installing,
+    /// The database holds this salt. A sign-in may hash with it.
+    confirmed,
+};
+
 pub const Model = struct {
     /// Fields the view never binds directly. Keep this list honest:
-    /// it is the boundary between "the model" and "the interface".
+    /// it is the boundary between "the model" and the interface.
     pub const view_unbound = .{
         "stack",
         "employee_id",
         "db_ready",
         "busy",
         "company_id",
-        "pending_screen",
         "theme_dark",
+        "salt_state",
     };
 
     // ------------------------------------------------------------ session
@@ -257,9 +276,8 @@ pub const Model = struct {
     /// The installation salt, hex. Empty until the database answers.
     pin_salt_buf: [64]u8 = undefined,
     pin_salt_len: usize = 0,
-    /// True while the salt in the model has not been confirmed by the
-    /// database - it is the provisional one made at boot.
-    salt_is_provisional: bool = true,
+    /// Where the installation salt stands.
+    salt_state: SaltState = .unknown,
     /// The hash of the PIN being checked. Lives in the model so the
     /// query parameter has a stable home.
     login_hash: [64]u8 = undefined,

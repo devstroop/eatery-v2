@@ -245,6 +245,42 @@ test "a PIN is hashed, never stored" {
     try testing.expect(!auth.equal(&hash_a, &hash_c));
 }
 
+test "a failed salt write does not make the salt look confirmed" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    // The app made a provisional salt at boot. The database has not
+    // confirmed it, so a sign-in may not use it.
+    model.salt_state = .unknown;
+
+    // The write fails.
+    main.update(&model, .{ .config_saved = .{
+        .key = 1,
+        .kind = .exec,
+        .outcome = .io_failed,
+    } }, &fx);
+
+    // The salt is still unconfirmed: a sign-in hashed against it could
+    // never be verified, and the operator would be locked out of the
+    // till with nothing to show for it. The failure is visible.
+    try testing.expectEqual(core.SaltState.unknown, model.salt_state);
+    try testing.expect(model.error_text.len > 0);
+}
+
+test "the sign-in query is scoped to the session's role" {
+    // The device's mode and the employee's role are two different
+    // things, and the sign-in has to agree on both.
+    try testing.expectEqual(domain.EmployeeRole.admin, rbac.employee_role(nav.Role.admin));
+    try testing.expectEqual(domain.EmployeeRole.waiter, rbac.employee_role(nav.Role.waiter));
+    try testing.expectEqual(domain.EmployeeRole.kitchen, rbac.employee_role(nav.Role.kds));
+    try testing.expectEqual(domain.EmployeeRole.display, rbac.employee_role(nav.Role.display));
+
+    // The query asks the database for that role, rather than taking
+    // whatever employee the PIN belongs to.
+    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?2") != null);
+}
+
 test "every effect key names one effect and no two" {
     // A key is an effect's identity in the channel. Two live effects
     // cannot share one: the second is REFUSED, and a refused write is
