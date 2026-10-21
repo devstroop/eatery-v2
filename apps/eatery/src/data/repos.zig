@@ -37,6 +37,7 @@ pub const key_login = 8;
 pub const key_order_lines = 9;
 pub const key_config = 10;
 pub const key_setup = 11;
+pub const key_payment = 12;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
 pub const key_write_table = 22;
@@ -386,6 +387,54 @@ pub fn decodeCompany(model: *Model, bytes: []const u8) void {
     model.currency_code = model.company_buf.dupe(reader.textOf(&values, "currency_code")) orelse "";
     model.currency_symbol = model.company_buf.dupe(reader.textOf(&values, "currency_symbol")) orelse "";
     model.tax_inclusive = reader.boolOf(&values, "tax_inclusive");
+}
+
+/// Take the payment for an order and close it. ONE transaction: the
+/// money and the closed order land together, or neither does. A paid
+/// order that is still open is a cashier's worst day.
+pub fn takePayment(fx: *Effects, key: u64, order_id: i64, mode: domain.PaymentMode, amount_minor: i64, at: i64) void {
+    // Each statement carries its OWN parameters: the engine checks that
+    // a statement's parameter count matches the placeholders it uses,
+    // and one shared array for three different statements never does.
+    var payment_params: [5]native_sdk.EffectDbValue = .{
+        .{ .integer = at },
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(mode) },
+        .{ .integer = amount_minor },
+        .{ .integer = at },
+    };
+    var order_params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
+        .{ .integer = at },
+    };
+    var history_params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
+        .{ .integer = at },
+    };
+
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{
+            .{
+                .sql =
+                \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
+                \\VALUES (?1, ?2, ?3, ?4, '', ?5, ?5);
+                ,
+                .params = &payment_params,
+            },
+            .{
+                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1;",
+                .params = &order_params,
+            },
+            .{
+                .sql = "INSERT INTO order_status_history (order_id, status, changed_at) VALUES (?1, ?2, ?3);",
+                .params = &history_params,
+            },
+        },
+        .on_result = Effects.dbMsg(.payment_taken),
+    });
 }
 
 /// The first-run setup: the company, the first operator, and a starter

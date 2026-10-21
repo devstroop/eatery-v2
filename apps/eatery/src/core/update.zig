@@ -44,6 +44,25 @@ pub fn boot(model: *Model, fx: *Effects) void {
     repos.loadCompany(fx);
 }
 
+/// Take the payment for the order that was just placed and close it.
+fn takePayment(model: *Model, fx: *Effects) void {
+    if (model.last_order_id == 0) {
+        model.payment_error = "There is no order to pay for";
+        return;
+    }
+    const mode = std.enums.fromInt(domain.PaymentMode, model.payment_mode_field) orelse domain.PaymentMode.cash;
+    model.busy = true;
+    model.payment_error = "";
+    repos.takePayment(
+        fx,
+        repos.key_payment,
+        model.last_order_id,
+        mode,
+        model.last_order_total_minor,
+        fx.wallMs(),
+    );
+}
+
 /// Set up the restaurant: the company, the first operator, and the
 /// starter menu and floor. One transaction, in `repos.setupCompany`.
 fn submitSetup(model: *Model, fx: *Effects) void {
@@ -309,6 +328,41 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadOrders(fx);
         },
 
+        // ---------------------------------------------------- the payment
+
+        .set_payment_mode => |id| model.payment_mode_field = id,
+
+        .take_payment => takePayment(model, fx),
+
+        .back_to_pos => {
+            // The sale is over: the confirmation state goes, and the
+            // next order starts from an empty cart.
+            model.last_order_id = 0;
+            model.last_order_no_field = "";
+            model.last_order_type_field = "";
+            model.last_order_total_minor = 0;
+            model.last_order_items_count = 0;
+            model.payment_error = "";
+            go(model, .pos);
+        },
+
+        .payment_taken => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.payment_error = switch (result.outcome) {
+                    .constraint => "The payment broke a data rule",
+                    .busy => "The database is busy - try again",
+                    else => "Could not take the payment",
+                };
+                return;
+            }
+            model.payment_error = "";
+            // The sale is done: back to the order list, where the
+            // closed order is now a completed one.
+            go(model, .orders);
+            repos.loadOrders(fx);
+        },
+
         // -------------------------------------------------- the kitchen board
 
         .advance_order => |order_id| {
@@ -569,6 +623,18 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         };
         count += 1;
     }
+
+    // The confirmation screen shows this order and the payment is
+    // taken against it.
+    model.sale_buf.reset();
+    model.last_order_id = order.id;
+    model.last_order_no_field = model.sale_buf.dupe(order.order_no) orelse "";
+    model.last_order_type_field = model.sale_buf.dupe(order.order_type.label()) orelse "";
+    model.last_order_total_minor = order.total_minor;
+    model.last_order_items_count = 0;
+    for (lines[0..count]) |line| model.last_order_items_count += line.qty;
+    model.last_order_at = order.placed_at;
+    model.payment_error = "";
 
     model.busy = true;
     repos.saveOrder(fx, order, lines[0..count]);

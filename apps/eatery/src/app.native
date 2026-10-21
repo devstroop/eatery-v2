@@ -19,6 +19,7 @@
 <import src="screens/screen-orders.native"/>
 <import src="screens/screen-tables.native"/>
 <import src="screens/screen-kitchen.native"/>
+<import src="screens/screen-order-confirmation.native"/>
 
 <column grow="1" background="background">
   <row padding="12" gap="8" cross="center" background="surface">
@@ -61,6 +62,7 @@
         <if test="{screen_index == 10}"><use template="screen-pos"/></if>
         <if test="{screen_index == 13}"><use template="screen-orders"/></if>
         <if test="{screen_index == 17}"><use template="screen-tables"/></if>
+        <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
         <if test="{screen_index == 41}"><use template="screen-kitchen"/></if>
       </column>
     </split>
