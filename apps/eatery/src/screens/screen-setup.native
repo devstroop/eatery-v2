@@ -35,14 +35,14 @@
             text="{setup_symbol_text}"
             placeholder="$"
             label="Symbol"
-            on-input="setup_currency_edit"
+            on-input="setup_symbol_edit"
             grow="1"
           />
         </row>
         <row gap="8">
           <text-field
             text="{setup_pin_text}"
-            placeholder="4 digits"
+            placeholder="6 digits"
             label="PIN"
             on-input="setup_pin_edit"
             grow="1"
@@ -60,7 +60,7 @@
           <text foreground="destructive">{setup_error_text}</text>
         </if>
 
-        <button variant="primary" on-press="setup_submit">Create the restaurant</button>
+        <button variant="primary" disabled="{setup_incomplete}" on-press="setup_submit">Create the restaurant</button>
         <text size="sm" foreground="text_muted">A starter menu and six tables are created with it. Edit them from the menu any time.</text>
       </column>
     </card>

@@ -1359,6 +1359,33 @@ test "the setup refuses a PIN that does not match" {
     try testing.expect(!harness.model.signed_in);
 }
 
+test "the setup's symbol is the symbol, not the code" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // The code and the symbol are two fields, and one of them used to
+    // write into the other.
+    harness.model.setup_currency_code.set("EUR");
+    harness.model.setup_currency_symbol.set("€");
+    try testing.expectEqualStrings("EUR", harness.model.setup_currency_text());
+    try testing.expectEqualStrings("€", harness.model.setup_symbol_text());
+}
+
+test "the setup's button waits for a complete form" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // Nothing typed yet: the button is not ready.
+    try testing.expect(harness.model.setup_incomplete());
+
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
+    try testing.expect(!harness.model.setup_incomplete());
+    try testing.expect(harness.model.setup_can_submit());
+}
+
 test "the setup refuses an empty restaurant name" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();

@@ -553,6 +553,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .setup_currency_edit => |event| model.setup_currency_code.apply(event),
 
+        .setup_symbol_edit => |event| model.setup_currency_symbol.apply(event),
+
         .setup_submit => submitSetup(model, fx),
 
         .setup_created => |result| {

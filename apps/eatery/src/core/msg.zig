@@ -40,6 +40,11 @@ pub const Msg = union(enum) {
     setup_pin_edit: canvas.TextInputEvent,
     setup_pin2_edit: canvas.TextInputEvent,
     setup_currency_edit: canvas.TextInputEvent,
+    /// The currency SYMBOL changed. It has its own message because it
+    /// has its own field: the code and the symbol are two different
+    /// things, and a field that writes into the other one is a field
+    /// that lies.
+    setup_symbol_edit: canvas.TextInputEvent,
     /// Set up the restaurant.
     setup_submit,
     /// The setup write came back.

@@ -1009,6 +1009,14 @@ pub const Model = struct {
 
     /// Whether the setup form is complete enough to submit: a company
     /// name, an operator name, a PIN, and the same PIN twice.
+    /// True when the setup form is NOT ready to be submitted.
+    ///
+    /// The button binds this, so the operator cannot press a button
+    /// that would only be refused.
+    pub fn setup_incomplete(model: *const Model) bool {
+        return !model.setup_can_submit();
+    }
+
     pub fn setup_can_submit(model: *const Model) bool {
         const name = std.mem.trim(u8, model.setup_company_name.text(), " ");
         const admin = std.mem.trim(u8, model.setup_admin_name.text(), " ");
