@@ -82,6 +82,8 @@ pub const key_stock = 45;
 pub const key_save_stock = 46;
 pub const key_save_station = 47;
 pub const key_db_tables = 48;
+pub const key_modifiers = 51;
+pub const key_save_modifier_group = 52;
 pub const key_devices = 49;
 pub const key_sync_state = 50;
 
@@ -333,6 +335,12 @@ pub const tax_slabs_sql =
 /// The modifier groups on the menu.
 pub const modifier_groups_sql =
     \\SELECT id, name, required, max_select, active FROM modifier_group ORDER BY sort_order, name;
+;
+
+/// The choices inside the modifier groups.
+pub const modifiers_sql =
+    \\SELECT id, group_id, name, price_delta_minor, active FROM modifier
+    \\ORDER BY group_id, sort_order, name;
 ;
 
 /// The discounts the cashier can apply.
@@ -777,6 +785,44 @@ pub fn loadModifierGroups(fx: *Effects) void {
     });
 }
 
+/// Load the choices in the modifier groups.
+pub fn loadModifiers(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_modifiers,
+        .sql = modifiers_sql,
+        .on_result = Effects.dbMsg(.modifiers_loaded),
+    });
+}
+
+/// Write a modifier group: a new one, or the one the form is editing.
+pub fn saveModifierGroup(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    required: bool,
+    max_select: i64,
+) void {
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = if (required) 1 else 0 },
+        .{ .integer = max_select },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO modifier_group (id, name, required, max_select, sort_order, active)
+            \\VALUES (?1, ?2, ?3, ?4, 0, 1)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, required = ?3, max_select = ?4;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.modifier_group_saved),
+    });
+}
+
 pub fn loadDiscounts(fx: *Effects) void {
     fx.dbQuery(.{
         .key = key_discounts,
@@ -1096,6 +1142,27 @@ pub fn decodeTableCounts(model: *Model, bytes: []const u8) void {
         };
     }
     model.table_counts_list = list[0..index];
+}
+
+/// Decode the choices in the modifier groups.
+pub fn decodeModifiers(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.modifiers_buf.reset();
+    const count = reader.rows_left;
+    const list = model.modifiers_buf.allocSlice(domain.Modifier, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .group_id = reader.intOf(&values, "group_id", 0),
+            .name = model.modifiers_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .price_delta_minor = reader.intOf(&values, "price_delta_minor", 0),
+            .active = reader.boolOf(&values, "active"),
+        };
+    }
+    model.modifiers_list = list[0..index];
 }
 
 /// Decode the stock on the shelf.

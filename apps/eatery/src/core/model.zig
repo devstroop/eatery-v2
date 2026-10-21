@@ -282,6 +282,7 @@ pub const Model = struct {
     printers_list: []const domain.Printer = &.{},
     tax_slabs_list: []const domain.TaxSlab = &.{},
     modifier_groups_list: []const domain.ModifierGroup = &.{},
+    modifiers_list: []const domain.Modifier = &.{},
     discounts_list: []const domain.Discount = &.{},
     reservations_list: []const domain.Reservation = &.{},
     suppliers_list: []const domain.Supplier = &.{},
@@ -297,6 +298,7 @@ pub const Model = struct {
     printers_buf: bump.Bump(8192) = .{},
     tax_slabs_buf: bump.Bump(4096) = .{},
     modifier_groups_buf: bump.Bump(4096) = .{},
+    modifiers_buf: bump.Bump(4096) = .{},
     discounts_buf: bump.Bump(4096) = .{},
     reservations_buf: bump.Bump(8192) = .{},
     suppliers_buf: bump.Bump(8192) = .{},
@@ -353,6 +355,14 @@ pub const Model = struct {
     form_stock_count_buf: canvas.TextBuffer(16) = .{},
     /// Why the count changed.
     form_stock_reason_buf: canvas.TextBuffer(64) = .{},
+    /// The group being edited, zero for a new one.
+    form_modifier_group_id: i64 = 0,
+    /// The group's name.
+    form_modifier_group_name_buf: canvas.TextBuffer(64) = .{},
+    /// How many choices the group allows.
+    form_modifier_max_buf: canvas.TextBuffer(8) = .{},
+    /// Whether the order cannot be prepared without a choice.
+    form_modifier_required_field: bool = false,
     /// The day's order count, from the report query.
     report_orders_field: i64 = 0,
     /// The day's gross, in minor units.
@@ -1186,6 +1196,31 @@ pub const Model = struct {
     /// The tax slabs the menu prices against.
     pub fn tax_slabs(model: *const Model) []const domain.TaxSlab {
         return model.tax_slabs_list;
+    }
+
+    /// The choices in the group being edited.
+    pub fn modifiers(model: *const Model) []const domain.Modifier {
+        return model.modifiers_list;
+    }
+
+    /// How many choices the group being edited has.
+    pub fn modifier_count(model: *const Model) usize {
+        return model.modifiers_list.len;
+    }
+
+    /// The group being edited, by name.
+    pub fn form_modifier_group_name(model: *const Model) []const u8 {
+        return model.form_modifier_group_name_buf.text();
+    }
+
+    /// How many choices the group allows.
+    pub fn form_modifier_max_select(model: *const Model) []const u8 {
+        return model.form_modifier_max_buf.text();
+    }
+
+    /// Whether the group must be chosen.
+    pub fn form_modifier_required(model: *const Model) bool {
+        return model.form_modifier_required_field;
     }
 
     /// The modifier groups on the menu.

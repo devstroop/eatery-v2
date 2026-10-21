@@ -821,6 +821,89 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_dashboard => go(model, .admin_dashboard),
 
+        .open_modifier_groups => {
+            go(model, .settings_modifiers);
+            repos.loadModifierGroups(fx);
+            repos.loadModifiers(fx);
+        },
+
+        .new_modifier_group => {
+            model.form_modifier_group_id = 0;
+            model.form_modifier_group_name_buf.set("");
+            model.form_modifier_max_buf.set("1");
+            model.form_modifier_required_field = false;
+            go(model, .modifier_group_form);
+        },
+
+        .edit_modifier_group => |id| {
+            model.form_modifier_group_id = id;
+            model.form_modifier_group_name_buf.set("");
+            model.form_modifier_max_buf.set("");
+            model.form_modifier_required_field = false;
+            for (model.modifier_groups_list) |group| {
+                if (group.id != id) continue;
+                model.form_modifier_group_name_buf.set(group.name);
+                // The number of choices the group allows, as text. The
+                // buffer takes the digits, written by hand: there is
+                // no allocator in `update`.
+                var digits: [20]u8 = undefined;
+                var index = digits.len;
+                var value = group.max_select;
+                if (value == 0) value = 1;
+                while (index > 0) {
+                    index -= 1;
+                    digits[index] = @intCast('0' + @as(u8, @intCast(@rem(value, 10))));
+                    value = @divTrunc(value, 10);
+                }
+                model.form_modifier_max_buf.set(digits[index..]);
+                model.form_modifier_required_field = group.required;
+                break;
+            }
+            go(model, .modifier_group_form);
+        },
+
+        .form_modifier_group_name_edit => |event| model.form_modifier_group_name_buf.apply(event),
+
+        .form_modifier_max_edit => |event| model.form_modifier_max_buf.apply(event),
+
+        .form_modifier_required => model.form_modifier_required_field = !model.form_modifier_required_field,
+
+        .save_modifier_group => {
+            const name = std.mem.trim(u8, model.form_modifier_group_name_buf.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "The group needs a name";
+                return;
+            }
+            const max = std.fmt.parseInt(i64, std.mem.trim(u8, model.form_modifier_max_buf.text(), " "), 10) catch {
+                model.error_text = "How many choices is a number";
+                return;
+            };
+            if (max < 1) {
+                model.error_text = "A group allows at least one choice";
+                return;
+            }
+            const id = if (model.form_modifier_group_id != 0) model.form_modifier_group_id else fx.wallMs();
+            model.busy = true;
+            model.error_text = "";
+            repos.saveModifierGroup(fx, repos.key_save_modifier_group, id, name, model.form_modifier_required_field, max);
+        },
+
+        .modifier_group_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The group could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadModifierGroups(fx);
+            go(model, .settings_modifiers);
+        },
+
+        .modifiers_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeModifiers(model, result.bytes);
+        },
+
         .open_inventory => {
             go(model, .inventory_items);
             repos.loadStock(fx);

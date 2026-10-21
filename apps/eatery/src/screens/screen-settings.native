@@ -142,6 +142,7 @@
     <row gap="8" cross="center">
       <text size="heading" grow="1">Modifier groups</text>
       <badge>{modifier_group_count} groups</badge>
+      <button size="sm" variant="primary" on-press="new_modifier_group">New</button>
       <button size="sm" variant="ghost" on-press="open_settings">Back</button>
     </row>
 
@@ -149,7 +150,7 @@
       <column gap="4">
         <for each="modifier_groups" key="id" as="group">
           <row background="surface" radius="md" padding="10" gap="10" cross="center">
-            <text grow="1">{group.name}</text>
+            <text grow="1" on-press="edit_modifier_group:{group.id}">{group.name}</text>
             <text size="sm" foreground="text_muted">up to {group.max_select}</text>
             <badge>{group.required_label}</badge>
           </row>
@@ -403,5 +404,44 @@
         </for>
       </column>
     </scroll>
+  </column>
+</template>
+
+<!-- A modifier group: the choices a customer makes about a dish.
+     "Spice level", "Extra cheese" - a group is a set of choices, and
+     it may be required, in which case the order cannot be prepared
+     without one. -->
+
+<template name="screen-modifier-group-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Modifier group</text>
+      <button size="sm" variant="ghost" on-press="open_modifier_groups">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_modifier_group_name}"
+          placeholder="Spice level"
+          label="Name"
+          on-input="form_modifier_group_name_edit"
+        />
+        <text-field
+          text="{form_modifier_max_select}"
+          placeholder="1"
+          label="How many can be chosen"
+          on-input="form_modifier_max_edit"
+        />
+        <row gap="8" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">The order cannot be prepared without one</text>
+          <toggle-button selected="{form_modifier_required}" on-toggle="form_modifier_required">Required</toggle-button>
+        </row>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_modifier_group">Save</button>
+        </row>
+      </column>
+    </card>
   </column>
 </template>

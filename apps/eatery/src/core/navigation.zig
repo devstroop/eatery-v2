@@ -117,6 +117,7 @@ pub const Screen = enum {
     category_form,
     categories,
     stock_count,
+    modifier_group_form,
 
     pub fn index(self: Screen) usize {
         return @intFromEnum(self);
@@ -174,6 +175,7 @@ pub const Screen = enum {
             .category_form => "Category",
             .categories => "Categories",
             .stock_count => "Count the stock",
+            .modifier_group_form => "Modifier group",
         };
     }
 

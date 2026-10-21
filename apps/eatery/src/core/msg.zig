@@ -174,6 +174,24 @@ pub const Msg = union(enum) {
     open_inventory,
     /// Open the dishes and the stations that cook them.
     open_kitchen_dishes,
+    /// Open the modifier groups.
+    open_modifier_groups,
+    /// Edit the modifier group with this id.
+    edit_modifier_group: i64,
+    /// Start a new modifier group.
+    new_modifier_group,
+    /// The group's name changed.
+    form_modifier_group_name_edit: canvas.TextInputEvent,
+    /// How many choices the group allows changed.
+    form_modifier_max_edit: canvas.TextInputEvent,
+    /// Whether the group is required changed.
+    form_modifier_required,
+    /// Save the group.
+    save_modifier_group,
+    /// The group was saved.
+    modifier_group_saved: native_sdk.EffectDbResult,
+    /// The choices in the modifier groups.
+    modifiers_loaded: native_sdk.EffectDbResult,
     /// Open the database inspector.
     open_db_inspector,
     /// Open the control centre.
@@ -382,6 +400,8 @@ pub const Msg = union(enum) {
         "stock_loaded",
         "stock_saved",
         "dish_assigned",
+        "modifier_group_saved",
+        "modifiers_loaded",
         "db_tables_loaded",
         "devices_loaded",
         "sync_state_loaded",

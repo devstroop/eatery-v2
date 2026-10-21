@@ -315,6 +315,17 @@ pub const ModifierGroup = struct {
     required_label: []const u8,
 };
 
+/// One choice inside a modifier group: "Extra cheese", "Well done".
+pub const Modifier = struct {
+    id: i64,
+    group_id: i64,
+    name: []const u8,
+    /// What the choice adds to the price, in minor units. Zero is a
+    /// choice that costs nothing.
+    price_delta_minor: i64,
+    active: bool,
+};
+
 /// A discount: a percentage, a fixed amount, or both.
 pub const Discount = struct {
     id: i64,

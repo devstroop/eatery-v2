@@ -1525,6 +1525,51 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
+test "the owner writes a modifier group" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The owner opens the groups.
+    harness.send(Msg{ .open_modifier_groups = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.settings_modifiers, harness.model.screen());
+
+    // And starts a new one: "Spice level", one choice, required.
+    harness.send(Msg{ .new_modifier_group = {} });
+    try testing.expectEqual(nav.Screen.modifier_group_form, harness.model.screen());
+    harness.model.form_modifier_group_name_buf.set("Spice level");
+    harness.model.form_modifier_max_buf.set("1");
+    harness.send(Msg{ .form_modifier_required = {} });
+    harness.send(Msg{ .save_modifier_group = {} });
+    harness.drain();
+
+    // The group is saved, and the owner is back on the list.
+    try testing.expectEqual(nav.Screen.settings_modifiers, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.modifier_groups_list.len);
+    const group = harness.model.modifier_groups_list[0];
+    try testing.expectEqualStrings("Spice level", group.name);
+    try testing.expectEqual(@as(i64, 1), group.max_select);
+    try testing.expect(group.required);
+
+    // And it is in the database.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM modifier_group WHERE name = 'Spice level';", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a modifier group with no name is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_modifier_group = {} });
+    harness.model.form_modifier_group_name_buf.set("   ");
+    harness.model.form_modifier_max_buf.set("1");
+    harness.send(Msg{ .save_modifier_group = {} });
+
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM modifier_group;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
 test "the inspector counts every table the schema creates" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
