@@ -11,6 +11,7 @@
      That enum is append-only: adding a screen means appending it, so
      the numbers here stay true. -->
 
+<import src="screens/screen-setup.native"/>
 <import src="screens/screen-role-picker.native"/>
 <import src="screens/screen-login.native"/>
 <import src="screens/screen-dashboard.native"/>
@@ -31,6 +32,10 @@
       <text foreground="destructive_text" grow="1">{error_message}</text>
       <button size="sm" variant="ghost" on-press="dismiss_error">Dismiss</button>
     </row>
+  </if>
+
+  <if test="{show_setup}">
+    <use template="screen-setup"/>
   </if>
 
   <if test="{show_role_picker}">

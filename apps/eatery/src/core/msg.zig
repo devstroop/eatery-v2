@@ -30,6 +30,19 @@ pub const Msg = union(enum) {
     /// Back to the role picker (from the sign-in screen).
     pick_role_again,
 
+    // ------------------------------------------------------- first run
+
+    /// The setup form changed.
+    setup_company_edit: canvas.TextInputEvent,
+    setup_admin_edit: canvas.TextInputEvent,
+    setup_pin_edit: canvas.TextInputEvent,
+    setup_pin2_edit: canvas.TextInputEvent,
+    setup_currency_edit: canvas.TextInputEvent,
+    /// Set up the restaurant.
+    setup_submit,
+    /// The setup write came back.
+    setup_created: native_sdk.EffectDbResult,
+
     // --------------------------------------------------------- navigation
 
     /// Open a screen by index (see `core/navigation.zig`).
@@ -122,6 +135,7 @@ pub const Msg = union(enum) {
         "company_loaded",
         "config_loaded",
         "config_saved",
+        "setup_created",
         "db_failed",
         "order_placed",
         "order_status_saved",
