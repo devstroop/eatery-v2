@@ -143,7 +143,7 @@ anchor.
 | I2 | Navigation is refused for a role that lacks permission. | `go()` at `src/core/update.zig:329`; RBAC test |
 | I3 | Money is integer minor units. | `src/domain/models.zig:1`; money test |
 | I4 | The view cannot bind a private field. | `view_unbound` in `model.zig` and `msg.zig` |
-| I5 | The model never borrows effect scratch memory. | `src/data/page.zig:16`; decode copies into bumps |
+| I5 | The model never borrows effect scratch memory. | `src/data/page.zig:16`; decode copies into bumps, and a test overwrites the page after decoding |
 | I6 | An order and its lines are written atomically. | `repos.saveOrder` single `dbExec` |
 | I7 | The `Screen` enum is append-only. | `src/core/navigation.zig:47`; markup compares indices |
 | I8 | Every imported template is in `app_sources.zig`. | `src/app_sources.zig`; import fails loudly |
@@ -161,7 +161,7 @@ Implemented end to end today:
 - floor table board (read-only);
 - kitchen board with lifecycle advance;
 - 43-table schema, 11 migrations, core repositories;
-- 70 authored headless tests, of which 41 run against an in-memory database.
+- 79 authored headless tests, of which 46 run against an in-memory database.
 
 Not implemented, despite appearing as types or tables:
 

@@ -2,7 +2,7 @@
 
 > **Status:** Partial — core reads and order writes work; most entities have
 > no write path or UI.
-> **Last verified:** 2026-10-20, by source review.
+> **Last verified:** 2026-10-21, by source review and the test suite.
 > **Source:** `src/data/repos.zig`, `src/data/page.zig`, `src/data/auth.zig`,
 > `src/core/update.zig`, `src/domain/models.zig`.
 
@@ -76,8 +76,10 @@ Limits and safety:
 - `Reader.rows_left` is decremented per row; `nextRow` returns false at
   the end.
 
-The decoder is unit-tested by hand-building a page (two columns, two
-rows, NULL + INTEGER + TEXT).
+The page reader is unit-tested by hand-building a page (two columns,
+two rows, NULL + INTEGER + TEXT). The company decoder is tested by
+overwriting the page after decoding, which proves its text was copied
+into the model rather than borrowed from the page.
 
 ## Write path
 
