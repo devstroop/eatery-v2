@@ -1508,6 +1508,54 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
 }
 
+test "the owner says which station cooks which dish" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A station, and a dish that is not sent to it.
+    harness.fx.dbExec(.{
+        .key = 946,
+        .statements = &.{.{
+            .sql = "INSERT INTO kds_station (id, name, sort_order, active) VALUES (1, 'Tandoor', 1, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The owner opens the dishes.
+    harness.send(Msg{ .open_kitchen_dishes = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.kitchen_dishes, harness.model.screen());
+    try testing.expectEqual(@as(usize, 2), harness.model.kitchen_dish_count());
+
+    // The dish goes to the station.
+    harness.send(Msg{ .select_dish = 1 });
+    harness.send(Msg{ .assign_station = 1 });
+    harness.drain();
+
+    // The mapping is written, and the old one is gone: a dish is
+    // cooked at one station.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM product_station WHERE product_id = 1;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+
+    // And the station says so.
+    repos.loadProductStations(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(i64, 1), harness.model.station_of_product(1));
+    try testing.expectEqualStrings("Tandoor", harness.model.station_name_for(1));
+}
+
+test "a dish with no station chosen is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .assign_station = 1 });
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM product_station;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
 test "the owner counts the stock, and the count says why it moved" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

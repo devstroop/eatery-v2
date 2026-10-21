@@ -826,6 +826,39 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadStock(fx);
         },
 
+        .open_kitchen_dishes => {
+            go(model, .kitchen_dishes);
+            repos.loadProducts(fx);
+            repos.loadStations(fx);
+            repos.loadProductStations(fx);
+        },
+
+        .select_dish => |id| model.selected_dish_id = id,
+
+        .assign_station => |station_id| {
+            if (model.selected_dish_id == 0) {
+                model.error_text = "Choose a dish first";
+                return;
+            }
+            if (station_id == 0) {
+                model.error_text = "That is not a station";
+                return;
+            }
+            model.busy = true;
+            model.error_text = "";
+            repos.saveDishStation(fx, repos.key_save_station, model.selected_dish_id, station_id);
+        },
+
+        .dish_assigned => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The station could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadProductStations(fx);
+        },
+
         .count_stock => |id| {
             model.form_stock_product_id = id;
             model.form_stock_name_field = "";

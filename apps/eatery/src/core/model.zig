@@ -337,6 +337,8 @@ pub const Model = struct {
 
     // ------------------------------------------------------- the sale
 
+    /// The dish the owner is assigning a station to.
+    selected_dish_id: i64 = 0,
     /// The thing whose stock is being counted.
     form_stock_product_id: i64 = 0,
     /// Its name, for the form's heading.
@@ -973,6 +975,56 @@ pub const Model = struct {
         return model.reservations_list.len;
     }
 
+    /// The dish the owner is assigning a station to.
+    pub fn selected_dish(model: *const Model) i64 {
+        return model.selected_dish_id;
+    }
+
+    /// The name of the station that cooks a dish, or "No station" when
+    /// no station does.
+    ///
+    /// The name is resolved here rather than in the markup: a row
+    /// carries plain fields, and the markup cannot call a method on a
+    /// loop row.
+    pub fn station_name_for(model: *const Model, product_id: i64) []const u8 {
+        const station_id = model.station_of_product(product_id);
+        for (model.stations_list) |station| {
+            if (station.id == station_id) return station.name;
+        }
+        return "No station";
+    }
+
+    /// The name of the station with this id.
+    pub fn station_name(model: *const Model, station_id: i64) []const u8 {
+        for (model.stations_list) |station| {
+            if (station.id == station_id) return station.name;
+        }
+        return "No station";
+    }
+
+    /// The dishes on the menu, each with the station that cooks it.
+    ///
+    /// Allocated in the view's arena, never freed (see
+    /// `visible_products` for why).
+    pub fn kitchen_dishes(model: *const Model, arena: std.mem.Allocator) []const KitchenDish {
+        const out = arena.alloc(KitchenDish, model.products.len) catch return &.{};
+        var index: usize = 0;
+        for (model.products) |product| {
+            out[index] = .{
+                .id = product.id,
+                .name = product.name,
+                .station_name = model.station_name_for(product.id),
+            };
+            index += 1;
+        }
+        return out[0..index];
+    }
+
+    /// How many dishes are on the menu.
+    pub fn kitchen_dish_count(model: *const Model) usize {
+        return model.products.len;
+    }
+
     /// What the restaurant has on the shelf.
     pub fn stock_items(model: *const Model) []const domain.StockItem {
         return model.stock_items_list;
@@ -1548,6 +1600,15 @@ pub const CartRow = struct {
     name: []const u8,
     qty: i64,
     total_minor: i64,
+};
+
+/// One dish on the menu, and the station that cooks it.
+pub const KitchenDish = struct {
+    id: i64,
+    name: []const u8,
+    /// The station that cooks this dish, by name. The markup binds
+    /// fields, so the name is resolved here.
+    station_name: []const u8,
 };
 
 /// One food marking, as the product form offers it.

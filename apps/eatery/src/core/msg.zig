@@ -172,6 +172,14 @@ pub const Msg = union(enum) {
     open_dashboard,
     /// Open the stock on the shelf.
     open_inventory,
+    /// Open the dishes and the stations that cook them.
+    open_kitchen_dishes,
+    /// Choose the dish to assign a station to.
+    select_dish: i64,
+    /// Send the chosen dish to the station with this id.
+    assign_station: i64,
+    /// The dish was sent to a station.
+    dish_assigned: native_sdk.EffectDbResult,
     /// Count the stock of the product with this id.
     count_stock: i64,
     /// The count being typed.
@@ -363,6 +371,7 @@ pub const Msg = union(enum) {
         "report_loaded",
         "stock_loaded",
         "stock_saved",
+        "dish_assigned",
         "report_modes_loaded",
         "order_opened",
         "order_line_added",

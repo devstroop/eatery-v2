@@ -80,6 +80,7 @@ pub const key_report = 43;
 pub const key_report_modes = 44;
 pub const key_stock = 45;
 pub const key_save_stock = 46;
+pub const key_save_station = 47;
 
 // ------------------------------------------------------------ queries
 
@@ -327,6 +328,36 @@ pub fn loadOrders(fx: *Effects) void {
         .key = key_orders,
         .sql = orders_sql,
         .on_result = Effects.dbMsg(.orders_loaded),
+    });
+}
+
+/// Send a dish to a station.
+///
+/// A dish is cooked at one station, so the mapping is replaced rather
+/// than added: the old rows go and the new one arrives, in the same
+/// transaction. A dish at two stations would send the ticket to two
+/// kitchens.
+pub fn saveDishStation(fx: *Effects, key: u64, product_id: i64, station_id: i64) void {
+    // Each statement gets the parameters it uses: a statement that
+    // binds one parameter and is given two is refused by the engine.
+    var remove: [1]native_sdk.EffectDbValue = .{.{ .integer = product_id }};
+    var add: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = product_id },
+        .{ .integer = station_id },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{
+            .{
+                .sql = "DELETE FROM product_station WHERE product_id = ?1;",
+                .params = &remove,
+            },
+            .{
+                .sql = "INSERT INTO product_station (product_id, station_id) VALUES (?1, ?2);",
+                .params = &add,
+            },
+        },
+        .on_result = Effects.dbMsg(.dish_assigned),
     });
 }
 

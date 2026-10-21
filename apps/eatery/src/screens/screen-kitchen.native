@@ -89,3 +89,42 @@
     </scroll>
   </column>
 </template>
+
+<!-- The dishes and the stations that cook them. The kitchen board
+     shows the tickets; this shows why a ticket went to the station it
+     did. The owner picks a dish, then picks the station that cooks
+     it, and the ticket follows. -->
+
+<template name="screen-kitchen-dishes">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Dishes</text>
+      <text foreground="text_muted">{kitchen_dish_count} on the menu</text>
+      <button size="sm" variant="ghost" on-press="open_dashboard">Back</button>
+    </row>
+
+    <text size="lg">Stations</text>
+    <row gap="4" cross="center">
+      <for each="stations" key="id" as="station">
+        <button size="sm" variant="secondary" on-press="assign_station:{station.id}">{station.name}</button>
+      </for>
+    </row>
+
+    <if test="{kitchen_dish_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No dishes on the menu yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="kitchen_dishes" key="id" as="dish">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1" on-press="select_dish:{dish.id}">{dish.name}</text>
+            <badge>{dish.station_name}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
