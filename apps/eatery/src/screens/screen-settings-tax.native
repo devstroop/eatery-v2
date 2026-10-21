@@ -6,15 +6,16 @@
     <row gap="8" cross="center">
       <text size="heading" grow="1">Tax slabs</text>
       <badge>{tax_slab_count} slabs</badge>
+      <button size="sm" on-press="new_tax_slab">New</button>
       <button size="sm" variant="ghost" on-press="open_settings">Back</button>
     </row>
 
     <scroll grow="1">
       <column gap="4">
         <for each="tax_slabs" key="id" as="slab">
-          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_tax_slab:{slab.id}">
             <text grow="1">{slab.name}</text>
-            <text>{fixed(slab.rate_bps / currency_divisor, currency_decimal_count)}%</text>
+            <text>{fixed(slab.rate_bps / 100, 0)}%</text>
             <badge>{slab.tax_label}</badge>
           </row>
         </for>

@@ -118,6 +118,11 @@ These come from the SDK and are non-negotiable:
 10. **Widget budget per view:** 1024 retained nodes, 64 KiB text, 512
     context-menu items, 16 floating surfaces, 2048 commands / 8192 glyphs
     per frame.
+11. **The shell's import closure holds thirty-two files.** The limit is
+    on FILES, not on templates: one file may hold several templates, so
+    a screen that shares a file with its neighbours costs nothing. The
+    app is at the ceiling, and the two settings forms share one file
+    because of it.
 
 ## Binding patterns
 

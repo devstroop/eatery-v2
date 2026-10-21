@@ -188,6 +188,54 @@ fn openEmployeeForm(model: *Model, id: i64) void {
     go(model, .employee_form);
 }
 
+/// Open the discount form: an existing discount, or a new one.
+fn openDiscountForm(model: *Model, id: i64) void {
+    model.form_discount_id = id;
+    model.form_discount_name_buf.set("");
+    model.form_discount_percent_buf.set("");
+    model.form_discount_amount_buf.set("");
+    if (id != 0) {
+        for (model.discounts_list) |discount| {
+            if (discount.id != id) continue;
+            model.form_discount_name_buf.set(discount.name);
+            model.form_discount_percent_buf.set(rateAsTyped(discount.percent_bps));
+            model.form_discount_amount_buf.set(priceAsTyped(discount.amount_minor));
+            break;
+        }
+    }
+    go(model, .discount_form);
+}
+
+/// Open the tax slab form: an existing slab, or a new one.
+fn openTaxSlabForm(model: *Model, id: i64) void {
+    model.form_tax_slab_id = id;
+    model.form_tax_slab_name_buf.set("");
+    model.form_tax_slab_rate_buf.set("");
+    model.form_tax_slab_inclusive = false;
+    if (id != 0) {
+        for (model.tax_slabs_list) |slab| {
+            if (slab.id != id) continue;
+            model.form_tax_slab_name_buf.set(slab.name);
+            model.form_tax_slab_rate_buf.set(rateAsTyped(slab.rate_bps));
+            model.form_tax_slab_inclusive = slab.inclusive;
+            break;
+        }
+    }
+    go(model, .tax_slab_form);
+}
+
+/// A rate in basis points, as the form shows it: the percentage, with
+/// no decimals the owner did not type.
+fn rateAsTyped(rate_bps: i64) []const u8 {
+    var buffer: [24]u8 = undefined;
+    if (@mod(rate_bps, 100) == 0) {
+        const written = std.fmt.bufPrint(&buffer, "{d}", .{ @divTrunc(rate_bps, 100) }) catch return "";
+        return written;
+    }
+    const written = std.fmt.bufPrint(&buffer, "{d}.{d:0>2}", .{ @divTrunc(rate_bps, 100), @mod(rate_bps, 100) }) catch return "";
+    return written;
+}
+
 /// A price in minor units, as the form shows it: the amount with two
 /// decimals and no currency symbol.
 fn priceAsTyped(minor: i64) []const u8 {
@@ -196,6 +244,70 @@ fn priceAsTyped(minor: i64) []const u8 {
     const cents = @mod(minor, 100);
     const written = std.fmt.bufPrint(&buffer, "{d}.{d:0>2}", .{ whole, cents }) catch return "";
     return written;
+}
+
+/// Save the discount the form is editing.
+///
+/// A discount is a share of the bill, an amount off it, or both. The
+/// cashier's rule is the one the model already uses: a percentage wins,
+/// and an amount is what is left when there is no percentage.
+fn saveDiscount(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_discount_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The discount needs a name";
+        return;
+    }
+    const percent = if (model.form_discount_percent_buf.text().len == 0)
+        0
+    else
+        parsePrice(model.form_discount_percent_buf.text()) orelse {
+            model.error_text = "The percent must be a number - ten for ten percent";
+            return;
+        };
+    const amount = if (model.form_discount_amount_buf.text().len == 0)
+        0
+    else
+        parsePrice(model.form_discount_amount_buf.text()) orelse {
+            model.error_text = "The amount must be a number";
+            return;
+        };
+    if (percent > 10000) {
+        model.error_text = "A discount cannot be more than a hundred percent";
+        return;
+    }
+    if (percent == 0 and amount == 0) {
+        model.error_text = "A discount has to take something off";
+        return;
+    }
+    const id = if (model.form_discount_id != 0) model.form_discount_id else fx.wallMs();
+    model.busy = true;
+    model.error_text = "";
+    repos.saveDiscount(fx, repos.key_save_discount, id, name, percent, amount, fx.wallMs());
+}
+
+/// Save the tax slab the form is editing.
+///
+/// The rate is a percentage, and the percentage's hundredths are the
+/// rate's basis points: five percent is five hundred, and twelve and
+/// three quarters is one thousand two hundred and seventy five.
+fn saveTaxSlab(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_tax_slab_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The tax slab needs a name";
+        return;
+    }
+    const rate = parsePrice(model.form_tax_slab_rate_buf.text()) orelse {
+        model.error_text = "The rate must be a number - five for five percent";
+        return;
+    };
+    if (rate > 10000) {
+        model.error_text = "A rate cannot be more than a hundred percent";
+        return;
+    }
+    const id = if (model.form_tax_slab_id != 0) model.form_tax_slab_id else fx.wallMs();
+    model.busy = true;
+    model.error_text = "";
+    repos.saveTaxSlab(fx, repos.key_save_tax_slab, id, name, rate, model.form_tax_slab_inclusive);
 }
 
 /// Save the product the form is editing.
@@ -553,6 +665,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .setup_pin2_edit => |event| model.setup_pin2.apply(event),
 
         .setup_currency_edit => |event| model.setup_currency_code.apply(event),
+
+        .setup_symbol_edit => |event| model.setup_currency_symbol.apply(event),
 
         .setup_submit => submitSetup(model, fx),
 
@@ -929,6 +1043,31 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.kind == .page) repos.decodePrinters(model, result.bytes);
         },
 
+        .edit_tax_slab => |id| openTaxSlabForm(model, id),
+
+        .new_tax_slab => openTaxSlabForm(model, 0),
+
+        .save_tax_slab => saveTaxSlab(model, fx),
+
+        .open_tax_slabs => go(model, .settings_tax),
+
+        .tax_slab_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the tax slab";
+                return;
+            }
+            model.error_text = "";
+            repos.loadTaxSlabs(fx);
+            go(model, .settings_tax);
+        },
+
+        .form_tax_slab_name_edit => |event| model.form_tax_slab_name_buf.apply(event),
+
+        .form_tax_slab_rate_edit => |event| model.form_tax_slab_rate_buf.apply(event),
+
+        .form_tax_slab_inclusive => model.form_tax_slab_inclusive = !model.form_tax_slab_inclusive,
+
         .tax_slabs_loaded => |result| {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeTaxSlabs(model, result.bytes);
@@ -938,6 +1077,31 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeModifierGroups(model, result.bytes);
         },
+
+        .edit_discount => |id| openDiscountForm(model, id),
+
+        .new_discount => openDiscountForm(model, 0),
+
+        .save_discount => saveDiscount(model, fx),
+
+        .open_discounts => go(model, .settings_discounts),
+
+        .discount_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the discount";
+                return;
+            }
+            model.error_text = "";
+            repos.loadDiscounts(fx);
+            go(model, .settings_discounts);
+        },
+
+        .form_discount_name_edit => |event| model.form_discount_name_buf.apply(event),
+
+        .form_discount_percent_edit => |event| model.form_discount_percent_buf.apply(event),
+
+        .form_discount_amount_edit => |event| model.form_discount_amount_buf.apply(event),
 
         .discounts_loaded => |result| {
             if (result.outcome != .ok) return;

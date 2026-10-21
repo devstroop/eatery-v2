@@ -71,6 +71,8 @@ pub const key_write_product = 34;
 pub const key_write_table = 35;
 pub const key_save_salt = 36;
 pub const key_save_currency = 37;
+pub const key_save_tax_slab = 39;
+pub const key_save_discount = 40;
 pub const key_save_pin_hash = 38;
 
 // ------------------------------------------------------------ queries
@@ -382,6 +384,67 @@ pub fn loadCustomers(fx: *Effects) void {
     });
 }
 
+/// Write a discount: a new one, or the one the form is editing.
+pub fn saveDiscount(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    percent_bps: i64,
+    amount_minor: i64,
+    at: i64,
+) void {
+    var params: [6]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = percent_bps },
+        .{ .integer = amount_minor },
+        .{ .integer = 1 },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO discount (id, name, percent_bps, amount_minor, active, created_at)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, percent_bps = ?3, amount_minor = ?4;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.discount_saved),
+    });
+}
+
+/// Write a tax slab: a new one, or the one the form is editing.
+pub fn saveTaxSlab(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    rate_bps: i64,
+    inclusive: bool,
+) void {
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = rate_bps },
+        .{ .integer = if (inclusive) 1 else 0 },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO tax_slab (id, name, rate_bps, inclusive, active)
+            \\VALUES (?1, ?2, ?3, ?4, 1)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, rate_bps = ?3, inclusive = ?4;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.tax_slab_saved),
+    });
+}
+
 pub fn loadPrinters(fx: *Effects) void {
     fx.dbQuery(.{
         .key = key_printers,
@@ -440,6 +503,7 @@ pub fn loadAll(fx: *Effects) void {
     loadProducts(fx);
     loadTables(fx);
     loadEmployees(fx);
+    loadCustomers(fx);
     loadOrders(fx);
     loadOrderLines(fx);
 }
@@ -1363,8 +1427,11 @@ pub const max_order_lines = 64;
 /// synchronously, so the parameters can live on the stack for the
 /// duration of the call.
 pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderLine, request_key: []const u8) void {
-    var statements: [2 + max_order_lines]native_sdk.EffectDbStatement = undefined;
+    // The order, its lines, and the stock it takes: three statements
+    // per line, and one transaction for all of them.
+    var statements: [2 + 3 * max_order_lines]native_sdk.EffectDbStatement = undefined;
     var line_params: [max_order_lines][9]native_sdk.EffectDbValue = undefined;
+    var stock_params: [max_order_lines][3]native_sdk.EffectDbValue = undefined;
 
     // The order number is a sequence, and the database assigns it. The
     // statement that takes the next number and the statement that
@@ -1442,6 +1509,25 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
             \\ON CONFLICT(id) DO NOTHING;
             ,
             .params = &line_params[slot],
+        };
+        count += 1;
+
+        // The stock goes down with the sale, in the same transaction:
+        // a dish that was sold is a dish that is not on the shelf, and
+        // a sale that did not happen leaves the shelf alone. Only the
+        // products that are counted come down - the others are not
+        // tracked, and subtracting from them would be a lie.
+        stock_params[slot] = .{
+            .{ .integer = line.qty },
+            .{ .integer = line.product_id },
+            .{ .integer = order.placed_at },
+        };
+        statements[count] = .{
+            .sql =
+            \\UPDATE product SET stock_qty = COALESCE(stock_qty, 0) - ?1, updated_at = ?3
+            \\WHERE id = ?2 AND track_stock = 1;
+            ,
+            .params = &stock_params[slot],
         };
         count += 1;
     }

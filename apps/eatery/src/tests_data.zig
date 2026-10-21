@@ -1394,6 +1394,255 @@ test "the setup refuses a PIN that does not match" {
     try testing.expect(!harness.model.signed_in);
 }
 
+test "the stock comes down with the sale" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A dish that is counted, with ten on the shelf, and a drink that
+    // is not counted at all.
+    harness.fx.dbExec(.{
+        .key = 926,
+        .statements = &.{
+            .{
+                .sql = "UPDATE product SET track_stock = 1, stock_qty = 10 WHERE id = 1;",
+                .params = &.{},
+            },
+            .{
+                .sql = "UPDATE product SET track_stock = 0, stock_qty = 99 WHERE id = 2;",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 10, .active = true },
+        .{ .id = 2, .category_id = 2, .name = "Masala Chai", .food_label = "Veg", .price_minor = 4000, .product_type = .beverage, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 99, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(.{ .add_to_cart = 2 });
+    harness.send(Msg{ .place_order = {} });
+
+    // Two dishes sold: eight left on the shelf.
+    harness.fx.dbQuery(.{
+        .key = 927,
+        .sql = "SELECT stock_qty FROM product WHERE id = 1;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    var left: i64 = -1;
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                left = reader.intOf(&values, "stock_qty", -1);
+            },
+            else => {},
+        }
+    }
+    try testing.expectEqual(@as(i64, 8), left);
+
+    // And the drink that is not counted is not subtracted from: the
+    // shelf would be telling a lie.
+    harness.fx.dbQuery(.{
+        .key = 928,
+        .sql = "SELECT stock_qty FROM product WHERE id = 2;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    var untouched: i64 = -1;
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                untouched = reader.intOf(&values, "stock_qty", -1);
+            },
+            else => {},
+        }
+    }
+    try testing.expectEqual(@as(i64, 99), untouched);
+}
+
+test "a discount is saved, and it takes what the owner said off" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // Ten percent off, the way a staff discount is written down.
+    harness.model.form_discount_name_buf.set("Staff 10%");
+    harness.model.form_discount_percent_buf.set("10");
+    harness.send(Msg{ .save_discount = {} });
+
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+
+    var found = false;
+    for (harness.model.discounts_list) |discount| {
+        if (!std.mem.eql(u8, discount.name, "Staff 10%")) continue;
+        found = true;
+        // Ten percent is a thousand basis points.
+        try testing.expectEqual(@as(i64, 1000), discount.percent_bps);
+        try testing.expectEqual(@as(i64, 0), discount.amount_minor);
+    }
+    try testing.expect(found);
+
+    // Or a fixed amount off the bill.
+    harness.model.form_discount_name_buf.set("Fifty off");
+    harness.model.form_discount_percent_buf.set("");
+    harness.model.form_discount_amount_buf.set("50.00");
+    harness.send(Msg{ .save_discount = {} });
+
+    repos.loadDiscounts(harness.fx);
+    harness.drain();
+    var amount = false;
+    for (harness.model.discounts_list) |discount| {
+        if (!std.mem.eql(u8, discount.name, "Fifty off")) continue;
+        amount = true;
+        try testing.expectEqual(@as(i64, 0), discount.percent_bps);
+        // Fifty is five thousand minor units.
+        try testing.expectEqual(@as(i64, 5000), discount.amount_minor);
+    }
+    try testing.expect(amount);
+}
+
+test "a discount needs a name, and it has to take something off" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // No name.
+    harness.model.form_discount_percent_buf.set("10");
+    harness.send(Msg{ .save_discount = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+
+    // A rate that is not a number.
+    harness.model.form_discount_name_buf.set("Staff");
+    harness.model.form_discount_percent_buf.set("ten");
+    harness.send(Msg{ .save_discount = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+
+    // A discount that takes nothing off is not a discount.
+    harness.model.form_discount_name_buf.set("Staff");
+    harness.model.form_discount_percent_buf.set("");
+    harness.model.form_discount_amount_buf.set("");
+    harness.send(Msg{ .save_discount = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
+test "a tax slab is saved, and the rate the owner typed is the rate stored" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A restaurant that charges five percent, the way an owner types it.
+    harness.model.form_tax_slab_name_buf.set("GST 5%");
+    harness.model.form_tax_slab_rate_buf.set("5");
+    harness.send(Msg{ .save_tax_slab = {} });
+
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+
+    var found = false;
+    for (harness.model.tax_slabs_list) |slab| {
+        if (!std.mem.eql(u8, slab.name, "GST 5%")) continue;
+        found = true;
+        // Five percent is five hundred basis points.
+        try testing.expectEqual(@as(i64, 500), slab.rate_bps);
+        try testing.expect(!slab.inclusive);
+    }
+    try testing.expect(found);
+
+    // A rate with decimals, and a price that already carries the tax.
+    harness.model.form_tax_slab_name_buf.set("VAT 12.75%");
+    harness.model.form_tax_slab_rate_buf.set("12.75");
+    harness.model.form_tax_slab_inclusive = true;
+    harness.send(Msg{ .save_tax_slab = {} });
+
+    repos.loadTaxSlabs(harness.fx);
+    harness.drain();
+    var inclusive = false;
+    for (harness.model.tax_slabs_list) |slab| {
+        if (!std.mem.eql(u8, slab.name, "VAT 12.75%")) continue;
+        inclusive = true;
+        try testing.expectEqual(@as(i64, 1275), slab.rate_bps);
+        try testing.expect(slab.inclusive);
+    }
+    try testing.expect(inclusive);
+}
+
+test "a tax slab needs a name and a rate that is a number" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.form_tax_slab_name_buf.set("GST 5%");
+    harness.model.form_tax_slab_rate_buf.set("five");
+    harness.send(Msg{ .save_tax_slab = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+
+    harness.model.form_tax_slab_name_buf.set("");
+    harness.model.form_tax_slab_rate_buf.set("5");
+    harness.send(Msg{ .save_tax_slab = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
+test "the customers load into the model" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A customer the restaurant knows.
+    harness.fx.dbExec(.{
+        .key = 925,
+        .statements = &.{.{
+            .sql = "INSERT INTO customer (id, name, phone, email, loyalty_points, created_at) VALUES (1, 'Asha', '99900', 'asha@example.com', 10, 0);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The boot load brings them in. The customers screen and the count
+    // beside the dashboard tile were both empty, always: the repository
+    // was there, and nothing ever called it.
+    repos.loadAll(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
+    try testing.expectEqual(@as(usize, 1), harness.model.customer_count());
+    try testing.expectEqualStrings("Asha", harness.model.customers[0].name);
+}
+
+test "the setup's symbol is the symbol, not the code" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // The code and the symbol are two fields, and one of them used to
+    // write into the other.
+    harness.model.setup_currency_code.set("EUR");
+    harness.model.setup_currency_symbol.set("€");
+    try testing.expectEqualStrings("EUR", harness.model.setup_currency_text());
+    try testing.expectEqualStrings("€", harness.model.setup_symbol_text());
+}
+
+test "the setup's button waits for a complete form" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // Nothing typed yet: the button is not ready.
+    try testing.expect(harness.model.setup_incomplete());
+
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
+    try testing.expect(!harness.model.setup_incomplete());
+    try testing.expect(harness.model.setup_can_submit());
+}
+
 test "the setup refuses an empty restaurant name" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();

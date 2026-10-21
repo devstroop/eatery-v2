@@ -29,6 +29,7 @@
 <import src="screens/screen-settings.native"/>
 <import src="screens/screen-settings-printers.native"/>
 <import src="screens/screen-settings-tax.native"/>
+<import src="screens/screen-setting-forms.native"/>
 <import src="screens/screen-settings-modifiers.native"/>
 <import src="screens/screen-settings-discounts.native"/>
 <import src="screens/screen-settings-currency.native"/>
@@ -105,6 +106,8 @@
         <if test="{screen_index == 35}"><use template="screen-settings-data"/></if>
         <if test="{screen_index == 43}"><use template="screen-product-form"/></if>
         <if test="{screen_index == 44}"><use template="screen-employee-form"/></if>
+        <if test="{screen_index == 45}"><use template="screen-tax-slab-form"/></if>
+        <if test="{screen_index == 46}"><use template="screen-discount-form"/></if>
         <if test="{screen_index == 42}"><use template="screen-display"/></if>
         <if test="{screen_index == 28}"><use template="screen-settings"/></if>
         <if test="{screen_index == 29}"><use template="screen-settings-company"/></if>

@@ -40,6 +40,11 @@ pub const Msg = union(enum) {
     setup_pin_edit: canvas.TextInputEvent,
     setup_pin2_edit: canvas.TextInputEvent,
     setup_currency_edit: canvas.TextInputEvent,
+    /// The currency SYMBOL changed. It has its own message because it
+    /// has its own field: the code and the symbol are two different
+    /// things, and a field that writes into the other one is a field
+    /// that lies.
+    setup_symbol_edit: canvas.TextInputEvent,
     /// Set up the restaurant.
     setup_submit,
     /// The setup write came back.
@@ -191,10 +196,34 @@ pub const Msg = union(enum) {
     printers_loaded: native_sdk.EffectDbResult,
     /// The tax slabs were loaded.
     tax_slabs_loaded: native_sdk.EffectDbResult,
+    /// The tax slab form changed.
+    form_tax_slab_name_edit: canvas.TextInputEvent,
+    form_tax_slab_rate_edit: canvas.TextInputEvent,
+    form_tax_slab_inclusive,
+    /// Open the tax slab form: an existing slab, or a new one.
+    edit_tax_slab: i64,
+    new_tax_slab,
+    save_tax_slab,
+    /// Back to the tax slabs.
+    open_tax_slabs,
+    /// The tax slab was saved.
+    tax_slab_saved: native_sdk.EffectDbResult,
     /// The modifier groups were loaded.
     modifier_groups_loaded: native_sdk.EffectDbResult,
     /// The discounts were loaded.
     discounts_loaded: native_sdk.EffectDbResult,
+    /// The discount form changed.
+    form_discount_name_edit: canvas.TextInputEvent,
+    form_discount_percent_edit: canvas.TextInputEvent,
+    form_discount_amount_edit: canvas.TextInputEvent,
+    /// Open the discount form: an existing discount, or a new one.
+    edit_discount: i64,
+    new_discount,
+    save_discount,
+    /// Back to the discounts.
+    open_discounts,
+    /// The discount was saved.
+    discount_saved: native_sdk.EffectDbResult,
 
     // ---------------------------------------------------- the company form
 
