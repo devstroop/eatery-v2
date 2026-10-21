@@ -23,7 +23,8 @@ This project follows a lightweight MADR-style format.
 | [0010](0010-markup-only-no-custom-paint.md) | Markup only; no custom paint or Lottie | Accepted |
 | [0011](0011-desktop-first-defer-mobile.md) | Desktop first; defer mobile | Proposed |
 | [0012](0012-csv-first-interchange.md) | CSV first for import/export | Proposed |
-| [0013](0013-clock-based-order-ids.md) | Clock-based order IDs | Provisional |
+| [0013](0013-clock-based-order-ids.md) | Clock-based order IDs | Superseded by ADR-0014 |
+| [0014](0014-order-identity.md) | The order identity: a sequence, an id and a request key | Accepted |
 
 ## Drafts
 

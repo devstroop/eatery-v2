@@ -72,7 +72,7 @@
       </row>
       <row gap="8">
         <button variant="ghost" on-press="clear_cart">Clear</button>
-        <button variant="primary" grow="1" on-press="place_order">Place order</button>
+        <button variant="primary" grow="1" disabled="{sale_pending}" on-press="place_order">Place order</button>
       </row>
     </column>
   </split>

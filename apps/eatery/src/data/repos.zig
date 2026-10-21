@@ -841,26 +841,38 @@ pub fn openOrderForTable(
     key: u64,
     table_id: i64,
     employee_id: i64,
-    order_no: []const u8,
     at: i64,
 ) void {
-    var params: [4]native_sdk.EffectDbValue = .{
+    // The order number is a sequence, and the database assigns it: the
+    // statement that takes the next number and the statement that
+    // stores the order are one transaction.
+    var sequence_params: [1]native_sdk.EffectDbValue = .{.{ .integer = at }};
+    var order_params: [3]native_sdk.EffectDbValue = .{
         .{ .integer = at },
-        .{ .text = order_no },
         .{ .integer = table_id },
         .{ .integer = employee_id },
     };
     fx.dbExec(.{
         .key = key,
-        .statements = &.{.{
-            .sql =
-            \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
-            \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
-            \\  total_minor, placed_at, notes, created_at, updated_at)
-            \\VALUES (?1, ?2, 0, 0, ?3, NULL, ?4, 0, 0, 0, 0, ?1, '', ?1, ?1);
-            ,
-            .params = &params,
-        }},
+        .statements = &.{
+            .{
+                .sql =
+                \\INSERT INTO sequence (name, value, updated_at) VALUES ('order_no', 1, ?1)
+                \\ON CONFLICT(name) DO UPDATE SET value = value + 1, updated_at = ?1;
+                ,
+                .params = &sequence_params,
+            },
+            .{
+                .sql =
+                \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
+                \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
+                \\  total_minor, placed_at, notes, created_at, updated_at)
+                \\VALUES (?1, (SELECT printf('%06d', value) FROM sequence WHERE name = 'order_no'),
+                \\  0, 0, ?2, NULL, ?3, 0, 0, 0, 0, ?1, '', ?1, ?1);
+                ,
+                .params = &order_params,
+            },
+        },
         .on_result = Effects.dbMsg(.order_opened),
     });
 }
@@ -1281,16 +1293,44 @@ pub const max_order_lines = 64;
 /// runs the statements atomically, so the order is either fully there
 /// or not there at all.
 ///
+/// A duplicate order id is a constraint failure, and it is left as one.
+/// The write used to swallow it and update the order that was already
+/// there, which merged two sales into one row - the second cashier's
+/// ticket became the first cashier's ticket with the first cashier's
+/// lines and the second cashier's status.
+///
 /// No allocator is needed: `dbExec` executes the statements
 /// synchronously, so the parameters can live on the stack for the
 /// duration of the call.
-pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderLine) void {
-    var statements: [1 + max_order_lines]native_sdk.EffectDbStatement = undefined;
+pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderLine, request_key: []const u8) void {
+    var statements: [2 + max_order_lines]native_sdk.EffectDbStatement = undefined;
     var line_params: [max_order_lines][9]native_sdk.EffectDbValue = undefined;
+
+    // The order number is a sequence, and the database assigns it. The
+    // statement that takes the next number and the statement that
+    // stores the order are one transaction, so a sale that fails does
+    // not consume a number and a number is never stored twice.
+    //
+    // The bump is conditional on the request key being new: a RETRY is
+    // the same sale, and it must not take a second number with it. The
+    // gap a naive bump would leave is exactly the kind of thing a
+    // jurisdiction asks about.
+    var sequence_params: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = order.placed_at },
+        .{ .text = request_key },
+    };
+    statements[0] = .{
+        .sql =
+        \\INSERT INTO sequence (name, value, updated_at)
+        \\SELECT 'order_no', 1, ?1
+        \\WHERE NOT EXISTS (SELECT 1 FROM orders WHERE request_key = ?2)
+        \\ON CONFLICT(name) DO UPDATE SET value = value + 1, updated_at = ?1;
+        ,
+        .params = &sequence_params,
+    };
 
     var order_params: [13]native_sdk.EffectDbValue = .{
         .{ .integer = order.id },
-        .{ .text = order.order_no },
         .{ .integer = @intFromEnum(order.order_type) },
         .{ .integer = @intFromEnum(order.status) },
         // A table or a customer of zero means "none" - and "none" is
@@ -1305,22 +1345,24 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
         .{ .integer = order.total_minor },
         .{ .integer = order.placed_at },
         .{ .text = order.notes },
+        .{ .text = request_key },
     };
-    statements[0] = .{
+    statements[1] = .{
         .sql =
         \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
         \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
-        \\  total_minor, placed_at, notes, created_at, updated_at)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?12)
-        \\ON CONFLICT(id) DO UPDATE SET status = ?4, notes = ?13, updated_at = ?12;
+        \\  total_minor, placed_at, notes, created_at, updated_at, request_key)
+        \\VALUES (?1, (SELECT printf('%06d', value) FROM sequence WHERE name = 'order_no'),
+        \\  ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11, ?11, ?13)
+        \\ON CONFLICT(request_key) DO NOTHING;
         ,
         .params = &order_params,
     };
-    var count: usize = 1;
+    var count: usize = 2;
 
     for (lines) |line| {
         if (count >= statements.len) break;
-        const slot = count - 1;
+        const slot = count - 2;
         line_params[slot] = .{
             .{ .integer = line.id },
             .{ .integer = order.id },
@@ -1337,7 +1379,7 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
             \\INSERT INTO order_line (id, order_id, product_id, product_name, qty,
             \\  unit_price_minor, tax_bps, notes, created_at)
             \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-            \\ON CONFLICT(id) DO UPDATE SET qty = ?5, unit_price_minor = ?6;
+            \\ON CONFLICT(id) DO NOTHING;
             ,
             .params = &line_params[slot],
         };

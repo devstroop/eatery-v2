@@ -116,6 +116,12 @@ pub fn main(init: std.process.Init) !void {
     auth.makeSalt(init.io, &app_state.model.pin_salt_buf);
     app_state.model.pin_salt_len = app_state.model.pin_salt_buf.len;
 
+    // This installation's token. It names the device in the request
+    // keys it makes, so two devices cannot mistake each other's sale
+    // for a retry of their own.
+    auth.makeToken(init.io, &app_state.model.device_token_buf);
+    app_state.model.device_token_len = app_state.model.device_token_buf.len;
+
     try runner.runWithOptions(app_state.app(), .{
         .app_name = "eatery",
         .window_title = "Eatery",

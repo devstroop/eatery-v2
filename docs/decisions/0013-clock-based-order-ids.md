@@ -1,10 +1,16 @@
 # ADR-0013: Clock-based order IDs
 
-> **Status:** Provisional — in use, expected to be superseded
+> **Status:** Superseded by [ADR-0014](0014-order-identity.md)
 > **Date:** 2026-10-20
 > **Deciders:** Eatery maintainers
 > **Related:** [`architecture/04`](../architecture/04-data-layer.md),
 > [`plan/status.md`](../plan/status.md)
+>
+> **Superseded on 2026-10-21.** The order number is a sequence the
+> database assigns, the id keeps a per-device floor so it cannot
+> collide with itself, and a request key makes a retry the same sale.
+> The decision below is kept as the record of why the clock was tried
+> first and what it cost.
 
 ## Context
 

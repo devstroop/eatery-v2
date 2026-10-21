@@ -28,6 +28,7 @@ const nav = @import("navigation.zig");
 const rbac = @import("rbac.zig");
 const domain = @import("../domain/models.zig");
 const bump = @import("bump.zig");
+const auth = @import("../data/auth.zig");
 
 const canvas = native_sdk.canvas;
 
@@ -78,6 +79,7 @@ pub const Model = struct {
         "company_id",
         "theme_dark",
         "salt_state",
+        "last_issued_order_id",
     };
 
     // ------------------------------------------------------------ session
@@ -248,6 +250,16 @@ pub const Model = struct {
     last_order_total_minor: i64 = 0,
     last_order_items_count: i64 = 0,
     last_order_at: i64 = 0,
+    /// True while a sale is on its way to the database. The view binds
+    /// it: the button that places the order is disabled while it holds,
+    /// so a second tap cannot submit the same cart twice.
+    sale_pending: bool = false,
+    /// The highest order id this process has issued. The order id is
+    /// the wall clock, but a clock is not a sequence: two sales in the
+    /// same millisecond would want the same id, and the second one
+    /// would merge into the first. The floor keeps the ids unique
+    /// without a round trip.
+    last_issued_order_id: i64 = 0,
     /// The payment mode the cashier picked.
     payment_mode_field: i64 = 0,
     /// Why the payment failed, or empty.
@@ -278,6 +290,17 @@ pub const Model = struct {
     pin_salt_len: usize = 0,
     /// Where the installation salt stands.
     salt_state: SaltState = .unknown,
+    /// This installation's token, hex. It is a name, not a secret: it
+    /// gives the request keys this device makes a namespace of their
+    /// own, so two devices cannot mistake each other's sale for a
+    /// retry of their own.
+    device_token_buf: [auth.token_len]u8 = undefined,
+    device_token_len: usize = 0,
+    /// The order id of the sale the cart is waiting to become. Zero
+    /// until the cart is submitted; after that it belongs to the sale
+    /// until the sale lands, so a retry is the same sale and not a
+    /// second one.
+    cart_attempt_id: i64 = 0,
     /// The hash of the PIN being checked. Lives in the model so the
     /// query parameter has a stable home.
     login_hash: [64]u8 = undefined,
@@ -657,7 +680,15 @@ pub const Model = struct {
     }
 
     /// The order number of the order just placed.
+    /// The number of the order that was just placed.
+    ///
+    /// The number is a sequence the DATABASE assigns, so it is only
+    /// known once the order has been read back. The loaded order is the
+    /// truth; the field is what the sale knew before that.
     pub fn last_order_no(model: *const Model) []const u8 {
+        for (model.orders) |order| {
+            if (order.id == model.last_order_id) return order.order_no;
+        }
         return model.last_order_no_field;
     }
 
