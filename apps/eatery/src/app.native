@@ -22,6 +22,7 @@
 <import src="screens/screen-order-confirmation.native"/>
 <import src="screens/screen-display.native"/>
 <import src="screens/screen-settings.native"/>
+<import src="screens/screen-settings-company.native"/>
 <import src="screens/screen-catalogue.native"/>
 <import src="screens/screen-employees.native"/>
 <import src="screens/screen-waiter-tables.native"/>
@@ -80,6 +81,7 @@
         <if test="{screen_index == 23}"><use template="screen-catalogue"/></if>
         <if test="{screen_index == 26}"><use template="screen-employees"/></if>
         <if test="{screen_index == 28}"><use template="screen-settings"/></if>
+        <if test="{screen_index == 29}"><use template="screen-settings-company"/></if>
       </column>
     </split>
   </if>

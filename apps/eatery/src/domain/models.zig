@@ -149,6 +149,9 @@ pub const Company = struct {
     currency_code: []const u8,
     currency_symbol: []const u8,
     tax_inclusive: bool,
+    address: []const u8,
+    phone: []const u8,
+    tax_number: []const u8,
 };
 
 /// A staff member. The PIN hash never enters this struct: the login
