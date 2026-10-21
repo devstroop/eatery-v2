@@ -107,6 +107,50 @@ A milestone says when: **M1 - Usable sale**, **M2 - Back office**,
 An issue is closed by a commit that says `Closes #<n>`. A finding with
 no issue is a finding nobody is looking at.
 
+## The findings, and the issues they became
+
+The audit of 2026-10-20 read the whole repository and produced 101
+findings. The ones that were still true became issues; the ones that
+were already fixed are in the history, and the archive says which.
+
+| Track | Milestone | Issues |
+|---|---|---|
+| Track | Milestone | Issues |
+|---|---|---|
+| `feat/money` | M1 - Usable sale, M2 - Back office | #1, #2, #3, #7, #8, #9, #19, #20, #22, #25, #26, #30, #39, #51, #52, #57, #66, #68 |
+| `feat/core` | M1 - Usable sale, M2 - Back office, M4 - Release | #4, #5, #6, #16, #18, #21, #40, #44, #45, #47, #49, #53, #55, #56, #58, #60, #61, #62, #63, #64, #67, #70 |
+| `feat/back-office` | M2 - Back office, M1 - Usable sale | #10, #11, #12, #13, #14, #15, #23, #24, #27, #28, #29, #34, #35, #36, #37, #38, #54, #59 |
+| `feat/reports` | M2 - Back office, M3 - Fabric | #33, #43 |
+| `feat/sync-sidecar` | M3 - Fabric | #32, #46 |
+| `feat/print-sidecar` | M3 - Fabric | #31 |
+| `chore/release` | M4 - Release | #17, #41, #42, #48, #65 |
+| `chore/docs` | M2 - Back office, M4 - Release | #50, #69, #71, #72, #73, #74, #75, #76 |
+
+Every issue carries the plan, the files it touches and a done-when. The
+number in the title is the finding's own number, so a conversation can
+say "B-014" and mean the same thing in the tracker, in the archive and
+in a commit message.
+
+The findings that were already fixed when the issues were opened, and
+so are not issues:
+
+| Finding | What it was | Where the fix landed |
+|---|---|---|
+| B-001 | The order insert omitted a required column | `feat(app)` |
+| B-002 | The sign-in ignored the employee's stored role | `fix(auth)` |
+| B-003 | The salt was used before the database confirmed it | `fix(auth)` |
+| B-004 | The company strings pointed into dead page bytes | `feat(setup)` |
+| B-005 | The order foreign keys were written as zero, not null | `feat(app)` |
+| B-016 | The inactive rows were shown | `feat(lists)` |
+| B-018 | A status cast was a latent compile error | `feat(app)` |
+| B-023 | The shell gates were hard-coded ordinals | `fix(core)` |
+| B-030 | The seedable schema had invalid default references | `feat(schema)` |
+| B-034 | The confirmation showed raw epoch milliseconds | `feat(orders)` |
+| B-036 | Two effects shared an effect key | `fix(core)` |
+| B-037 | Four screens bound a count the model did not have | `fix(core)` |
+| G-016 | There were no database integration tests | `feat(setup)` |
+| G-017 | There was no screen-coverage or ordinal test | `fix(core)` |
+
 ## The rules that do not move
 
 These are not preferences. Each one exists because breaking it produced
