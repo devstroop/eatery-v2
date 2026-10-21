@@ -166,6 +166,8 @@ pub const Msg = union(enum) {
     form_product_food: i64,
     /// Back to the catalogue.
     open_catalogue,
+    /// Open the categories the menu is organised by.
+    open_categories,
     /// Back to the people.
     open_employees,
     /// Edit the product with this id.
@@ -196,6 +198,14 @@ pub const Msg = union(enum) {
     printers_loaded: native_sdk.EffectDbResult,
     /// The tax slabs were loaded.
     tax_slabs_loaded: native_sdk.EffectDbResult,
+    /// The category form changed.
+    form_category_name_edit: canvas.TextInputEvent,
+    /// Open the category form: an existing category, or a new one.
+    edit_category: i64,
+    new_category,
+    save_category,
+    /// The category was saved.
+    category_saved: native_sdk.EffectDbResult,
     /// The tax slab form changed.
     form_tax_slab_name_edit: canvas.TextInputEvent,
     form_tax_slab_rate_edit: canvas.TextInputEvent,

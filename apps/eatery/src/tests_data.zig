@@ -1318,6 +1318,29 @@ test "a fresh database asks to be set up" {
     try testing.expectEqual(nav.Screen.setup, harness.model.screen());
 }
 
+test "a category is saved, and the menu is organised by it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A new section of the menu.
+    harness.model.form_category_name_buf.set("Starters");
+    harness.send(Msg{ .save_category = {} });
+
+    repos.loadCategories(harness.fx);
+    harness.drain();
+    var found = false;
+    for (harness.model.categories) |category| {
+        if (!std.mem.eql(u8, category.name, "Starters")) continue;
+        found = true;
+    }
+    try testing.expect(found);
+
+    // And a category with no name is not a category.
+    harness.model.form_category_name_buf.set("");
+    harness.send(Msg{ .save_category = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
 test "a list shows what is in use" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();

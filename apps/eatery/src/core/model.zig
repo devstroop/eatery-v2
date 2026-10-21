@@ -247,6 +247,8 @@ pub const Model = struct {
     /// The forms the settings and the catalogue edit.
     form_currency_code_buf: canvas.TextBuffer(8) = .{},
     form_currency_symbol_buf: canvas.TextBuffer(8) = .{},
+    form_category_name_buf: canvas.TextBuffer(64) = .{},
+    form_category_id: i64 = 0,
     form_discount_name_buf: canvas.TextBuffer(64) = .{},
     form_discount_percent_buf: canvas.TextBuffer(16) = .{},
     form_discount_amount_buf: canvas.TextBuffer(16) = .{},
@@ -723,6 +725,17 @@ pub const Model = struct {
     }
 
     /// The product name in the product form.
+    /// The name of the category being edited.
+    pub fn form_category_name(model: *const Model) []const u8 {
+        return model.form_category_name_buf.text();
+    }
+
+    /// The heading of the category form.
+    pub fn category_form_title(model: *const Model) []const u8 {
+        if (model.form_category_id == 0) return "New category";
+        return "Edit category";
+    }
+
     /// The name of the discount being edited.
     pub fn form_discount_name(model: *const Model) []const u8 {
         return model.form_discount_name_buf.text();

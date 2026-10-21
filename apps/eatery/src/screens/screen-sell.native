@@ -116,6 +116,7 @@
     <row gap="8" cross="center">
       <text size="heading" grow="1">Catalogue</text>
       <text foreground="text_muted">{product_count} on the menu</text>
+      <button size="sm" on-press="open_categories">Categories</button>
       <button size="sm" variant="primary" on-press="new_product">New</button>
     </row>
 
@@ -225,5 +226,64 @@
         <button variant="primary" grow="1" disabled="{payment_pending}" on-press="take_payment">Take {currency_symbol}{fixed(last_order_total / currency_divisor, currency_decimal_count)}</button>
       </row>
     </column>
+  </column>
+</template>
+
+<!-- The category form: what a section of the menu is called. The
+     product form picks its category from the list, and a menu the
+     owner cannot organise is a menu they have to think about. -->
+
+<template name="screen-category-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{category_form_title}</text>
+      <button size="sm" variant="ghost" on-press="open_catalogue">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_category_name}"
+          placeholder="Starters"
+          label="Name"
+          on-input="form_category_name_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_category">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The categories the menu is organised by. A row opens the form,
+     and the form edits the SAME category the row opens. -->
+
+<template name="screen-categories">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Categories</text>
+      <badge>{category_count} categories</badge>
+      <button size="sm" on-press="new_category">New</button>
+      <button size="sm" variant="ghost" on-press="open_catalogue">Back</button>
+    </row>
+
+    <if test="{category_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No categories yet. The menu needs at least one.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="categories" key="id" as="category">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_category:{category.id}">
+            <text grow="1">{category.name}</text>
+            <text size="sm" foreground="text_muted">{category.sort_order}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
   </column>
 </template>

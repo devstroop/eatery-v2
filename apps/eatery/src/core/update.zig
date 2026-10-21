@@ -188,6 +188,33 @@ fn openEmployeeForm(model: *Model, id: i64) void {
     go(model, .employee_form);
 }
 
+/// Open the category form: an existing category, or a new one.
+fn openCategoryForm(model: *Model, id: i64) void {
+    model.form_category_id = id;
+    model.form_category_name_buf.set("");
+    if (id != 0) {
+        for (model.categories) |category| {
+            if (category.id != id) continue;
+            model.form_category_name_buf.set(category.name);
+            break;
+        }
+    }
+    go(model, .category_form);
+}
+
+/// Save the category the form is editing.
+fn saveCategory(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_category_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The category needs a name";
+        return;
+    }
+    const id = if (model.form_category_id != 0) model.form_category_id else fx.wallMs();
+    model.busy = true;
+    model.error_text = "";
+    repos.saveCategory(fx, repos.key_save_category, id, name, fx.wallMs());
+}
+
 /// Open the discount form: an existing discount, or a new one.
 fn openDiscountForm(model: *Model, id: i64) void {
     model.form_discount_id = id;
@@ -977,6 +1004,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_catalogue => go(model, .product_categories),
 
+        .open_categories => go(model, .categories),
+
         .open_employees => go(model, .employees),
 
         .edit_product => |id| openProductForm(model, id),
@@ -1077,6 +1106,25 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeModifierGroups(model, result.bytes);
         },
+
+        .edit_category => |id| openCategoryForm(model, id),
+
+        .new_category => openCategoryForm(model, 0),
+
+        .save_category => saveCategory(model, fx),
+
+        .category_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the category";
+                return;
+            }
+            model.error_text = "";
+            repos.loadCategories(fx);
+            go(model, .product_categories);
+        },
+
+        .form_category_name_edit => |event| model.form_category_name_buf.apply(event),
 
         .edit_discount => |id| openDiscountForm(model, id),
 
