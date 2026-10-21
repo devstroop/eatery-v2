@@ -947,6 +947,14 @@ pub fn openOrderForTable(
                 ,
                 .params = &order_params,
             },
+            .{
+                // The table is occupied now that it has an order. The
+                // board shows what is true, and a table that says
+                // "Free" while a guest is sitting at it is a lie the
+                // whole floor has to work around.
+                .sql = "UPDATE dining_table SET status = 1 WHERE id = ?1;",
+                .params = &.{.{ .integer = table_id }},
+            },
         },
         .on_result = Effects.dbMsg(.order_opened),
     });
@@ -1205,6 +1213,16 @@ pub fn takePayment(
             .{
                 .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
                 .params = &order_params,
+            },
+            .{
+                // The guest has paid and gone, so the table is free
+                // again - in the same transaction as the payment, so a
+                // table is never free while the money is still owed.
+                .sql =
+                \\UPDATE dining_table SET status = 0
+                \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
+                ,
+                .params = &.{.{ .integer = order_id }},
             },
         },
         .on_result = Effects.dbMsg(.payment_taken),

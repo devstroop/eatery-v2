@@ -1718,6 +1718,18 @@ test "the waiter opens an order for a free table and adds to it" {
     // The waiter's cart shows the line.
     try testing.expectEqual(@as(i64, 1), harness.model.active_order_item_count());
     try testing.expectEqual(@as(i64, 24500), harness.model.active_order_total());
+
+    // The table is occupied: it has a guest at it. The board shows
+    // what is true, and a table that says "Free" while somebody is
+    // sitting at it is a lie the whole floor works around.
+    repos.loadTables(harness.fx);
+    harness.drain();
+    var occupied = false;
+    for (harness.model.tables) |table| {
+        if (table.id != 1) continue;
+        occupied = table.status == .occupied;
+    }
+    try testing.expect(occupied);
 }
 
 test "a table that already has an order is joined, not duplicated" {
