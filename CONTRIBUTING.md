@@ -53,6 +53,9 @@ refactor(model): move the cart into its own module
 ## Pull requests
 
 - One concern per PR. A schema change and a UI change are two PRs.
+- A PR targets `develop`, the integration branch. Every track merges
+  there, and `develop` is promoted to `main` when it is worth
+  releasing. Two tracks can be in flight at once, in two worktrees.
 - Say what you verified and how (`native check`, `native test`, a
   `native automate` run, a screenshot).
 - If you changed the schema, say which migration and why it is
