@@ -107,6 +107,17 @@ pub const Msg = union(enum) {
     /// The payment write came back.
     payment_taken: native_sdk.EffectDbResult,
 
+    // ----------------------------------------------------- the lists
+
+    /// The reservations were loaded.
+    reservations_loaded: native_sdk.EffectDbResult,
+    /// The suppliers were loaded.
+    suppliers_loaded: native_sdk.EffectDbResult,
+    /// The purchase orders were loaded.
+    purchase_orders_loaded: native_sdk.EffectDbResult,
+    /// The stock was loaded.
+    inventory_loaded: native_sdk.EffectDbResult,
+
     // ------------------------------------------------------ the order
 
     /// Open the order with this id.
@@ -275,6 +286,10 @@ pub const Msg = union(enum) {
         "tax_slabs_loaded",
         "modifier_groups_loaded",
         "discounts_loaded",
+        "reservations_loaded",
+        "suppliers_loaded",
+        "purchase_orders_loaded",
+        "inventory_loaded",
         "product_stations_loaded",
         "audio_event",
     };

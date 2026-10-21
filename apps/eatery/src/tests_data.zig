@@ -852,3 +852,42 @@ test "an order can be opened, and paid from the order list" {
     try testing.expectEqual(order_id, harness.model.last_order_id);
     try testing.expectEqual(@as(i64, 24500), harness.model.last_order_total());
 }
+
+test "a list screen loads its own data when it is opened" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 975,
+        .statements = &.{.{
+            .sql = "INSERT INTO customer (id, name, phone, email, loyalty_points, active, created_at) VALUES (1, 'Meera', '+91 90000 00000', '', 120, 1, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The customers screen is not loaded until it is opened.
+    try testing.expectEqual(@as(usize, 0), harness.model.customers.len);
+    harness.send(.{ .open_screen = @intCast(nav.Screen.customers.index()) });
+    try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
+    try testing.expectEqualStrings("Meera", harness.model.customers[0].name);
+    try testing.expectEqual(nav.Screen.customers, harness.model.screen());
+}
+
+test "the effects channel has sixteen slots, so the loads are lazy" {
+    // The lesson this test records: loading everything at once fills
+    // the channel and the queries that arrive late are refused with a
+    // "busy" that is not the database's fault.
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    var messages: usize = 0;
+    repos.loadAll(harness.fx);
+    while (harness.fx.takeMsg()) |_| messages += 1;
+    // Every query answers with a page and a terminal, so the queries
+    // are half the messages. Sixteen slots is the channel's limit, and
+    // the timers and the live subscription take three of them.
+    const queries = messages / 2;
+    try testing.expect(queries <= 12);
+}

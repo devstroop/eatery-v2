@@ -356,7 +356,8 @@ test "the layout survives a resize" {
     model.screen_index = nav.Screen.admin_dashboard.index();
 
     const tree = try buildTree(arena, &model);
-    var nodes: [64]canvas.WidgetLayoutNode = undefined;
+    // The dashboard has grown; the layout buffer follows the widget budget.
+    var nodes: [512]canvas.WidgetLayoutNode = undefined;
     const layout = try canvas.layoutWidgetTree(tree.root, native_sdk.geometry.RectF.init(0, 0, 1280, 800), &nodes);
     try testing.expect(layout.nodes.len > 0);
 }

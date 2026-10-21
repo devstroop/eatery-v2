@@ -211,6 +211,8 @@ pub const Customer = struct {
     phone: []const u8,
     email: []const u8,
     loyalty_points: i64,
+    /// The points, as the row shows them.
+    points_label: []const u8,
 };
 
 pub const TaxSlab = struct {
@@ -245,6 +247,47 @@ pub const EmployeeRole = enum(i64) {
             .display => "Display",
         };
     }
+};
+
+/// A reservation for a table.
+pub const Reservation = struct {
+    id: i64,
+    name: []const u8,
+    phone: []const u8,
+    guests: i64,
+    reserved_at: i64,
+    /// The same moment in epoch SECONDS - the markup's time() takes
+    /// seconds, and a division would make it a float.
+    reserved_seconds: i64,
+    /// 'booked', 'seated' or 'cancelled'.
+    status: i64,
+    status_label: []const u8,
+    notes: []const u8,
+};
+
+/// A supplier the restaurant buys from.
+pub const Supplier = struct {
+    id: i64,
+    name: []const u8,
+    phone: []const u8,
+    email: []const u8,
+    address: []const u8,
+    gstin: []const u8,
+    active: bool,
+};
+
+/// An order placed with a supplier.
+pub const PurchaseOrder = struct {
+    id: i64,
+    order_no: []const u8,
+    status: i64,
+    status_label: []const u8,
+    total_minor: i64,
+    ordered_at: i64,
+    /// The same moment in epoch SECONDS.
+    ordered_seconds: i64,
+    expected_at: i64,
+    notes: []const u8,
 };
 
 /// A receipt or kitchen printer.

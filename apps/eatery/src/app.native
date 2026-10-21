@@ -18,6 +18,10 @@
 <import src="screens/screen-pos.native"/>
 <import src="screens/screen-order-detail.native"/>
 <import src="screens/screen-orders.native"/>
+<import src="screens/screen-customers.native"/>
+<import src="screens/screen-reservations.native"/>
+<import src="screens/screen-suppliers.native"/>
+<import src="screens/screen-purchase-orders.native"/>
 <import src="screens/screen-tables.native"/>
 <import src="screens/screen-kitchen.native"/>
 <import src="screens/screen-order-confirmation.native"/>
@@ -80,6 +84,10 @@
         <if test="{screen_index == 10}"><use template="screen-pos"/></if>
         <if test="{screen_index == 13}"><use template="screen-orders"/></if>
         <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
+        <if test="{screen_index == 16}"><use template="screen-customers"/></if>
+        <if test="{screen_index == 20}"><use template="screen-reservations"/></if>
+        <if test="{screen_index == 24}"><use template="screen-suppliers"/></if>
+        <if test="{screen_index == 25}"><use template="screen-purchase-orders"/></if>
         <if test="{screen_index == 17}"><use template="screen-tables"/></if>
         <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
         <if test="{screen_index == 37}"><use template="screen-waiter-tables"/></if>

@@ -517,6 +517,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.form_tax_buf.set(model.company_tax_field);
             }
             go(model, screen);
+            // The screen loads what it shows: the effects channel has
+            // sixteen slots, and loading everything at once fills them
+            // and the late queries are refused.
+            repos.loadForScreen(fx, screen);
         },
 
         .open_section => |ordinal| {
@@ -785,6 +789,26 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.error_text = "";
             repos.loadEmployees(fx);
             go(model, .employees);
+        },
+
+        .reservations_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeReservations(model, result.bytes);
+        },
+
+        .suppliers_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeSuppliers(model, result.bytes);
+        },
+
+        .purchase_orders_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodePurchaseOrders(model, result.bytes);
+        },
+
+        .inventory_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeProducts(model, result.bytes);
         },
 
         .printers_loaded => |result| {

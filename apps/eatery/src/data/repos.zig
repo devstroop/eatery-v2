@@ -17,6 +17,7 @@ const native_sdk = @import("native_sdk");
 
 const model_mod = @import("../core/model.zig");
 const domain = @import("../domain/models.zig");
+const nav = @import("../core/navigation.zig");
 pub const page = @import("page.zig");
 const starter = @import("starter.zig");
 
@@ -52,6 +53,10 @@ pub const key_discounts = 24;
 pub const key_save_product = 25;
 pub const key_save_employee = 26;
 pub const key_save_printer = 27;
+pub const key_reservations = 29;
+pub const key_suppliers = 30;
+pub const key_purchase_orders = 31;
+pub const key_inventory = 32;
 pub const key_chime = 17;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
@@ -125,6 +130,28 @@ pub const stations_sql =
     \\SELECT id, name, sort_order FROM kds_station WHERE active = 1 ORDER BY sort_order, name;
 ;
 
+/// The reservations.
+pub const reservations_sql =
+    \\SELECT id, name, phone, guests, reserved_at, status, notes FROM reservation ORDER BY reserved_at;
+;
+
+/// The suppliers.
+pub const suppliers_sql =
+    \\SELECT id, name, phone, email, address, gstin, active FROM supplier ORDER BY name;
+;
+
+/// The purchase orders.
+pub const purchase_orders_sql =
+    \\SELECT id, supplier_id, order_no, status, total_minor, ordered_at, expected_at, notes
+    \\FROM purchase_order ORDER BY ordered_at DESC;
+;
+
+/// The stock on the shelf.
+pub const inventory_sql =
+    \\SELECT id, name, stock_qty, track_stock, active FROM product
+    \\WHERE track_stock = 1 ORDER BY name;
+;
+
 /// The printers the restaurant has.
 pub const printers_sql =
     \\SELECT id, name, kind, transport, address, job, active FROM printer ORDER BY name;
@@ -185,14 +212,6 @@ pub fn loadEmployees(fx: *Effects) void {
         .key = key_employees,
         .sql = employees_sql,
         .on_result = Effects.dbMsg(.employees_loaded),
-    });
-}
-
-pub fn loadCustomers(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_customers,
-        .sql = customers_sql,
-        .on_result = Effects.dbMsg(.customers_loaded),
     });
 }
 
@@ -261,6 +280,63 @@ pub fn loadProductStations(fx: *Effects) void {
     });
 }
 
+pub fn loadReservations(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_reservations,
+        .sql = reservations_sql,
+        .on_result = Effects.dbMsg(.reservations_loaded),
+    });
+}
+
+pub fn loadSuppliers(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_suppliers,
+        .sql = suppliers_sql,
+        .on_result = Effects.dbMsg(.suppliers_loaded),
+    });
+}
+
+pub fn loadPurchaseOrders(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_purchase_orders,
+        .sql = purchase_orders_sql,
+        .on_result = Effects.dbMsg(.purchase_orders_loaded),
+    });
+}
+
+pub fn loadInventory(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_inventory,
+        .sql = inventory_sql,
+        .on_result = Effects.dbMsg(.inventory_loaded),
+    });
+}
+
+/// The settings and the lists, loaded when their screen is opened.
+/// The effects channel has sixteen slots: loading everything at once
+/// fills them, and the queries that arrive late are refused.
+pub fn loadForScreen(fx: *Effects, screen: nav.Screen) void {
+    switch (screen) {
+        .settings_printers => loadPrinters(fx),
+        .settings_tax => loadTaxSlabs(fx),
+        .settings_modifiers => loadModifierGroups(fx),
+        .settings_discounts => loadDiscounts(fx),
+        .customers => loadCustomers(fx),
+        .reservations => loadReservations(fx),
+        .suppliers => loadSuppliers(fx),
+        .purchase_orders => loadPurchaseOrders(fx),
+        else => {},
+    }
+}
+
+pub fn loadCustomers(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_customers,
+        .sql = customers_sql,
+        .on_result = Effects.dbMsg(.customers_loaded),
+    });
+}
+
 pub fn loadPrinters(fx: *Effects) void {
     fx.dbQuery(.{
         .key = key_printers,
@@ -314,10 +390,7 @@ pub fn loadAll(fx: *Effects) void {
     loadCompany(fx);
     loadStations(fx);
     loadProductStations(fx);
-    loadPrinters(fx);
-    loadTaxSlabs(fx);
-    loadModifierGroups(fx);
-    loadDiscounts(fx);
+
     loadCategories(fx);
     loadProducts(fx);
     loadTables(fx);
@@ -430,6 +503,7 @@ pub fn decodeCustomers(model: *Model, bytes: []const u8) void {
             .phone = model.customers_buf.dupe(reader.textOf(&values, "phone")) orelse "",
             .email = model.customers_buf.dupe(reader.textOf(&values, "email")) orelse "",
             .loyalty_points = reader.intOf(&values, "loyalty_points", 0),
+            .points_label = "points",
         };
     }
     model.customers = list[0..index];
@@ -522,6 +596,99 @@ pub fn decodeStations(model: *Model, bytes: []const u8) void {
         };
     }
     model.stations_list = list[0..index];
+}
+
+pub fn decodeReservations(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.reservations_buf.reset();
+    const count = reader.rows_left;
+    const list = model.reservations_buf.allocSlice(domain.Reservation, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        const status = reader.intOf(&values, "status", 0);
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.reservations_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .phone = model.reservations_buf.dupe(reader.textOf(&values, "phone")) orelse "",
+            .guests = reader.intOf(&values, "guests", 0),
+            .reserved_at = reader.intOf(&values, "reserved_at", 0),
+            .reserved_seconds = @divTrunc(reader.intOf(&values, "reserved_at", 0), 1000),
+            .status = status,
+            .status_label = reservationStatusLabel(status),
+            .notes = model.reservations_buf.dupe(reader.textOf(&values, "notes")) orelse "",
+        };
+    }
+    model.reservations_list = list[0..index];
+}
+
+pub fn decodeSuppliers(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.suppliers_buf.reset();
+    const count = reader.rows_left;
+    const list = model.suppliers_buf.allocSlice(domain.Supplier, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.suppliers_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .phone = model.suppliers_buf.dupe(reader.textOf(&values, "phone")) orelse "",
+            .email = model.suppliers_buf.dupe(reader.textOf(&values, "email")) orelse "",
+            .address = model.suppliers_buf.dupe(reader.textOf(&values, "address")) orelse "",
+            .gstin = model.suppliers_buf.dupe(reader.textOf(&values, "gstin")) orelse "",
+            .active = reader.boolOf(&values, "active"),
+        };
+    }
+    model.suppliers_list = list[0..index];
+}
+
+pub fn decodePurchaseOrders(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.purchase_orders_buf.reset();
+    const count = reader.rows_left;
+    const list = model.purchase_orders_buf.allocSlice(domain.PurchaseOrder, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        const status = reader.intOf(&values, "status", 0);
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .order_no = model.purchase_orders_buf.dupe(reader.textOf(&values, "order_no")) orelse "",
+            .status = status,
+            .status_label = purchaseStatusLabel(status),
+            .total_minor = reader.intOf(&values, "total_minor", 0),
+            .ordered_at = reader.intOf(&values, "ordered_at", 0),
+            .ordered_seconds = @divTrunc(reader.intOf(&values, "ordered_at", 0), 1000),
+            .expected_at = reader.intOf(&values, "expected_at", 0),
+            .notes = model.purchase_orders_buf.dupe(reader.textOf(&values, "notes")) orelse "",
+        };
+    }
+    model.purchase_orders_list = list[0..index];
+}
+
+/// A reservation's status, as the row shows it.
+fn reservationStatusLabel(status: i64) []const u8 {
+    return switch (status) {
+        0 => "Booked",
+        1 => "Seated",
+        2 => "Cancelled",
+        else => "Booked",
+    };
+}
+
+/// A purchase order's status, as the row shows it.
+fn purchaseStatusLabel(status: i64) []const u8 {
+    return switch (status) {
+        0 => "Ordered",
+        1 => "Part received",
+        2 => "Received",
+        3 => "Cancelled",
+        else => "Ordered",
+    };
 }
 
 pub fn decodePrinters(model: *Model, bytes: []const u8) void {
