@@ -286,6 +286,7 @@ pub const Model = struct {
     reservations_list: []const domain.Reservation = &.{},
     suppliers_list: []const domain.Supplier = &.{},
     payments_list: []const domain.Payment = &.{},
+    report_modes_list: []const domain.ReportMode = &.{},
     purchase_orders_list: []const domain.PurchaseOrder = &.{},
 
     /// Storage for the settings rows the screens show.
@@ -296,6 +297,7 @@ pub const Model = struct {
     reservations_buf: bump.Bump(8192) = .{},
     suppliers_buf: bump.Bump(8192) = .{},
     payments_buf: bump.Bump(16384) = .{},
+    report_modes_buf: bump.Bump(2048) = .{},
     purchase_orders_buf: bump.Bump(8192) = .{},
 
     // ------------------------------------------------- the company form
@@ -333,6 +335,16 @@ pub const Model = struct {
 
     // ------------------------------------------------------- the sale
 
+    /// The day's order count, from the report query.
+    report_orders_field: i64 = 0,
+    /// The day's gross, in minor units.
+    report_gross_field: i64 = 0,
+    /// The day's tax, in minor units.
+    report_tax_field: i64 = 0,
+    /// The day's discounts, in minor units.
+    report_discount_field: i64 = 0,
+    /// The day's net, in minor units.
+    report_net_field: i64 = 0,
     /// True while a payment is on its way to the database. The view
     /// binds it: the button that takes the money is disabled while it
     /// holds, so a second tap cannot take the money twice.
@@ -951,6 +963,53 @@ pub const Model = struct {
         return model.reservations_list.len;
     }
 
+    /// The orders taken today.
+    pub fn report_order_count(model: *const Model) i64 {
+        return model.report_orders_field;
+    }
+
+    /// The money the orders came to, before tax and discounts.
+    pub fn report_gross_minor(model: *const Model) i64 {
+        return model.report_gross_field;
+    }
+
+    /// The tax the day's orders carried.
+    pub fn report_tax_minor(model: *const Model) i64 {
+        return model.report_tax_field;
+    }
+
+    /// The discount the day's orders carried.
+    pub fn report_discount_minor(model: *const Model) i64 {
+        return model.report_discount_field;
+    }
+
+    /// What the day's orders came to, tax and discounts taken off.
+    pub fn report_net_minor(model: *const Model) i64 {
+        return model.report_net_field;
+    }
+
+    /// How the money came in, one row per mode.
+    pub fn report_modes(model: *const Model) []const domain.ReportMode {
+        return model.report_modes_list;
+    }
+
+    /// How many ways the money came in.
+    pub fn report_modes_count(model: *const Model) usize {
+        return model.report_modes_list.len;
+    }
+
+    /// The first millisecond of the day the report covers.
+    ///
+    /// The day is the UTC day. An order has no accounting date of its
+    /// own yet - that is the trading-day policy, and it is not this
+    /// screen's to decide - so the day here is plainly the calendar
+    /// day, and it says so on the screen.
+    pub fn report_day_start_ms(model: *const Model) i64 {
+        if (model.now_ms <= 0) return 0;
+        const day = @divFloor(model.now_ms, 86_400_000);
+        return day * 86_400_000;
+    }
+
     /// The payments the restaurant has taken.
     pub fn payments(model: *const Model) []const domain.Payment {
         return model.payments_list;
@@ -1483,6 +1542,8 @@ pub const LinkItem = struct {
 };
 
 const dashboard_links = [_]LinkItem{
+    .{ .id = @intFromEnum(Screen.reports), .title = "Today", .detail = "What the day came to" },
+    .{ .id = @intFromEnum(Screen.payments), .title = "Payments", .detail = "The money that came in" },
     .{ .id = @intFromEnum(Screen.customers), .title = "Customers", .detail = "Who came back" },
     .{ .id = @intFromEnum(Screen.reservations), .title = "Reservations", .detail = "Who is coming" },
     .{ .id = @intFromEnum(Screen.suppliers), .title = "Suppliers", .detail = "Who you buy from" },

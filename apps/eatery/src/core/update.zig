@@ -814,6 +814,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadPayments(fx);
         },
 
+        .open_reports => {
+            go(model, .reports);
+            repos.loadReport(fx, model.report_day_start_ms());
+        },
+
+        .open_dashboard => go(model, .admin_dashboard),
+
         .open_tables => go(model, .dining_tables),
 
         // ---------------------------------------------------------- the POS
@@ -1366,6 +1373,24 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .customers_loaded => |result| {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeCustomers(model, result.bytes);
+        },
+
+        .report_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The report could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeReport(model, result.bytes);
+        },
+
+        .report_modes_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The report could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeReportModes(model, result.bytes);
         },
 
         .payments_loaded => |result| {

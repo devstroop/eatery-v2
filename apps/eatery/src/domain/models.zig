@@ -398,6 +398,15 @@ pub const Payment = struct {
     paid_at: i64,
 };
 
+/// How the money came in, on one mode.
+pub const ReportMode = struct {
+    mode: PaymentMode,
+    /// The name of the mode, for the view.
+    mode_label: []const u8,
+    count: i64,
+    amount_minor: i64,
+};
+
 /// One line of the POS cart. The cart is session state, not database
 /// state: it lives in the model until the order is placed.
 pub const CartLine = struct {

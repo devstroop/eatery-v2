@@ -129,6 +129,10 @@ pub const Msg = union(enum) {
     payment_taken: native_sdk.EffectDbResult,
     /// The payments the restaurant has taken.
     payments_loaded: native_sdk.EffectDbResult,
+    /// The day's takings.
+    report_loaded: native_sdk.EffectDbResult,
+    /// The day's takings by mode.
+    report_modes_loaded: native_sdk.EffectDbResult,
 
     // ----------------------------------------------------- the lists
 
@@ -158,6 +162,10 @@ pub const Msg = union(enum) {
     open_orders,
     /// Jump to the payments the restaurant has taken.
     open_payments,
+    /// Jump to the day's report.
+    open_reports,
+    /// Back to the dashboard.
+    open_dashboard,
     /// Jump to the floor.
     open_tables,
 
@@ -338,6 +346,8 @@ pub const Msg = union(enum) {
         "setup_created",
         "payment_taken",
         "payments_loaded",
+        "report_loaded",
+        "report_modes_loaded",
         "order_opened",
         "order_line_added",
         "db_failed",
