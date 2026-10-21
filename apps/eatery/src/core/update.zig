@@ -510,6 +510,9 @@ fn submitSetup(model: *Model, fx: *Effects) void {
         hashed,
         model.pin_salt(),
         model_mod.decimalsForCurrency(currency),
+        std.mem.trim(u8, model.wizard_address_buf.text(), " "),
+        std.mem.trim(u8, model.wizard_phone_buf.text(), " "),
+        std.mem.trim(u8, model.wizard_tax_buf.text(), " "),
         fx.wallMs(),
     );
 }
@@ -682,6 +685,35 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         // ------------------------------------------------------- first run
+
+        .wizard_next => {
+            // The company first, then the owner. The step that is NOT
+            // on the screen is not asked for.
+            const name = std.mem.trim(u8, model.setup_company_name.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "Give the restaurant a name";
+                return;
+            }
+            model.error_text = "";
+            go(model, .wizard);
+        },
+
+        .wizard_back => {
+            model.error_text = "";
+            go(model, .create_company);
+        },
+
+        .wizard_quick_setup => {
+            // The quick setup asks for less and takes less. It is the
+            // same restaurant, written the same way.
+            go(model, .setup);
+        },
+
+        .wizard_address_edit => |event| model.wizard_address_buf.apply(event),
+
+        .wizard_phone_edit => |event| model.wizard_phone_buf.apply(event),
+
+        .wizard_tax_edit => |event| model.wizard_tax_buf.apply(event),
 
         .setup_company_edit => |event| model.setup_company_name.apply(event),
 
@@ -1405,9 +1437,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // app's first job is to become a restaurant.
             if (model.company_id == 0 and !model.needs_setup) {
                 model.needs_setup = true;
+                // A fresh install opens on the walk-through: the
+                // company's record first, then the owner.
+                model.stack.resetTo(.create_company);
                 model.setup_currency_code.set("USD");
                 model.setup_currency_symbol.set("$");
-                resetNavigation(model, .setup);
+                // The walk-through is the way in: the company's record
+                // first, then the owner and their PIN.
+                resetNavigation(model, .create_company);
             }
         },
 

@@ -1286,13 +1286,16 @@ pub fn setupCompany(
     pin_hash: []const u8,
     pin_salt: []const u8,
     currency_decimals: i64,
+    address: []const u8,
+    phone: []const u8,
+    tax_number: []const u8,
     at: i64,
 ) void {
     const statement_count = comptime 3 + starter.categories.len + starter.dishes.len + starter.stations.len + starter.dishes.len + 1 + starter.tables.len;
     var statements: [statement_count]native_sdk.EffectDbStatement = undefined;
     var count: usize = 0;
 
-    var company_params: [7]native_sdk.EffectDbValue = .{
+    var company_params: [10]native_sdk.EffectDbValue = .{
         .{ .integer = 1 },
         .{ .text = name },
         .{ .text = currency_code },
@@ -1300,12 +1303,15 @@ pub fn setupCompany(
         .{ .integer = 0 },
         .{ .integer = at },
         .{ .integer = currency_decimals },
+        .{ .text = address },
+        .{ .text = phone },
+        .{ .text = tax_number },
     };
     statements[count] = .{
         .sql =
         \\INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive,
-        \\  created_at, currency_decimals)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);
+        \\  created_at, currency_decimals, address, phone, tax_number)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);
         ,
         .params = &company_params,
     };

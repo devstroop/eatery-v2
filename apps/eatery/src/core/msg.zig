@@ -34,6 +34,16 @@ pub const Msg = union(enum) {
 
     // ------------------------------------------------------- first run
 
+    /// The first-run walk-through moved on to the next step.
+    wizard_next,
+    /// The first-run walk-through went back a step.
+    wizard_back,
+    /// The owner wants the quick setup instead of the walk-through.
+    wizard_quick_setup,
+    /// The company's record changed in the walk-through.
+    wizard_address_edit: canvas.TextInputEvent,
+    wizard_phone_edit: canvas.TextInputEvent,
+    wizard_tax_edit: canvas.TextInputEvent,
     /// The setup form changed.
     setup_company_edit: canvas.TextInputEvent,
     setup_admin_edit: canvas.TextInputEvent,

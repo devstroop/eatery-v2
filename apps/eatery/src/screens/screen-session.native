@@ -132,3 +132,106 @@
     </card>
   </column>
 </template>
+
+<!-- The company's record, and the first step of the first-run
+     walk-through. The quick setup asks for the name and the currency
+     and nothing else; the walk-through asks where the restaurant is
+     and how to reach it, because that is what an invoice needs. -->
+
+<template name="screen-create-company">
+  <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
+    <text size="heading">Set up your restaurant</text>
+    <text foreground="text_muted">Step one of two. You can change any of it later.</text>
+    <card padding="16" width="460">
+    <column gap="8">
+    <text-field
+      text="{setup_company_text}"
+      placeholder="e.g. Sharma Restaurant"
+      label="Restaurant name"
+      on-input="setup_company_edit"
+    />
+    <text-field
+      text="{wizard_address}"
+      placeholder="12 MG Road, Bengaluru"
+      label="Address"
+      on-input="wizard_address_edit"
+    />
+    <text-field
+      text="{wizard_phone}"
+      placeholder="080 4123 4567"
+      label="Phone"
+      on-input="wizard_phone_edit"
+    />
+    <text-field
+      text="{wizard_tax_number}"
+      placeholder="29ABCDE1234F1Z5"
+      label="Tax number"
+      on-input="wizard_tax_edit"
+    />
+    <row gap="8" cross="center">
+      <text-field
+        text="{setup_currency_text}"
+        placeholder="INR"
+        label="Currency code"
+        on-input="setup_currency_edit"
+        grow="1"
+      />
+      <text-field
+        text="{setup_symbol_text}"
+        placeholder="Rs"
+        label="Symbol"
+        on-input="setup_currency_edit"
+        grow="1"
+      />
+    </row>
+    <row gap="8">
+      <spacer grow="1"/>
+      <button variant="ghost" on-press="wizard_quick_setup">Set up quickly instead</button>
+      <button variant="primary" on-press="wizard_next">Next</button>
+    </row>
+    </column>
+  </card>
+  </column>
+</template>
+
+<!-- The first-run walk-through. Two steps: the company, and then the
+     owner and their PIN. At the end one transaction writes the
+     company, the operator, the installation salt, a starter menu and
+     a floor - so the restaurant is either whole or it is not there. -->
+
+<template name="screen-wizard">
+  <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
+    <text size="heading">Who is the owner?</text>
+    <text foreground="text_muted">Step two of two. You can change any of it later.</text>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{setup_admin_text}"
+          placeholder="e.g. Anita"
+          label="Your name"
+          on-input="setup_admin_edit"
+        />
+        <text-field
+          text="{setup_pin_text}"
+          placeholder="6 digits"
+          label="PIN"
+          on-input="setup_pin_edit"
+        />
+        <text-field
+          text="{setup_pin2_text}"
+          placeholder="again"
+          label="Confirm PIN"
+          on-input="setup_pin2_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="ghost" on-press="wizard_back">Back</button>
+          <button variant="primary" on-press="setup_submit">Create my restaurant</button>
+        </row>
+      </column>
+    </card>
+
+    <text size="sm" foreground="text_muted">A starter menu and six tables are created with it. Edit them from the menu any time.</text>
+  </column>
+</template>

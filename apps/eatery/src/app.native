@@ -89,6 +89,8 @@
         <if test="{screen_index == 46}"><use template="screen-discount-form"/></if>
         <if test="{screen_index == 47}"><use template="screen-category-form"/></if>
         <if test="{screen_index == 48}"><use template="screen-categories"/></if>
+        <if test="{screen_index == 4}"><use template="screen-wizard"/></if>
+        <if test="{screen_index == 5}"><use template="screen-create-company"/></if>
         <if test="{screen_index == 42}"><use template="screen-display"/></if>
         <if test="{screen_index == 28}"><use template="screen-settings"/></if>
         <if test="{screen_index == 29}"><use template="screen-settings-company"/></if>

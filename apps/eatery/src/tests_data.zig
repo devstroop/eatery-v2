@@ -1315,7 +1315,9 @@ test "a fresh database asks to be set up" {
     try testing.expect(harness.model.needs_setup);
     try testing.expect(harness.model.show_setup());
     try testing.expect(!harness.model.show_role_picker());
-    try testing.expectEqual(nav.Screen.setup, harness.model.screen());
+    // The walk-through is the way in: the company's record first, and
+    // the owner on the step after.
+    try testing.expectEqual(nav.Screen.create_company, harness.model.screen());
 }
 
 test "a category is saved, and the menu is organised by it" {
@@ -1463,6 +1465,51 @@ test "a fresh install becomes a restaurant through the app alone" {
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(harness.model.signed_in);
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+}
+
+test "the walk-through takes a restaurant from nothing to a POS" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // A fresh install opens on the company's record.
+    repos.loadCompany(harness.fx);
+    harness.drain();
+    try testing.expectEqual(nav.Screen.create_company, harness.model.screen());
+
+    // The owner fills it in: who the restaurant is, where it is, how
+    // to reach it, and what it pays in.
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_currency_code.set("INR");
+    harness.model.setup_currency_symbol.set("Rs");
+    harness.model.wizard_address_buf.set("12 MG Road, Bengaluru");
+    harness.model.wizard_phone_buf.set("080 4123 4567");
+    harness.model.wizard_tax_buf.set("29ABCDE1234F1Z5");
+    harness.send(Msg{ .wizard_next = {} });
+
+    // The second step asks who the owner is.
+    try testing.expectEqual(nav.Screen.wizard, harness.model.screen());
+
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
+    harness.send(Msg{ .setup_submit = {} });
+
+    // The restaurant exists, the operator is signed in, and the
+    // company's record is the one the owner filled in.
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+    try testing.expectEqualStrings("Sharma Restaurant", harness.model.company_name_field);
+    try testing.expectEqualStrings("12 MG Road, Bengaluru", harness.model.company_address_field);
+    try testing.expectEqualStrings("080 4123 4567", harness.model.company_phone_field);
+    try testing.expectEqualStrings("29ABCDE1234F1Z5", harness.model.company_tax_field);
+    // And the currency the owner chose, with the decimals that go
+    // with it.
+    try testing.expectEqualStrings("INR", harness.model.currency_code);
+    try testing.expectEqual(@as(i64, 2), harness.model.currency_decimals);
 }
 
 test "the setup writes the company, the operator and the starter menu" {

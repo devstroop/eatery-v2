@@ -806,9 +806,9 @@ const max_view_widgets = 1024;
 /// numbers, and the markup would mount the wrong screen. A test that
 /// fails here means "append, do not insert".
 const gated_ordinals = [_]usize{
-    8,  10, 12, 13, 14, 16, 17, 20, 23, 24, 25,
-    26, 28, 29, 30, 31, 32, 33, 34, 35, 37, 38,
-    39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+    4,  5,  8,  10, 12, 13, 14, 16, 17, 20, 23, 24,
+    25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 37, 38, 39,
+    40, 41, 42, 43, 44, 45, 46, 47, 48,
 };
 
 
@@ -855,6 +855,8 @@ const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-discount-form", .text = "A percentage wins over an amount." },
     .{ .template = "screen-category-form", .text = "Save" },
     .{ .template = "screen-categories", .text = "Categories" },
+    .{ .template = "screen-wizard", .text = "Who is the owner?" },
+    .{ .template = "screen-create-company", .text = "Step one of two. You can change any of it later." },
 };
 
 /// The widgets in a tree, the tree itself included.
@@ -1012,6 +1014,8 @@ fn screen_index_of(template: []const u8) usize {
         .{ .template = "screen-discount-form", .screen = .discount_form },
         .{ .template = "screen-category-form", .screen = .category_form },
         .{ .template = "screen-categories", .screen = .categories },
+        .{ .template = "screen-wizard", .screen = .wizard },
+        .{ .template = "screen-create-company", .screen = .create_company },
     };
     for (names) |entry| {
         if (std.mem.eql(u8, entry.template, template)) return entry.screen.index();

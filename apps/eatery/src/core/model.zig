@@ -369,6 +369,12 @@ pub const Model = struct {
     setup_admin_name: canvas.TextBuffer(64) = .{},
     setup_pin: canvas.TextBuffer(8) = .{},
     setup_pin2: canvas.TextBuffer(8) = .{},
+    /// The company's record, the parts the quick setup does not ask
+    /// for: where the restaurant is, how to reach it, and its tax
+    /// number.
+    wizard_address_buf: canvas.TextBuffer(128) = .{},
+    wizard_phone_buf: canvas.TextBuffer(32) = .{},
+    wizard_tax_buf: canvas.TextBuffer(32) = .{},
     setup_currency_code: canvas.TextBuffer(8) = .{},
     setup_currency_symbol: canvas.TextBuffer(8) = .{},
     /// Why the setup failed, or empty.
@@ -1031,6 +1037,21 @@ pub const Model = struct {
     /// True when the app is waiting for a first-run setup.
     pub fn show_setup(model: *const Model) bool {
         return model.needs_setup;
+    }
+
+    /// The company's address.
+    pub fn wizard_address(model: *const Model) []const u8 {
+        return model.wizard_address_buf.text();
+    }
+
+    /// The company's phone number.
+    pub fn wizard_phone(model: *const Model) []const u8 {
+        return model.wizard_phone_buf.text();
+    }
+
+    /// The company's tax number.
+    pub fn wizard_tax_number(model: *const Model) []const u8 {
+        return model.wizard_tax_buf.text();
     }
 
     /// The setup form's company name.
