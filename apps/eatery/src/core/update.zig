@@ -124,10 +124,14 @@ fn selectTable(model: *Model, fx: *Effects, table_id: i64) void {
     }
 
     // A free table: open an order for it.
-    model.pending_order_id = fx.wallMs();
+    const order_id = nextOrderId(model, fx.wallMs());
     var number_buffer: [16]u8 = undefined;
-    const number = makeOrderNo(&number_buffer, model.pending_order_id);
-    repos.openOrderForTable(fx, repos.key_open_order, table.id, model.employee_id, number, model.pending_order_id);
+    const number = makeOrderNo(&number_buffer, order_id) orelse {
+        model.error_text = "Could not make the order number - try again";
+        return;
+    };
+    model.pending_order_id = order_id;
+    repos.openOrderForTable(fx, repos.key_open_order, table.id, model.employee_id, number, order_id);
 }
 
 /// Add a product to the open order the waiter is serving.
@@ -657,8 +661,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                     .io_failed => "Storage error - the order was not saved",
                     else => "Could not save the order",
                 };
+                // The sale did not happen, so the cart is still the
+                // cashier's: the button comes back and the sale can be
+                // tried again.
+                model.sale_pending = false;
                 return;
             }
+            model.sale_pending = false;
             model.cart_len = 0;
             model.cart_buf.reset();
             go(model, .order_confirmation);
@@ -1184,9 +1193,21 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         model.error_text = "The cart is empty";
         return;
     }
+    // A sale that is already on its way owns the cart. A second tap
+    // would write the same cart twice, and the cashier would see two
+    // orders for one table.
+    if (model.sale_pending) {
+        model.error_text = "The sale is still being saved";
+        return;
+    }
     const now = fx.wallMs();
+    // The order id is the wall clock, but a clock is not a sequence:
+    // two sales in the same millisecond would want the same id, and
+    // the second one would land on the first. The floor keeps the ids
+    // unique without a round trip.
+    const order_id = nextOrderId(model, now);
     var order = domain.Order{
-        .id = now,
+        .id = order_id,
         .order_no = "pending",
         .order_type = model.cart_order_type,
         .status = .pending,
@@ -1202,14 +1223,22 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         .placed_at = now,
         .notes = "",
     };
-    order.order_no = model.cart_buf.dupe(allocOrderNo(model, now)) orelse "";
+    // The order number is the number on the ticket, and a ticket with
+    // the number "0" on it is worse than no ticket: the sale is
+    // refused rather than written with a number that cannot be traced.
+    var number_buffer: [16]u8 = undefined;
+    const number = makeOrderNo(&number_buffer, order_id) orelse {
+        model.error_text = "Could not make the order number - try again";
+        return;
+    };
+    order.order_no = number;
 
     var lines: [model_mod.max_cart_lines]domain.OrderLine = undefined;
     var count: usize = 0;
     for (model.cart[0..model.cart_len]) |line| {
         lines[count] = .{
-            .id = now + @as(i64, @intCast(count)),
-            .order_id = now,
+            .id = order_id + @as(i64, @intCast(count)),
+            .order_id = order_id,
             .product_id = line.product_id,
             // The line carries the station that cooks it, so the kitchen
             // board can filter by station without a join.
@@ -1236,6 +1265,7 @@ fn placeOrder(model: *Model, fx: *Effects) void {
     model.payment_error = "";
 
     model.busy = true;
+    model.sale_pending = true;
     repos.saveOrder(fx, order, lines[0..count]);
 }
 
@@ -1243,16 +1273,23 @@ fn placeOrder(model: *Model, fx: *Effects) void {
 /// column is UNIQUE), sortable, and the same value as the order id, so
 /// a number on a ticket is a number you can trace. A per-day sequence
 /// ("1, 2, 3") is nicer on a receipt and is a later change.
-fn makeOrderNo(buffer: *[16]u8, at: i64) []const u8 {
-    const written = std.fmt.bufPrint(buffer, "{d}", .{at}) catch return "0";
-    return written;
+///
+/// Null when the number cannot be made: a sale with a number of "0" on
+/// it is a sale nobody can trace.
+fn makeOrderNo(buffer: *[16]u8, at: i64) ?[]const u8 {
+    const written = std.fmt.bufPrint(buffer, "{d}", .{at}) catch return null;
+    return written[0..written.len];
 }
 
-/// The order number for the POS cart, owned by the cart's buffer.
-fn allocOrderNo(model: *Model, at: i64) []const u8 {
-    const buffer = model.cart_buf.alloc(16, 1) orelse return "0";
-    var out: [16]u8 = undefined;
-    const written = makeOrderNo(&out, at);
-    @memcpy(buffer[0..written.len], written);
-    return buffer[0..written.len];
+/// The next order id for this device.
+///
+/// The order id is the wall clock, but a clock is not a sequence: two
+/// sales in the same millisecond would want the same id, and the
+/// second one would land on the first - two tickets, one row, and a
+/// cashier's ticket with another cashier's lines. The floor keeps the
+/// ids unique without a round trip.
+fn nextOrderId(model: *Model, now: i64) i64 {
+    const id = @max(now, model.last_issued_order_id + 1);
+    model.last_issued_order_id = id;
+    return id;
 }

@@ -78,6 +78,7 @@ pub const Model = struct {
         "company_id",
         "theme_dark",
         "salt_state",
+        "last_issued_order_id",
     };
 
     // ------------------------------------------------------------ session
@@ -248,6 +249,16 @@ pub const Model = struct {
     last_order_total_minor: i64 = 0,
     last_order_items_count: i64 = 0,
     last_order_at: i64 = 0,
+    /// True while a sale is on its way to the database. The view binds
+    /// it: the button that places the order is disabled while it holds,
+    /// so a second tap cannot submit the same cart twice.
+    sale_pending: bool = false,
+    /// The highest order id this process has issued. The order id is
+    /// the wall clock, but a clock is not a sequence: two sales in the
+    /// same millisecond would want the same id, and the second one
+    /// would merge into the first. The floor keeps the ids unique
+    /// without a round trip.
+    last_issued_order_id: i64 = 0,
     /// The payment mode the cashier picked.
     payment_mode_field: i64 = 0,
     /// Why the payment failed, or empty.

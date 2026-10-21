@@ -1281,6 +1281,12 @@ pub const max_order_lines = 64;
 /// runs the statements atomically, so the order is either fully there
 /// or not there at all.
 ///
+/// A duplicate order id is a constraint failure, and it is left as one.
+/// The write used to swallow it and update the order that was already
+/// there, which merged two sales into one row - the second cashier's
+/// ticket became the first cashier's ticket with the first cashier's
+/// lines and the second cashier's status.
+///
 /// No allocator is needed: `dbExec` executes the statements
 /// synchronously, so the parameters can live on the stack for the
 /// duration of the call.
@@ -1311,8 +1317,7 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
         \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
         \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
         \\  total_minor, placed_at, notes, created_at, updated_at)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?12)
-        \\ON CONFLICT(id) DO UPDATE SET status = ?4, notes = ?13, updated_at = ?12;
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?12, ?12);
         ,
         .params = &order_params,
     };

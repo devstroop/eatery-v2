@@ -215,6 +215,29 @@ test "the cart adds, counts and totals in minor units" {
     try testing.expect(model.cart_is_empty());
 }
 
+test "a second tap while the sale is in flight does not place a second order" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    model.products = &.{
+        .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    main.update(&model, .{ .add_to_cart = 1 }, &fx);
+
+    // The sale goes to the database. The write is in flight: the fake
+    // effects channel never answers it, which is exactly the window a
+    // double tap falls into.
+    main.update(&model, .{ .place_order = {} }, &fx);
+    try testing.expect(model.sale_pending);
+
+    // The second tap is refused, and the cart is untouched: the sale
+    // owns the cart until the database answers.
+    main.update(&model, .{ .place_order = {} }, &fx);
+    try testing.expect(model.error_text.len > 0);
+    try testing.expectEqual(@as(usize, 1), model.cart_count());
+}
+
 test "money stays integer: two hundred and fifty cents is never a float" {
     var fx = try fakeFx();
     defer fx.deinit();

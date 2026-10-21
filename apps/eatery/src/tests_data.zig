@@ -307,6 +307,39 @@ test "an order is written, read back, and its status advances" {
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
 }
 
+test "two sales in the same millisecond are two sales" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The clock does not move. Two sales land in the same millisecond,
+    // which is what a busy counter does when the taps are quick.
+    var clock = native_sdk.TestClock{};
+    clock.setWallMs(1_700_000_000_000);
+    harness.fx.clock = clock.clock();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+
+    // Two orders, two numbers, two sets of lines. The clock is the
+    // same for both, so the ids cannot both be the clock.
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 2), harness.model.orders.len);
+    try testing.expect(harness.model.orders[0].id != harness.model.orders[1].id);
+    try testing.expect(!std.mem.eql(u8, harness.model.orders[0].order_no, harness.model.orders[1].order_no));
+
+    repos.loadOrderLines(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 2), harness.model.order_lines.len);
+}
+
 test "a PIN only matches the hash of the salted PIN" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
