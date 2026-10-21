@@ -1,0 +1,33 @@
+<!-- The waiter's menu, for the table they are serving. The header says
+     which table it is, so a waiter with two tables open cannot lose
+     track of which order the tap is going to. -->
+
+<template name="screen-waiter-menu">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{active_table}</text>
+      <button size="sm" variant="ghost" on-press="go_waiter_tables">Tables</button>
+      <button size="sm" variant="secondary" on-press="go_waiter_cart">Order ({active_order_item_count})</button>
+    </row>
+
+    <row gap="4" cross="center">
+      <toggle-button selected="{selected_category == 0}" on-toggle="set_category_all">All</toggle-button>
+      <for each="categories" key="id" as="category">
+        <toggle-button selected="{category.id == selected_category}" on-toggle="set_category:{category.id}">{category.name}</toggle-button>
+      </for>
+    </row>
+
+    <scroll grow="1">
+      <grid columns="4" gap="8">
+        <for each="visible_products" key="id" as="product">
+          <card padding="8" on-press="add_to_order:{product.id}">
+            <column gap="2">
+              <text wrap="true">{product.name}</text>
+              <text size="sm" foreground="text_muted">{currency_symbol}{fixed(product.price_minor / 100, 2)}</text>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
+  </column>
+</template>

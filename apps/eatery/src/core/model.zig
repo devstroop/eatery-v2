@@ -114,6 +114,12 @@ pub const Model = struct {
     order_lines_buf: bump.Bump(order_lines_buffer) = .{},
     /// Storage for the order just placed.
     sale_buf: bump.Bump(1024) = .{},
+    /// Storage for the table the waiter is serving.
+    waiter_buf: bump.Bump(1024) = .{},
+    /// Storage for the lines of the order the waiter is serving. The
+    /// names are COPIED: the shared order-line buffer is reset every
+    /// time the lines are read again.
+    waiter_lines_buf: bump.Bump(8192) = .{},
     /// Storage for the company row's text. The page bytes are drain
     /// scratch: a name read from the database has to be COPIED before
     /// the model keeps it.
@@ -132,10 +138,23 @@ pub const Model = struct {
     /// The search text in the POS.
     search: canvas.TextBuffer(64) = .{},
 
+    // --------------------------------------------------------- the waiter
+
+    /// The table the waiter is serving, and the open order on it.
+    active_table_id: i64 = 0,
+    active_table_name: []const u8 = "",
+    active_order_id: i64 = 0,
+    /// The order being opened for a table, before the database
+    /// confirms it.
+    pending_order_id: i64 = 0,
+    /// The lines of the open order.
+    active_lines: []const domain.OrderLine = &.{},
+
     // ------------------------------------------------------- the sale
 
     /// The order that was just placed: the confirmation screen shows
     /// it and the payment is taken against it.
+    active_table_name_field: []const u8 = "",
     last_order_id: i64 = 0,
     last_order_no_field: []const u8 = "",
     last_order_type_field: []const u8 = "",
@@ -234,6 +253,37 @@ pub const Model = struct {
     /// The error the operator needs to see.
     pub fn error_message(model: *const Model) []const u8 {
         return model.error_text;
+    }
+
+    /// The table the waiter is serving.
+    pub fn active_table(model: *const Model) []const u8 {
+        return model.active_table_name_field;
+    }
+
+    /// The open order the waiter is serving, or zero.
+    pub fn active_order(model: *const Model) i64 {
+        return model.active_order_id;
+    }
+
+    /// How many items the open order carries.
+    pub fn active_order_item_count(model: *const Model) i64 {
+        var count: i64 = 0;
+        for (model.active_lines) |line| count += line.qty;
+        return count;
+    }
+
+    /// The lines of the open order the waiter is serving.
+    pub fn active_order_lines(model: *const Model) []const domain.OrderLine {
+        return model.active_lines;
+    }
+
+    /// The total of the open order the waiter is serving.
+    pub fn active_order_total(model: *const Model) i64 {
+        var total: i64 = 0;
+        for (model.active_lines) |line| {
+            total += line.unit_price_minor * line.qty;
+        }
+        return total;
     }
 
     /// The order number of the order just placed.

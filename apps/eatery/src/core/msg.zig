@@ -79,6 +79,23 @@ pub const Msg = union(enum) {
     /// The order write came back.
     order_placed: native_sdk.EffectDbResult,
 
+    // --------------------------------------------------------- the waiter
+
+    /// The waiter picked a table: open (or find) its order.
+    select_table: i64,
+    /// Back to the waiter's floor.
+    go_waiter_tables,
+    /// Back to the waiter's menu.
+    go_waiter_menu,
+    /// The waiter's open order.
+    go_waiter_cart,
+    /// Add a product to the open order of the selected table.
+    add_to_order: i64,
+    /// The order for the table was opened.
+    order_opened: native_sdk.EffectDbResult,
+    /// The line was added to the open order.
+    order_line_added: native_sdk.EffectDbResult,
+
     // -------------------------------------------------------- the payment
 
     /// The payment mode the cashier picked.
@@ -148,6 +165,8 @@ pub const Msg = union(enum) {
         "config_saved",
         "setup_created",
         "payment_taken",
+        "order_opened",
+        "order_line_added",
         "db_failed",
         "order_placed",
         "order_status_saved",
