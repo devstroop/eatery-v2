@@ -291,15 +291,30 @@ fn takePayment(model: *Model, fx: *Effects) void {
         model.payment_error = "There is no order to pay for";
         return;
     }
+    // One payment at a time: a second tap would take the money twice.
+    if (model.payment_pending) {
+        model.payment_error = "The payment is still being taken";
+        return;
+    }
+    const order = findOrder(model, model.last_order_id) orelse {
+        model.payment_error = "That order is no longer on the board";
+        return;
+    };
+    if (order.status == .completed) {
+        model.payment_error = "This order is already paid";
+        return;
+    }
     const mode = std.enums.fromInt(domain.PaymentMode, model.payment_mode_field) orelse domain.PaymentMode.cash;
     model.busy = true;
+    model.payment_pending = true;
     model.payment_error = "";
     repos.takePayment(
         fx,
         repos.key_payment,
-        model.last_order_id,
+        order.id,
+        order.status,
         mode,
-        model.last_order_total_minor,
+        order.total_minor,
         fx.wallMs(),
     );
 }
@@ -728,6 +743,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .payment_taken => |result| {
             model.busy = false;
+            model.payment_pending = false;
             if (result.outcome != .ok) {
                 model.payment_error = switch (result.outcome) {
                     .constraint => "The payment broke a data rule",

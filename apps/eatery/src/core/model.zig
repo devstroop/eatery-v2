@@ -242,6 +242,10 @@ pub const Model = struct {
 
     // ------------------------------------------------------- the sale
 
+    /// True while a payment is on its way to the database. The view
+    /// binds it: the button that takes the money is disabled while it
+    /// holds, so a second tap cannot take the money twice.
+    payment_pending: bool = false,
     /// The order whose status is on its way to the database, zero when
     /// there is none. The board's button is disabled while it holds, so
     /// a second tap cannot move the order twice.

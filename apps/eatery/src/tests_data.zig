@@ -53,12 +53,13 @@ const migration_sql = [_][]const u8{
     @embedFile("schema/0011_default_tax_slab.sql"),
     @embedFile("schema/0012_order_sequence.sql"),
     @embedFile("schema/0013_order_request_key.sql"),
+    @embedFile("schema/0014_payment_once.sql"),
 };
 
 const migration_names = [_][]const u8{
     "core", "catalog", "floor", "customers", "orders",
     "inventory", "ops", "compliance", "printing", "sync", "default_tax_slab",
-    "order_sequence", "order_request_key",
+    "order_sequence", "order_request_key", "payment_once",
 };
 
 /// A model, a real database and a real effects channel, together.
@@ -402,6 +403,44 @@ test "a move that does not apply leaves the order where it is" {
 
     const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = ?1;", &.{.{ .integer = order.id }});
     try testing.expectEqual(@as(i64, 0), rows);
+}
+
+test "a payment is taken once" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    const order = harness.model.orders[0];
+
+    // The money is taken.
+    harness.send(Msg{ .take_payment = {} });
+    repos.loadOrders(harness.fx);
+    harness.drain();
+    try testing.expectEqual(domain.OrderStatus.completed, harness.model.orders[0].status);
+
+    // A second tap, from a model that still says the order is open.
+    // The customer pays once, whatever the till does.
+    repos.takePayment(harness.fx, repos.key_payment, order.id, domain.OrderStatus.pending, domain.PaymentMode.cash, order.total_minor, 1_700_000_000_000);
+    harness.drain();
+
+    // And the second tap is not an error: the order was already
+    // closed, so there was nothing to do. The cashier sees a closed
+    // order, not a failure.
+    try testing.expectEqualStrings("", harness.model.payment_error);
+
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM payment WHERE order_id = ?1;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 1), rows);
+
+    // And the order closed once: one history row for the close.
+    const history = try countRows(&harness, "SELECT COUNT(*) AS n FROM order_status_history WHERE order_id = ?1 AND status = 4;", &.{.{ .integer = order.id }});
+    try testing.expectEqual(@as(i64, 1), history);
 }
 
 test "the order number is a sequence" {
