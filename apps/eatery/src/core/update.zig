@@ -44,6 +44,27 @@ pub fn boot(model: *Model, fx: *Effects) void {
     repos.loadCompany(fx);
 }
 
+/// A new order on the board gets a sound. The kitchen hears the sale
+/// without looking at the screen - and the cashier hears it too, which
+/// is how a second cashier knows a table needs serving.
+fn announceNewOrder(model: *Model, fx: *Effects) void {
+    var newest: i64 = model.last_seen_order_id;
+    for (model.orders) |order| {
+        if (order.id > newest) newest = order.id;
+    }
+    if (newest == model.last_seen_order_id) return;
+    const first_time = model.last_seen_order_id == 0;
+    model.last_seen_order_id = newest;
+    // The first board of the shift is not a new sale: the kitchen has
+    // not been watching yet.
+    if (first_time) return;
+    fx.playAudio(.{
+        .key = repos.key_chime,
+        .path = "assets/chime.wav",
+        .on_event = Effects.audioMsg(.audio_event),
+    });
+}
+
 /// Keep the waiter's cart in step with the database: the lines of the
 /// order they are serving, with their names copied (the shared
 /// order-line buffer is reset on every read).
@@ -68,6 +89,7 @@ fn keepActiveOrder(model: *Model) void {
             .id = line.id,
             .order_id = line.order_id,
             .product_id = line.product_id,
+            .station_id = line.station_id,
             .product_name = model.waiter_lines_buf.dupe(line.product_name) orelse "",
             .qty = line.qty,
             .unit_price_minor = line.unit_price_minor,
@@ -227,7 +249,20 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // The kitchen and the customer display watch the orders
                 // instead of waiting for a refresh: a live query re-runs
                 // itself when the `orders` table changes.
-                if (role == .kds or role == .display) repos.watchOpenOrders(fx);
+                if (role == .kds or role == .display) {
+                    repos.watchOpenOrders(fx);
+                    // A live query only sees the writes THIS connection
+                    // made. The kitchen is usually another device, so
+                    // the board also re-reads on a timer: that is what
+                    // makes a sale on the cashier's machine appear on
+                    // the kitchen's screen.
+                    fx.startTimer(.{
+                        .key = repos.key_board_refresh,
+                        .interval_ms = 2000,
+                        .mode = .repeating,
+                        .on_fire = Effects.timerMsg(.refresh_orders),
+                    });
+                }
             }
         },
 
@@ -486,6 +521,31 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         // -------------------------------------------------- the kitchen board
 
+        .refresh_orders => |timer| {
+            if (timer.outcome != .fired) return;
+            repos.loadOrders(fx);
+        },
+
+        .set_station_filter => |id| model.station_filter_field = id,
+
+        .set_station_filter_all => model.station_filter_field = 0,
+
+        .stations_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeStations(model, result.bytes);
+        },
+
+        .product_stations_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeProductStations(model, result.bytes);
+        },
+
+        .audio_event => |event| {
+            // The chime's own outcome. A failed chime is not the
+            // operator's problem: the board still shows the order.
+            _ = event;
+        },
+
         .advance_order => |order_id| {
             const order = findOrder(model, order_id) orelse return;
             const next = nextStatus(order.status);
@@ -535,8 +595,20 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         .orders_loaded => |result| {
-            if (result.outcome != .ok) return;
-            if (result.kind == .page) repos.decodeOrders(model, result.bytes);
+            if (result.outcome != .ok) {
+                // A board that cannot read the orders is a board that
+                // silently shows the wrong thing. Say so.
+                model.error_text = switch (result.outcome) {
+                    .rejected => "The order list is busy - try again",
+                    .busy => "The database is busy - try again",
+                    else => "Could not read the orders",
+                };
+                return;
+            }
+            if (result.kind == .page) {
+                repos.decodeOrders(model, result.bytes);
+                announceNewOrder(model, fx);
+            }
         },
 
         .order_lines_loaded => |result| {
@@ -744,6 +816,9 @@ fn placeOrder(model: *Model, fx: *Effects) void {
             .id = now + @as(i64, @intCast(count)),
             .order_id = now,
             .product_id = line.product_id,
+            // The line carries the station that cooks it, so the kitchen
+            // board can filter by station without a join.
+            .station_id = model.station_of_product(line.product_id),
             .product_name = line.name,
             .qty = line.qty,
             .unit_price_minor = line.price_minor,

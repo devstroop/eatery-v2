@@ -20,6 +20,7 @@
 <import src="screens/screen-tables.native"/>
 <import src="screens/screen-kitchen.native"/>
 <import src="screens/screen-order-confirmation.native"/>
+<import src="screens/screen-display.native"/>
 <import src="screens/screen-waiter-tables.native"/>
 <import src="screens/screen-waiter-menu.native"/>
 <import src="screens/screen-waiter-cart.native"/>
@@ -72,6 +73,7 @@
         <if test="{screen_index == 39}"><use template="screen-waiter-cart"/></if>
         <if test="{screen_index == 40}"><use template="screen-waiter-orders"/></if>
         <if test="{screen_index == 41}"><use template="screen-kitchen"/></if>
+        <if test="{screen_index == 42}"><use template="screen-display"/></if>
       </column>
     </split>
   </if>

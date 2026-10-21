@@ -41,6 +41,10 @@ pub const key_payment = 12;
 pub const key_watch_orders = 13;
 pub const key_open_order = 14;
 pub const key_add_line = 15;
+pub const key_stations = 16;
+pub const key_product_stations = 18;
+pub const key_board_refresh = 19;
+pub const key_chime = 17;
 pub const key_write_order = 20;
 pub const key_write_product = 21;
 pub const key_write_table = 22;
@@ -92,7 +96,7 @@ pub const orders_sql =
 
 pub const order_lines_sql =
     \\SELECT id, order_id, product_id, product_name, qty, unit_price_minor,
-    \\       tax_bps, notes
+    \\       tax_bps, notes, station_id
     \\FROM order_line
     \\WHERE order_id IN (SELECT id FROM orders WHERE status <> 5)
     \\ORDER BY id;
@@ -101,6 +105,16 @@ pub const order_lines_sql =
 /// One setting out of `app_config`. The PIN salt lives there.
 pub const config_sql =
     \\SELECT key, value FROM app_config WHERE key = 'pin_salt' LIMIT 1;
+;
+
+/// Which station cooks which product.
+pub const product_stations_sql =
+    \\SELECT product_id, station_id FROM product_station;
+;
+
+/// The kitchen stations a ticket can be routed to.
+pub const stations_sql =
+    \\SELECT id, name, sort_order FROM kds_station WHERE active = 1 ORDER BY sort_order, name;
 ;
 
 /// The company row. A v2 database holds exactly one company.
@@ -210,6 +224,22 @@ pub fn saveConfigValue(fx: *Effects, key: u64, name: []const u8, value: []const 
     });
 }
 
+pub fn loadProductStations(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_product_stations,
+        .sql = product_stations_sql,
+        .on_result = Effects.dbMsg(.product_stations_loaded),
+    });
+}
+
+pub fn loadStations(fx: *Effects) void {
+    fx.dbQuery(.{
+        .key = key_stations,
+        .sql = stations_sql,
+        .on_result = Effects.dbMsg(.stations_loaded),
+    });
+}
+
 pub fn loadCompany(fx: *Effects) void {
     fx.dbQuery(.{
         .key = key_company,
@@ -221,6 +251,8 @@ pub fn loadCompany(fx: *Effects) void {
 /// Load everything the shell needs on boot. One arm, one place.
 pub fn loadAll(fx: *Effects) void {
     loadCompany(fx);
+    loadStations(fx);
+    loadProductStations(fx);
     loadCategories(fx);
     loadProducts(fx);
     loadTables(fx);
@@ -383,10 +415,46 @@ pub fn decodeOrderLines(model: *Model, bytes: []const u8) void {
             .qty = reader.intOf(&values, "qty", 0),
             .unit_price_minor = reader.intOf(&values, "unit_price_minor", 0),
             .tax_bps = reader.intOf(&values, "tax_bps", 0),
+            .station_id = reader.intOf(&values, "station_id", 0),
             .notes = model.order_lines_buf.dupe(reader.textOf(&values, "notes")) orelse "",
         };
     }
     model.order_lines = list[0..index];
+}
+
+pub fn decodeProductStations(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.product_stations_buf.reset();
+    const count = reader.rows_left;
+    const list = model.product_stations_buf.allocSlice(domain.ProductStation, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .product_id = reader.intOf(&values, "product_id", 0),
+            .station_id = reader.intOf(&values, "station_id", 0),
+        };
+    }
+    model.product_stations = list[0..index];
+}
+
+pub fn decodeStations(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.stations_buf.reset();
+    const count = reader.rows_left;
+    const list = model.stations_buf.allocSlice(domain.KdsStation, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.stations_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .sort_order = reader.intOf(&values, "sort_order", 0),
+        };
+    }
+    model.stations_list = list[0..index];
 }
 
 pub fn decodeCompany(model: *Model, bytes: []const u8) void {
@@ -548,7 +616,7 @@ pub fn setupCompany(
     pin_hash: []const u8,
     at: i64,
 ) void {
-    const statement_count = comptime 2 + starter.categories.len + starter.dishes.len + 1 + starter.tables.len;
+    const statement_count = comptime 2 + starter.categories.len + starter.dishes.len + starter.stations.len + starter.dishes.len + 1 + starter.tables.len;
     var statements: [statement_count]native_sdk.EffectDbStatement = undefined;
     var count: usize = 0;
 
@@ -589,6 +657,8 @@ pub fn setupCompany(
     // The parameter arrays are declared HERE, not inside the loops: a
     // parameter array declared in a loop body dies at the end of the
     // iteration, and the statement would then point at dead memory.
+    var station_params: [starter.stations.len][3]native_sdk.EffectDbValue = undefined;
+    var mapping_params: [starter.dishes.len][2]native_sdk.EffectDbValue = undefined;
     var category_params: [starter.categories.len][3]native_sdk.EffectDbValue = undefined;
     var product_params: [starter.dishes.len][8]native_sdk.EffectDbValue = undefined;
     var table_params: [starter.tables.len][5]native_sdk.EffectDbValue = undefined;
@@ -627,6 +697,31 @@ pub fn setupCompany(
             \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 0, 1, ?8, ?8);
             ,
             .params = &product_params[index],
+        };
+        count += 1;
+    }
+
+    // The kitchen stations, and which station cooks which dish.
+    for (starter.stations, 0..) |station, index| {
+        station_params[index] = .{
+            .{ .integer = @intCast(index + 1) },
+            .{ .text = station.name },
+            .{ .integer = @intCast(index + 1) },
+        };
+        statements[count] = .{
+            .sql = "INSERT INTO kds_station (id, name, sort_order, active) VALUES (?1, ?2, ?3, 1);",
+            .params = &station_params[index],
+        };
+        count += 1;
+    }
+    for (starter.dishes, 0..) |dish, index| {
+        mapping_params[index] = .{
+            .{ .integer = @intCast(index + 1) },
+            .{ .integer = @intCast(starter.stationOf(dish)) },
+        };
+        statements[count] = .{
+            .sql = "INSERT INTO product_station (product_id, station_id) VALUES (?1, ?2);",
+            .params = &mapping_params[index],
         };
         count += 1;
     }

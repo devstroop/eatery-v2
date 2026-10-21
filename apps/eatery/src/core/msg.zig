@@ -116,6 +116,24 @@ pub const Msg = union(enum) {
     /// Jump to the floor.
     open_tables,
 
+    // ------------------------------------------------------ the kitchen board
+
+    /// The board refreshes itself: the kitchen is a different device
+    /// from the cashier, and a live query only sees the writes this
+    /// connection made. A timer is what actually keeps the board
+    /// current.
+    refresh_orders: native_sdk.EffectTimer,
+    /// The board is filtered by a station.
+    set_station_filter: i64,
+    /// The board shows every station. A payload must be a BINDING, so
+    /// "every station" needs a message of its own.
+    set_station_filter_all,
+    /// The stations were loaded.
+    stations_loaded: native_sdk.EffectDbResult,
+    /// The product-to-station mapping was loaded.
+    product_stations_loaded: native_sdk.EffectDbResult,
+    /// An audio event (the chime finished, or failed).
+    audio_event: native_sdk.EffectAudio,
     // ------------------------------------------------------ kitchen board
 
     /// Move an order along its lifecycle (the order id).
@@ -171,5 +189,8 @@ pub const Msg = union(enum) {
         "order_placed",
         "order_status_saved",
         "tick",
+        "stations_loaded",
+        "product_stations_loaded",
+        "audio_event",
     };
 };

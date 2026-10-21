@@ -626,3 +626,33 @@ test "the kitchen board's live query sees a new order" {
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
     try testing.expectEqual(@as(i64, 77), harness.model.orders[0].id);
 }
+
+test "the kitchen board filters by station" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.orders = &.{
+        .{ .id = 1, .order_no = "1", .order_type = .dine_in, .status = .pending, .status_label = "Pending", .type_label = "Dine in", .dining_table_id = 0, .customer_id = 0, .employee_id = 0, .subtotal_minor = 0, .tax_minor = 0, .discount_minor = 0, .total_minor = 0, .placed_at = 0, .notes = "" },
+        .{ .id = 2, .order_no = "2", .order_type = .dine_in, .status = .pending, .status_label = "Pending", .type_label = "Dine in", .dining_table_id = 0, .customer_id = 0, .employee_id = 0, .subtotal_minor = 0, .tax_minor = 0, .discount_minor = 0, .total_minor = 0, .placed_at = 0, .notes = "" },
+    };
+    // The first order is on the grill, the second at the bar.
+    harness.model.order_lines = &.{
+        .{ .id = 1, .order_id = 1, .product_id = 1, .station_id = 1, .product_name = "Paneer Tikka", .qty = 1, .unit_price_minor = 0, .tax_bps = 0, .notes = "" },
+        .{ .id = 2, .order_id = 2, .product_id = 2, .station_id = 2, .product_name = "Masala Chai", .qty = 1, .unit_price_minor = 0, .tax_bps = 0, .notes = "" },
+    };
+
+    // Every station sees every ticket.
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try testing.expectEqual(@as(usize, 2), harness.model.kitchen_tickets(arena).len);
+
+    // The grill sees one, the bar sees one.
+    harness.model.station_filter_field = 1;
+    try testing.expectEqual(@as(usize, 1), harness.model.kitchen_tickets(arena).len);
+    try testing.expectEqual(@as(i64, 1), harness.model.kitchen_tickets(arena)[0].id);
+
+    harness.model.station_filter_field = 2;
+    try testing.expectEqual(@as(usize, 1), harness.model.kitchen_tickets(arena).len);
+    try testing.expectEqual(@as(i64, 2), harness.model.kitchen_tickets(arena)[0].id);
+}
