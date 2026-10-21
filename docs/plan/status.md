@@ -2,33 +2,35 @@
 
 > **Status:** Snapshot. Regenerate by reading the source, not by trusting
 > this page.
-> **Last verified:** 2026-10-21, by source review plus the toolchain on
-> `PATH`. `native check` passes, `native test` runs 81/81 (80 authored,
-> one generated) and `native build` produces a ReleaseFast binary.
-> Setup, the order-write fix, the payment flow, the waiter, the kitchen
-> stations, the customer display, the settings screens and the catalogue
-> and people forms are committed; the sign-in and salt work of
-> 2026-10-21 (B-002, B-003) is in the working tree. See the
-> [full audit](../review/archive/2026-10-20-audit.md).
+> **Last verified:** 2026-10-22, by source review plus the toolchain on
+> `PATH`. `native check` passes, `native test` runs 110/110 and
+> `native build` produces a ReleaseFast binary.
+> The money track is merged to `main`; the back-office track is on
+> `feat/back-office` and open as PR #101. The screens the roadmap's
+> phase two names are built: the walk-through, the company's record,
+> the PIN reset, the payments, the report, the stock, the dishes, the
+> control centre, the database inspector, the customer form, the
+> modifier group form, and the removal of an employee who has left.
+> See the [full audit](../review/archive/2026-10-20-audit.md).
 > **Screen-by-screen table:** [`architecture/03`](../architecture/03-navigation-and-rbac.md#the-45-screens).
 
 ## Scoreboard
 
 | Measure | Value | Evidence |
 |---|---|---|
-| `Screen` variants | 45 | `src/core/navigation.zig` |
-| Screen templates | 31 | `src/screens/*.native` |
-| Templates mounted in the shell | 31 (28 gated on the screen ordinal, 3 on their own condition) | `src/app.native` |
-| Screens that render at all | 31 | every mounted template builds; a test asserts it |
-| Templates with a render test | 31 | `src/tests.zig` (the screen-coverage test builds each one) |
-| `Msg` variants | 72 | `src/core/msg.zig` |
-| Tables | 43 | `src/schema/*.sql` |
-| Migrations | 11 | `migrations.lock.json` version 11 |
-| Read queries | 9 (including config) + login SQL | `src/data/repos.zig` |
-| Write paths | setup, order + lines, status + history, config, currency, product, employee, payment | `repos.zig` |
-| Effect keys | 36, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 80 authored (81 reported with the generated one) | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 47, green | `src/tests_data.zig` |
+| `Screen` variants | 52 | `src/core/navigation.zig` |
+| Screen templates | 47 | `src/screens/*.native` (ten area files) |
+| Templates mounted in the shell | 47, each gated on the screen ordinal | `src/app.native` |
+| Screens that render at all | 47 | every mounted template builds; a test asserts it |
+| Templates with a render test | 47 | `src/tests.zig` (the screen-coverage test builds each one, and finds a landmark of its own) |
+| `Msg` variants | 178 | `src/core/msg.zig` |
+| Tables | 44 | `src/schema/*.sql` |
+| Migrations | 15 | `migrations.lock.json` version 15 |
+| Read queries | 26 | `src/data/repos.zig` (one named constant each) |
+| Write paths | setup, order + lines, status + history, config, currency, product, employee, employee PIN, employee removal, customer, category, tax slab, discount, modifier group, dish station, stock count, payment | `repos.zig` |
+| Effect keys | 53, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
+| Headless tests | 110, green | `src/tests.zig`, `src/tests_data.zig` |
+| Database integration tests | 75, green | `src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -41,7 +43,7 @@
 | App model | Implemented | Model, Msg, update, boot, effects keys |
 | Role picker and login | Partial | Salted SHA-256, kiosk sign-in and first-run setup exist; the sign-in now checks the employee's stored role (B-002) and waits for the database to confirm the salt (B-003); the PIN is still a fast digest with no lockout (B-027) |
 | RBAC and navigation | Implemented core | 45 screens, 4 roles, one guard, a session-scoped stack ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
-| Screen coverage | Partial | 31 of 45 screens are mounted and render; 14 have no template yet |
+| Screen coverage | Partial | 47 of 52 screens are mounted and render; five have no template: `landing`, `upgrade`, `pos_cart`, `table_categories`, `floor_plan` - the last two are floor features the app has not built |
 | Theming | Implemented | Light/dark semantic tokens; every text pair is asserted against WCAG AA |
 | Shell layout | Partial | Fixed rail + content; no responsive mode |
 | Dashboard | Implemented | Counts, recent orders, shortcuts; money is hard-coded to 2 decimals (B-013) |
@@ -49,17 +51,17 @@
 | Orders | Partial | Lists non-voided orders including completed; status advance is not conditional (B-008/B-012) |
 | Kitchen board | Implemented | Tickets, summary, wait time, advance |
 | Floor board | Partial | The table board shows what is true about each table; a guest cannot be moved to another table |
-| Customers | Partial | The list, the count and the load all work; a customer cannot be added or attached to an order |
-| Employees | Partial | The list and the form work; a PIN cannot be reset and an employee cannot be deactivated |
-| Catalog admin | Partial | The catalogue list, the product form, the categories, the tax slabs and the discounts all work; the modifier groups do not |
-| Settings / setup | Partial | First-run setup writes company/operator/starter menu/salt; currency-symbol and disabled-submit gaps (B-031/B-032) |
+| Customers | Partial | The list, the count, the load and the form all work - a customer can be written and edited. A customer still cannot be attached to an order, so the loyalty points are only ever earned by hand |
+| Employees | Partial | The list and the form work; a PIN can be reset by a manager, and an employee who has left can be removed - the row stays, so the orders they took still name them, and the last admin cannot be removed |
+| Catalog admin | Partial | The catalogue list, the product form, the categories, the tax slabs, the discounts and the modifier groups all work. The CHOICES inside a modifier group, and which dishes a group applies to, do not |
+| Settings / setup | Partial | The first run is the walk-through: the company's record, then the owner and their PIN, written in one transaction with the starter menu, the salt and six tables. The quick setup stays for an owner who wants to start serving sooner |
 | Payments | Partial | Cash/card/UPI mode, confirmation and one payment write; a payment is taken once, and an order can still be closed without one |
-| Reports / compliance | Scaffolded | Tables only |
+| Reports / compliance | Partial | The owner's read of the day exists: the takings, the orders, the tax, the discounts, and the way the money was paid. The X report, the Z report and the day close are the reports track's |
 | Printing | Scaffolded | Tables and README-only sidecar; no code |
 | Sync | Scaffolded | Tables and README-only sidecar; no op writes |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 80 authored + 47 DB tests pass; no sale smoke |
+| Testing | Partial | 110 tests pass (35 markup and model, 75 against the database); no sale smoke through the UI |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -101,7 +103,18 @@ cite the committed build as able to sell.
 5. **Payment edge cases.** A payment screen exists, but it can be taken twice (B-035) and “Another order” is unhandled (B-033).
 6. **Printing.** No receipt, no KOT.
 7. **Sync.** No second device sees the first.
-8. **Customers.** The list renders, but the data is never loaded.
+8. ~~**Customers.** The list renders, but the data is never loaded.~~ FIXED: the
+   customers load, and the owner can write one.
+9. **A customer on an order.** The column is there and the order's
+   `customer_id` is written, but the selling flow does not let the
+   cashier pick the customer, so the loyalty points are never earned by
+   a sale.
+10. **The trading day.** The report's day is the calendar day. An order
+    has no accounting date of its own, and the policy for a trading
+    day is not settled (B-036, V1-G-027).
+11. **Loading and retry.** A read does not say it is loading, and a
+    failed read says so in the banner but offers no retry (B-021,
+    E-004).
 
 ## Known source defects
 
@@ -141,6 +154,11 @@ a docs change.
 | D29 | An empty pane and a working screen looked the same | `src/tests.zig` | FIXED: every screen has a landmark of its own, and the test finds it |
 | D26 | The failed-PIN counter is per session | `src/core/model.zig` | A restart clears it, so a determined guesser restarts (B-027) |
 | D27 | ~~A second instance could confirm its own salt after a no-op write~~ | `src/core/update.zig` (`config_saved`) | FIXED: a successful salt write is read back; the model adopts the stored salt and only confirms that one (B-028) |
+| D30 | The first run was one form with six fields on it, and it asked for nothing an invoice needs | `src/screens/screen-session.native`, `src/core/update.zig` | FIXED: the first run is the walk-through the roadmap names - the company's record, then the owner and their PIN - and the restaurant is written whole or not at all |
+| D31 | A manager could not reset a PIN without SQL, and could not remove somebody who had left | `src/screens/screen-people.native`, `src/data/repos.zig` | FIXED: the reset writes a new hash and the old PIN stops working; the removal keeps the row and takes the person off the team, and the last admin is protected |
+| D32 | The owner could not see what the restaurant took, and could not count the stock | `src/screens/screen-overview.native`, `src/screens/screen-catalog.native` | FIXED: the payments, the report, the stock count and the dishes' stations are all screens the owner can write to |
+| D33 | An owner could not write a customer or a modifier group | `src/screens/screen-floor.native`, `src/screens/screen-settings.native` | FIXED: both have a form, and a group with no name is refused |
+| D34 | The database inspector counted the tables in a list the app kept, and the list could drift from the schema | `src/data/repos.zig` (`table_counts_sql`) | FIXED: a test compares the list with what SQLite says, so a table the schema adds and the inspector forgets is a failing test |
 
 B-002 and B-003 are fixed in the working tree of 2026-10-21, with the
 effect-key collision (D21) and the four unrenderable screens (D20) found
@@ -206,6 +224,24 @@ now defers detailed evidence to the [review set](../review/README.md).
 | Every screen builds a view inside the budget | Markup |
 | Every effect key names one effect and no two | Data |
 | Every light and dark text pair clears WCAG AA | Theme |
+| The walk-through takes a restaurant from nothing to a POS | Setup |
+| A fresh database asks to be set up | Setup |
+| A manager can reset an employee's PIN | People |
+| An employee who has left is not on the team and cannot sign in | People |
+| The last admin cannot be removed | People |
+| The payments screen shows the money the restaurant took | Money |
+| The report says what the day came to | Money |
+| The owner counts the stock, and the count says why it moved | Catalog |
+| A count without a reason is refused | Catalog |
+| The owner says which station cooks which dish | Kitchen |
+| A dish with no station chosen is refused | Kitchen |
+| The inspector counts every table the schema creates | Data |
+| The inspector counts the rows that are really there | Data |
+| The control centre shows the devices and the sync state | Data |
+| The owner writes a customer | Customers |
+| A customer with no name is refused | Customers |
+| The owner writes a modifier group | Catalog |
+| A modifier group with no name is refused | Catalog |
 
 Not covered: every decoder except the generic page reader and the
 company decoder, timer, error arms, the sidecars, and a sale through the
