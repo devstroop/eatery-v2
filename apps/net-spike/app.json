@@ -1,0 +1,33 @@
+{
+    "$schema": "https://schema.native-sdk.dev/app/v1.json",
+    "id": "dev.native_sdk.net-spike",
+    "name": "net-spike",
+    "display_name": "Net Spike",
+    "description": "The seam between a net thread that owns a socket and a loop thread that owns the model.",
+    "version": "0.1.0",
+    "icons": ["assets/icon.png"],
+    "platforms": ["macos"],
+    "permissions": ["view", "command", "network"],
+    "capabilities": ["native_views", "gpu_surfaces", "network"],
+    "shell": {
+        "windows": [
+            {
+                "label": "main",
+                "title": "Net Spike",
+                "width": 760,
+                "height": 460,
+                "views": [
+                    { "label": "main-canvas", "kind": "gpu_surface", "fill": true, "role": "Spike canvas", "accessibility_label": "Net spike", "gpu_backend": "metal", "gpu_pixel_format": "bgra8_unorm", "gpu_present_mode": "timer", "gpu_alpha_mode": "opaque", "gpu_color_space": "srgb", "gpu_vsync": true }
+                ]
+            }
+        ]
+    },
+    "security": {
+        "navigation": {
+            "allowed_origins": ["zero://app", "zero://inline"],
+            "external_links": { "action": "deny" }
+        }
+    },
+    "web_engine": "system",
+    "cef": { "dir": "third_party/cef/macos", "auto_install": false }
+}
