@@ -143,6 +143,9 @@ pub const Model = struct {
     pub const view_unbound = .{
         "stack",
         "employee_id",
+        "sign_in_employee_id",
+        "sign_in_employee_name_buf",
+        "sign_in_employee_name_len",
         "db_ready",
         "busy",
         "company_id",
@@ -165,6 +168,13 @@ pub const Model = struct {
     signed_in: bool = false,
     /// The signed-in employee. The PIN hash never lives here.
     employee_id: i64 = 0,
+    /// The employee the sign-in screen is asking about, before
+    /// anybody has signed in. The picker chooses the person; the PIN
+    /// proves they are that person.
+    sign_in_employee_id: i64 = 0,
+    /// The name of the person the sign-in screen is asking about.
+    sign_in_employee_name_buf: [64]u8 = undefined,
+    sign_in_employee_name_len: usize = 0,
     employee_name: []const u8 = "",
 
     // --------------------------------------------------------- navigation
@@ -572,8 +582,10 @@ pub const Model = struct {
     }
 
     /// The role cards the picker shows.
-    pub fn roles(_: *const Model) []const nav.RoleCard {
-        return nav.roleCards();
+    /// The device modes on the picker: the kitchen board and the
+    /// customer display. A device signs in by being the device.
+    pub fn device_cards(_: *const Model) []const nav.RoleCard {
+        return nav.deviceCards();
     }
 
     /// True when there is an error worth showing the operator.
@@ -1639,6 +1651,11 @@ pub const Model = struct {
     /// The installation salt, as a slice.
     pub fn pin_salt(model: *const Model) []const u8 {
         return model.pin_salt_buf[0..model.pin_salt_len];
+    }
+
+    /// The name of the person the sign-in screen is asking about.
+    pub fn sign_in_employee_name(model: *const Model) []const u8 {
+        return model.sign_in_employee_name_buf[0..model.sign_in_employee_name_len];
     }
 
     /// The sign-in operator's name, or a neutral fallback.

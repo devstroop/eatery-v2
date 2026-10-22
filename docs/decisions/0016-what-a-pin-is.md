@@ -1,6 +1,7 @@
 # ADR-0016: What a PIN is in this app
 
-> **Status:** Accepted
+> **Status:** Superseded by [ADR-0018](0018-the-pin-hash-is-the-employees.md)
+> - decision 3 only. Decisions 1, 2, 4, 5 and 6 stand.
 > **Date:** 2026-10-21
 > **Deciders:** Eatery maintainers
 > **Related:** [ADR-0007](0007-pin-hashing.md) (superseded),
@@ -49,7 +50,9 @@ installation, and the till stops taking guesses.**
    by a future version of the app is readable by this one.
 3. **The salt is the installation's.** Two restaurants with the same
    PIN do not share a hash, and the sign-in still finds the employee by
-   computing one hash.
+   computing one hash. **Replaced by ADR-0018:** the salt is the
+   installation's *and the employee's*, and the sign-in identifies the
+   person before it hashes.
 4. **A PIN hashed before bcrypt still signs in**, and the row is
    rewritten in the modern form the moment it does. The old digest is
    worth nothing to an attacker with the database, and that moment is
