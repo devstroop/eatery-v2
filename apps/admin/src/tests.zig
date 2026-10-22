@@ -32,6 +32,11 @@ const Msg = msg_mod.Msg;
 const Effects = native_sdk.Effects(Msg);
 const AppMarkup = canvas.MarkupView(Model, Msg);
 
+/// The role this binary runs, and the app it is. A test that walks a
+/// screen belongs to the binary that can show it.
+const app = core.app_kind;
+const boot = core.boot_role;
+
 // ------------------------------------------------------------- helpers
 
 /// Build the view for a model. The markup error names the position in
@@ -112,6 +117,9 @@ fn fakeFx() !Effects {
 // --------------------------------------------------------------- tests
 
 test "the picker is the first screen and lists the device modes" {
+    // Only the kiosk has device modes; the other two list people.
+    if (app != .kiosk) return;
+
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -124,12 +132,15 @@ test "the picker is the first screen and lists the device modes" {
     // The device modes are on the picker even with nobody loaded: a
     // kitchen board signs in by being the device.
     const tree = try buildTree(arena, &model);
-_ = try expectByText(tree.root, .text, "Restaurant OS");
+    _ = try expectByText(tree.root, .text, "Restaurant OS");
     _ = try expectByText(tree.root, .text, "Kitchen");
     _ = try expectByText(tree.root, .text, "Display");
 }
 
 test "the picker lists the people who work here" {
+    // The kiosk has no people on its picker.
+    if (app == .kiosk) return;
+
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -150,6 +161,9 @@ test "the picker lists the people who work here" {
 }
 
 test "picking a person lands on the PIN screen, in the mode they work in" {
+    // The kiosk shows the device modes, not people.
+    if (app == .kiosk) return;
+
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -159,45 +173,73 @@ test "picking a person lands on the PIN screen, in the mode they work in" {
 
     var model = main.initialModel();
     model.employees = &.{
-        .{ .id = 2, .name = "Ravi", .role = 1, .role_label = "Waiter", .active = true },
+        .{ .id = 7, .name = "Sam", .role = @intFromEnum(rbac.employee_role(boot)), .role_label = boot.label(), .active = true },
     };
-    main.update(&model, .{ .pick_employee = 2 }, &fx);
+    main.update(&model, .{ .pick_employee = 7 }, &fx);
 
     // The mode comes from the person's row, so the picker does not
-    // ask twice.
-    try testing.expectEqual(nav.Role.waiter, model.role);
+    // ask twice - and it is the binary's, because the two must agree.
+    try testing.expectEqual(boot, model.role);
     try testing.expect(model.role_chosen);
     try testing.expect(!model.signed_in);
     try testing.expect(model.show_login());
     try testing.expectEqual(nav.Screen.login, model.screen());
-    try testing.expectEqual(@as(i64, 2), model.sign_in_employee_id);
-    try testing.expectEqualStrings("Ravi", model.sign_in_employee_name());
+    try testing.expectEqual(@as(i64, 7), model.sign_in_employee_id);
+    try testing.expectEqualStrings("Sam", model.sign_in_employee_name());
 
     const tree = try buildTree(arena, &model);
     _ = try expectByText(tree.root, .text, "Sign in");
-    _ = try expectByText(tree.root, .text, "Ravi - enter your PIN");
+    _ = try expectByText(tree.root, .text, "Sam - enter your PIN");
 }
 
-test "picking a kiosk role signs the device in and opens its board" {
-    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
+test "a person whose role is not this app's is refused" {
+    // The kiosk has no people on the picker at all.
+    if (app == .kiosk) return;
 
     var fx = try fakeFx();
     defer fx.deinit();
 
     var model = main.initialModel();
-    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.kds) }, &fx);
+    const other: nav.Role = if (boot == .admin) .waiter else .admin;
+    model.employees = &.{
+        .{ .id = 9, .name = "Other", .role = @intFromEnum(rbac.employee_role(other)), .role_label = other.label(), .active = true },
+    };
+    main.update(&model, .{ .pick_employee = 9 }, &fx);
 
-    try testing.expect(model.signed_in);
-    try testing.expect(model.show_shell());
-    try testing.expectEqual(nav.Screen.kds_board, model.screen());
+    // A waiter's row does not open the back office, and an admin's row
+    // does not open a service till - not even to the sign-in screen.
+    try testing.expect(!model.role_chosen);
+    try testing.expectEqual(nav.Screen.role_picker, model.screen());
+    try testing.expect(model.error_text.len > 0);
+}
 
-    const tree = try buildTree(arena, &model);
-    _ = try expectByText(tree.root, .text, "Kitchen");
+test "the picker opens only the roles this binary runs" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    for (std.enums.values(nav.Role)) |role| {
+        var model = main.initialModel();
+        main.update(&model, .{ .pick_role = @intFromEnum(role) }, &fx);
+
+        if (!core.allows_role(role)) {
+            try testing.expectEqual(nav.Screen.role_picker, model.screen());
+            try testing.expect(!model.role_chosen);
+            continue;
+        }
+        // A person lands on the sign-in; a device lands on its board,
+        // because a device signs in by being the device.
+        const expected: nav.Screen = if (role.needs_sign_in()) .login else rbac.home(role);
+        try testing.expectEqual(expected, model.screen());
+        try testing.expect(model.role_chosen);
+    }
 }
 
 test "a role cannot open a screen it may not use" {
+    // The kiosk is the one that signs in by device, so it reaches the
+    // shell without a PIN. The same rule for the PIN apps is walked in
+    // `tests_data.zig`, where a sign-in is possible.
+    if (app != .kiosk) return;
+
     var fx = try fakeFx();
     defer fx.deinit();
 
@@ -229,6 +271,8 @@ test "the permission matrix is total: every role against every screen" {
 }
 
 test "going back returns to the previous screen" {
+    if (app != .kiosk) return;
+
     var fx = try fakeFx();
     defer fx.deinit();
 
@@ -266,6 +310,8 @@ test "a full history drops its oldest entry, so navigation never freezes" {
 }
 
 test "pressing the current destination does not grow the history" {
+    if (app != .kiosk) return;
+
     var fx = try fakeFx();
     defer fx.deinit();
 
@@ -322,7 +368,11 @@ test "every text pair in the light and dark palettes clears WCAG AA" {
     }
 }
 
-test "changing role ends the previous operator's session" {
+test "changing the board ends the previous operator's session" {
+    // Only the kiosk runs more than one role, and its two roles are the
+    // boards. The PIN apps never change role, so the test is theirs.
+    if (app != .kiosk) return;
+
     var fx = try fakeFx();
     defer fx.deinit();
 
@@ -338,19 +388,20 @@ test "changing role ends the previous operator's session" {
     model.employee_id = 7;
     model.employee_name = "Anita";
 
-    // The next role is a new session, not the old one with a new label.
-    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.waiter) }, &fx);
+    // The next board is a new session, not the old one with a new label.
+    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.display) }, &fx);
 
-    try testing.expectEqual(nav.Role.waiter, model.role);
-    try testing.expect(!model.signed_in);
+    try testing.expectEqual(nav.Role.display, model.role);
+    // A board signs in by being the device, so it is signed in at once.
+    try testing.expect(model.signed_in);
     try testing.expectEqual(@as(i64, 0), model.employee_id);
     try testing.expectEqualStrings("", model.employee_name);
     try testing.expectEqual(@as(usize, 0), model.cart_count());
     try testing.expectEqual(@as(usize, 0), model.search.text().len);
     try testing.expectEqual(@as(i64, 0), model.selected_category);
-    try testing.expectEqual(nav.Screen.login, model.screen());
+    try testing.expectEqual(nav.Screen.display_board, model.screen());
     try testing.expectEqual(@as(usize, 1), model.stack.len);
-    try testing.expectEqual(nav.Screen.login, model.stack.current().?);
+    try testing.expectEqual(nav.Screen.display_board, model.stack.current().?);
 }
 
 test "signing out clears the cart, the filters and the operator" {
@@ -362,7 +413,7 @@ test "signing out clears the cart, the filters and the operator" {
         .{ .id = 1, .category_id = 0, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
     };
 
-    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.kds) }, &fx);
+    main.update(&model, .{ .pick_role = @intFromEnum(boot) }, &fx);
     main.update(&model, .{ .add_to_cart = 1 }, &fx);
     model.search.set("paneer");
     model.selected_category = 1;
@@ -373,14 +424,18 @@ test "signing out clears the cart, the filters and the operator" {
     main.update(&model, .{ .sign_out = {} }, &fx);
 
     try testing.expect(!model.signed_in);
-    try testing.expect(!model.role_chosen);
+    // A PIN app signs out to its sign-in; a board has no PIN, so it goes
+    // back to the picker that chooses the mode. Either way the role
+    // cannot change: it is the binary's.
+    const gate: nav.Screen = if (boot.needs_sign_in()) .login else .role_picker;
+    try testing.expectEqual(gate == .login, model.role_chosen);
+    try testing.expectEqual(gate, model.screen());
     try testing.expectEqual(@as(i64, 0), model.employee_id);
     try testing.expectEqualStrings("", model.employee_name);
     try testing.expectEqual(@as(usize, 0), model.cart_count());
     try testing.expectEqual(@as(usize, 0), model.search.text().len);
     try testing.expectEqual(@as(i64, 0), model.selected_category);
     try testing.expectEqual(@as(usize, 0), model.error_text.len);
-    try testing.expectEqual(nav.Screen.role_picker, model.screen());
 }
 
 test "the cart adds, counts and totals in minor units" {

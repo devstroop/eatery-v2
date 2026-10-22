@@ -28,6 +28,7 @@ const main = @import("main.zig");
 const core = @import("ros_core").model;
 const msg_mod = @import("ros_core").msg;
 const nav = @import("ros_core").navigation;
+const rbac = @import("ros_core").rbac;
 const repos = @import("ros_core").repos;
 const auth = @import("ros_core").auth;
 const domain = @import("ros_core").models;
@@ -1211,10 +1212,11 @@ test "the sign-in checks one person, not the whole staff list" {
     try testing.expectEqual(@as(usize, 0), harness.model.login_hash_len);
 }
 
-test "a person's sign-in opens the mode they are stored for" {
-    // A waiter is a waiter. The picker says WHO, and the mode comes
-    // from that person's row - so a waiter's PIN opens a waiter
-    // session, and it can never open an admin one.
+test "a person signs in to the role this app runs, and nobody else" {
+    // The picker says WHO, and the mode comes from that person's row -
+    // but the row and the binary have to agree. One binary runs one
+    // role: a person stored for another app is refused before the PIN
+    // is even asked for.
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
@@ -1241,22 +1243,22 @@ test "a person's sign-in opens the mode they are stored for" {
     harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
-    // Anita is an administrator: her sign-in opens the admin mode.
-    harness.signIn(1, "4821");
+    // The person whose row matches this binary signs in, and lands on
+    // the binary's home screen.
+    const own_id: i64 = if (core.app_kind == .admin) 1 else 2;
+    const other_id: i64 = if (own_id == 1) 2 else 1;
+    harness.signIn(own_id, "4821");
     try testing.expect(harness.model.signed_in);
-    try testing.expectEqual(nav.Role.admin, harness.model.role);
-    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
-    try testing.expectEqualStrings("Anita", harness.model.employee_name);
+    try testing.expectEqual(core.boot_role, harness.model.role);
+    try testing.expectEqual(rbac.home(core.boot_role), harness.model.screen());
 
-    // Ravi is a waiter: the same PIN, and a waiter session. The mode
-    // is his row's, not the till's.
+    // The other one is refused: a waiter's PIN does not open the back
+    // office, and an admin's does not open a service till.
     harness.send(Msg{ .sign_out = {} });
     harness.send(Msg{ .pick_role_again = {} });
-    harness.signIn(2, "4821");
-    try testing.expect(harness.model.signed_in);
-    try testing.expectEqual(nav.Role.waiter, harness.model.role);
-    try testing.expectEqual(@as(i64, 2), harness.model.employee_id);
-    try testing.expectEqualStrings("Ravi", harness.model.employee_name);
+    harness.signIn(other_id, "4821");
+    try testing.expect(!harness.model.signed_in);
+    try testing.expect(!harness.model.role_chosen);
 }
 
 test "a fresh installation gets a salt, stores it, and keeps it" {

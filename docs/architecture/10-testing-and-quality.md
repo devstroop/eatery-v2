@@ -51,7 +51,7 @@ audit](../review/docs-audit.md#d-007--the-rbac-matrix-test-is-tautological).
 How they run:
 
 ```
-native test apps/ros --yes
+native test apps/admin --yes
 ```
 
 The test block in `main.zig` imports `tests.zig`. Markup tests resolve the

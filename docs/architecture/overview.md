@@ -3,7 +3,7 @@
 > **Scope:** how the Restaurant OS app is put together — the app model, the
 > runtime lifecycle, the module map, the data flow, and the mechanics of
 > adding a screen.
-> **Source:** `apps/ros/src/**`, `apps/ros/app.json`, and the Native
+> **Source:** `apps/admin/src/**`, `apps/admin/app.json`, and the Native
 > SDK authoring guides in `native-zig-showcase/docs/sdk/`.
 > **Method:** read from source. The Native SDK CLI (`native`) is not on the
 > PATH in this workspace, so no build or test run backs the claims here.
@@ -276,7 +276,7 @@ to be copied — into the model's bump buffers. That rule is the reason
 
 ## 3. Module map
 
-`apps/ros/src/`, one line per module:
+`apps/admin/src/`, one line per module:
 
 | Path | Owns |
 |---|---|
@@ -298,7 +298,7 @@ to be copied — into the model's bump buffers. That rule is the reason
 | `schema/migrations.lock.json` | The migration authority: version 11, eleven per-file hashes, and a `schema_hash`. |
 | `screens/*.native` | Nine screen templates: setup, role picker, login, dashboard, POS, orders, confirmation, tables, kitchen. |
 | `tests.zig` | The rules the app must not break. Twelve tests, written as rules. |
-| `app.json` (in `apps/ros/`) | The manifest: identity, permissions, capabilities (`sqlite` among them), the shell window and its GPU surface, and the navigation policy. |
+| `app.json` (in `apps/admin/`) | The manifest: identity, permissions, capabilities (`sqlite` among them), the shell window and its GPU surface, and the navigation policy. |
 
 `src/components/` exists and is empty. It is the place for shared
 component templates once the screen count grows.
@@ -529,7 +529,7 @@ _ = try expectByText(tree.root, .text, "Restaurant OS");
 **12. Validate.**
 
 ```sh
-cd apps/ros
+cd apps/admin
 native check        # manifest, markup and schema validation
 native test         # headless update-logic and repository tests
 ```
@@ -576,7 +576,7 @@ const role_cards = [_]RoleCard{ ... };
 ### The four verbs
 
 ```sh
-cd apps/ros
+cd apps/admin
 native dev          # debug build + markup hot reload
 native test         # headless update-logic and repository tests
 native check        # manifest, markup and schema validation

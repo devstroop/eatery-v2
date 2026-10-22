@@ -1,6 +1,6 @@
 .{
-    .name = .ros,
-    .fingerprint = 0x835d32c25a707070,
+    .name = .ros_service,
+    .fingerprint = 0xd4fc5ef5354a9b2c,
     .version = "0.1.0",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{

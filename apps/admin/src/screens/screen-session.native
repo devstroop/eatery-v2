@@ -86,33 +86,37 @@
     <text foreground="text_muted">Who is using this device?</text>
 
     <column gap="8" width="420">
-      <for each="employees" key="id" as="employee">
-        <card padding="16">
-          <column gap="4" main="center">
-            <text size="lg">{employee.name}</text>
-            <text foreground="text_muted" wrap="true">{employee.role_label}</text>
-            <row gap="8" cross="center">
-              <badge>Sign in with a PIN</badge>
-              <spacer grow="1"/>
-              <button variant="primary" on-press="pick_employee:{employee.id}">Sign in</button>
-            </row>
-          </column>
-        </card>
-      </for>
+      <if test="{show_people}">
+        <for each="employees" key="id" as="employee">
+          <card padding="16">
+            <column gap="4" main="center">
+              <text size="lg">{employee.name}</text>
+              <text foreground="text_muted" wrap="true">{employee.role_label}</text>
+              <row gap="8" cross="center">
+                <badge>Sign in with a PIN</badge>
+                <spacer grow="1"/>
+                <button variant="primary" on-press="pick_employee:{employee.id}">Sign in</button>
+              </row>
+            </column>
+          </card>
+        </for>
+      </if>
 
-      <for each="device_cards" key="id" as="device">
-        <card padding="16">
-          <column gap="4" main="center">
-            <text size="lg">{device.title}</text>
-            <text foreground="text_muted" wrap="true">{device.blurb}</text>
-            <row gap="8" cross="center">
-              <badge>{device.kind}</badge>
-              <spacer grow="1"/>
-              <button variant="primary" on-press="pick_role:{device.id}">Open</button>
-            </row>
-          </column>
-        </card>
-      </for>
+      <if test="{show_device_cards}">
+        <for each="device_cards" key="id" as="device">
+          <card padding="16">
+            <column gap="4" main="center">
+              <text size="lg">{device.title}</text>
+              <text foreground="text_muted" wrap="true">{device.blurb}</text>
+              <row gap="8" cross="center">
+                <badge>{device.kind}</badge>
+                <spacer grow="1"/>
+                <button variant="primary" on-press="pick_role:{device.id}">Open</button>
+              </row>
+            </column>
+          </card>
+        </for>
+      </if>
     </column>
   </column>
 </template>

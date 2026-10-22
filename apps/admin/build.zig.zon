@@ -1,0 +1,11 @@
+.{
+    .name = .ros_admin,
+    .fingerprint = 0x5fe3c715f37daeb5,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .native_sdk = .{ .path = "../../.native-sdk" },
+        .ros_core = .{ .path = "../../packages/ros-core" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "app.json" },
+}

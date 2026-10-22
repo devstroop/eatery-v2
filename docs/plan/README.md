@@ -69,7 +69,7 @@ scheme collides (B-006), and the setup gaps remain (G-001).
 | [6](phase-6-sync-sidecar.md) | Sync sidecar | 10 d | Superseded by phase 9 | No |
 | [7](phase-7-printing-hardware.md) | Printing & hardware | 8 d | Scaffolded | No |
 | [8](phase-8-packaging-cutover.md) | Packaging & cutover | 5 d | Planned | No |
-| [9](phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP | 42 d | Planned | No |
+| [9](phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP | 42 d | Partial (9.1 done, the shells exist; the fabric does not) | No |
 
 Estimates are engineer-days for one developer familiar with Zig but new
 to the Native SDK, carried from the port plan. They do not include the

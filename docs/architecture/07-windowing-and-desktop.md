@@ -130,8 +130,8 @@ re-run while writing these docs. See the appendix in
 
 The showcase convention is a per-app job:
 
-1. `native check apps/ros`
-2. `native test apps/ros --yes`
+1. `native check apps/admin`
+2. `native test apps/admin --yes`
 3. `native build -Dautomation=true`
 4. run under a virtual display
 5. assert `gpu_nonblank=true`

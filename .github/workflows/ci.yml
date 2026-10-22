@@ -84,7 +84,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [ros]
+        app: [admin, service, kiosk]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Zig
@@ -133,10 +133,13 @@ jobs:
           set -euo pipefail
           cd "apps/${{ matrix.app }}"
           native build -Dautomation=true --yes
+          # The binary is named for the product, not the directory:
+          # apps/admin builds zig-out/bin/ros-admin.
+          bin="$(basename "$(find zig-out/bin -type f | head -1)")"
           rm -rf .zig-cache/native-sdk-automation
-          xvfb-run -a "./zig-out/bin/${{ matrix.app }}" &
+          xvfb-run -a "./zig-out/bin/$bin" &
           pid=$!
-          trap 'kill "$pid" >/dev/null 2>&1 || true; pkill -x "${{ matrix.app }}" >/dev/null 2>&1 || true' EXIT
+          trap 'kill "$pid" >/dev/null 2>&1 || true; pkill -x "$bin" >/dev/null 2>&1 || true' EXIT
           native automate wait
           native automate assert 'gpu_nonblank=true'
           native automate screenshot main-canvas

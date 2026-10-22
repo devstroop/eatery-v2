@@ -52,8 +52,8 @@ const shell_views = [_]native_sdk.ShellView{.{
     .label = canvas_label,
     .kind = .gpu_surface,
     .fill = true,
-    .role = "Restaurant OS canvas",
-    .accessibility_label = "Restaurant OS",
+    .role = "Restaurant OS Service canvas",
+    .accessibility_label = "Restaurant OS Service",
     .gpu_backend = .metal,
     .gpu_pixel_format = .bgra8_unorm,
     .gpu_present_mode = .timer,
@@ -63,7 +63,7 @@ const shell_views = [_]native_sdk.ShellView{.{
 }};
 const shell_windows = [_]native_sdk.ShellWindow{.{
     .label = "main",
-    .title = "Restaurant OS",
+    .title = "Restaurant OS Service",
     .width = window_width,
     .height = window_height,
     .views = &shell_views,
@@ -94,7 +94,7 @@ pub fn main(init: std.process.Init) !void {
     // `create` heap-allocates and constructs the model in place: the
     // model carries the row buffers and is far too large for the stack.
     const app_state = try RosApp.create(std.heap.page_allocator, .{
-        .name = "ros",
+        .name = "ros-service",
         .scene = shell_scene,
         .canvas_label = canvas_label,
         .update_fx = update_mod.update,
@@ -123,9 +123,9 @@ pub fn main(init: std.process.Init) !void {
     app_state.model.device_token_len = app_state.model.device_token_buf.len;
 
     try runner.runWithOptions(app_state.app(), .{
-        .app_name = "ros",
-        .window_title = "Restaurant OS",
-        .bundle_id = "com.devstroop.ros",
+        .app_name = "ros-service",
+        .window_title = "Restaurant OS Service",
+        .bundle_id = "com.devstroop.ros.service",
         .icon_path = "assets/icon.png",
         .default_frame = geometry.RectF.init(0, 0, window_width, window_height),
         .js_window_api = false,
@@ -138,5 +138,4 @@ pub fn main(init: std.process.Init) !void {
 
 test {
     _ = @import("tests.zig");
-    _ = @import("tests_data.zig");
 }

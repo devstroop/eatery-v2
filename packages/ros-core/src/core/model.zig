@@ -36,6 +36,40 @@ pub const Role = nav.Role;
 pub const Screen = nav.Screen;
 pub const Stack = nav.Stack;
 
+// ------------------------------------------------------------ the binary
+
+/// The app this binary is. One package, three binaries; this constant and
+/// the manifest are what make them different.
+const app_options = @import("app_options");
+
+pub const AppKind = enum { admin, service, kiosk };
+
+/// Declared by the app's build (`build.zig` adds the option to the
+/// `ros_core` module), so it is comptime-known and cannot drift from the
+/// manifest without the build failing.
+pub const app_kind: AppKind = std.meta.stringToEnum(AppKind, app_options.app) orelse
+    @compileError("app_options.app must be admin, service or kiosk");
+
+/// The role the binary boots into. The kiosk boots into the kitchen board;
+/// the install-time choice may move it to the customer display.
+pub const boot_role: Role = switch (app_kind) {
+    .admin => .admin,
+    .service => .waiter,
+    .kiosk => .kds,
+};
+
+/// Whether this binary may run `role` at all.
+///
+/// `rbac.allows` still decides which *screens* the role may open; this is
+/// the narrower question of which roles exist in this build.
+pub fn allows_role(role: Role) bool {
+    return switch (app_kind) {
+        .admin => role == .admin,
+        .service => role == .waiter,
+        .kiosk => role == .kds or role == .display,
+    };
+}
+
 // Dataset buffer sizes. A restaurant menu is small; these bounds are
 // deliberately generous and deliberately finite.
 pub const products_buffer = 96 * 1024;
@@ -160,8 +194,10 @@ pub const Model = struct {
 
     // ------------------------------------------------------------ session
 
-    /// Which operating mode this device runs in.
-    role: Role = .admin,
+    /// Which operating mode this device runs in. It is the binary's, not
+    /// the operator's: `admin` and `service` run one role, and only the
+    /// kiosk can be moved between its two board modes.
+    role: Role = boot_role,
     /// False until a role is chosen at the role picker.
     role_chosen: bool = false,
     /// True once a sign-in succeeded (kiosk roles sign in by device).
@@ -1578,6 +1614,19 @@ pub const Model = struct {
     /// waits for it.
     pub fn show_role_picker(model: *const Model) bool {
         return !model.role_chosen and !model.needs_setup;
+    }
+
+    /// The picker's device half: the two board modes, which sign in by
+    /// being the device. Only the kiosk has them.
+    pub fn show_device_cards(_: *const Model) bool {
+        return app_kind == .kiosk;
+    }
+
+    /// The picker's people half: the people who work here, each of whom
+    /// signs in with a PIN. The admin and service apps show it; the
+    /// kiosk does not, because nobody types a PIN into a board.
+    pub fn show_people(_: *const Model) bool {
+        return app_kind != .kiosk;
     }
 
     /// True when a role is chosen but nobody has signed in yet.

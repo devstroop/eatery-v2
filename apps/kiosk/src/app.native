@@ -1,0 +1,95 @@
+<!-- The kiosk app's shell: one board, and the screen that chooses which.
+
+     The kiosk runs a board, not a person: the kitchen display or the
+     customer display, chosen on the device and stored in it. The
+     content pane mounts those two boards and the order detail the
+     kitchen opens from a ticket - nothing that changes money.
+
+     The shell chrome is shared with the other two apps, because a fresh
+     installation has to be able to set itself up before it has a
+     board. -->
+
+<import src="screens/screen-session.native"/>
+<import src="screens/screen-orders.native"/>
+<import src="screens/screen-kitchen.native"/>
+
+<column grow="1" background="background">
+  <row padding="12" gap="8" cross="center" background="surface">
+    <text size="lg" grow="1">{company_label}</text>
+    <badge>{role_label}</badge>
+    <button size="sm" variant="ghost" on-press="toggle_theme">Theme</button>
+  </row>
+
+  <if test="{is_loading}">
+    <row padding="6" gap="8" cross="center" background="surface">
+      <text size="sm" foreground="text_muted">Loading...</text>
+    </row>
+  </if>
+
+  <if test="{has_error}">
+    <row padding="8" gap="8" cross="center" background="destructive">
+      <text foreground="destructive_text" grow="1">{error_message}</text>
+      <if test="{can_retry}">
+        <button size="sm" variant="ghost" on-press="retry_read">Try again</button>
+      </if>
+      <button size="sm" variant="ghost" on-press="dismiss_error">Dismiss</button>
+    </row>
+  </if>
+
+  <if test="{show_setup}">
+    <use template="screen-setup"/>
+  </if>
+
+  <if test="{show_create_company}">
+    <use template="screen-create-company"/>
+  </if>
+
+  <if test="{show_upgrade}">
+    <use template="screen-upgrade"/>
+  </if>
+
+  <if test="{show_landing}">
+    <use template="screen-landing"/>
+  </if>
+
+  <if test="{show_wizard}">
+    <use template="screen-wizard"/>
+  </if>
+
+  <if test="{show_role_picker}">
+    <use template="screen-role-picker"/>
+  </if>
+
+  <if test="{show_login}">
+    <use template="screen-login"/>
+  </if>
+
+  <if test="{show_shell}">
+    <split grow="1" value="{rail_split}" on-resize="rail_resized">
+      <column width="200" gap="2" padding="12" background="surface">
+        <text size="sm" foreground="text_muted">NAVIGATION</text>
+        <for each="nav_sections" key="id" as="section">
+          <list-item selected="{section.id == nav_section}" on-press="open_section:{section.id}">{section.label}</list-item>
+        </for>
+        <separator/>
+        <text size="sm" foreground="text_muted">{operator_label}</text>
+      </column>
+      <column grow="1">
+        <if test="{read_failed_here}">
+          <column grow="1" gap="8" padding="16" background="background">
+            <text size="heading">Could not load this</text>
+            <text foreground="text_muted">{error_message}</text>
+            <button variant="primary" on-press="retry_read">Try again</button>
+          </column>
+        </if>
+        <else>
+          <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
+          <if test="{screen_index == 41}"><use template="screen-kitchen"/></if>
+          <if test="{screen_index == 42}"><use template="screen-display"/></if>
+        </else>
+      </column>
+    </split>
+  </if>
+
+  <status-bar>{screen_title} | {company_label} | {operator_label}</status-bar>
+</column>

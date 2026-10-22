@@ -13,7 +13,7 @@ const native_sdk = @import("native_sdk");
 
 pub fn build(b: *std.Build) void {
     const artifacts = native_sdk.addAppArtifacts(b, b.dependency("native_sdk", .{}), .{
-        .name = "ros",
+        .name = "ros-kiosk",
         .manifest = "app.json",
     });
 
@@ -33,6 +33,13 @@ pub fn build(b: *std.Build) void {
     const sdk_mod = artifacts.tests.root_module.import_table.get("native_sdk").?;
     const ros_core = b.dependency("ros_core", .{}).module("ros_core");
     ros_core.addImport("native_sdk", sdk_mod);
+
+    // The core cannot import the app, so the app tells it which binary it
+    // is building: `admin`, `service` or `kiosk`. The constant fixes the
+    // role and decides whether the picker offers the device modes.
+    const app_options = b.addOptions();
+    app_options.addOption([]const u8, "app", "kiosk");
+    ros_core.addImport("app_options", app_options.createModule());
 
     artifacts.exe.root_module.addImport("ros_core", ros_core);
     artifacts.tests.root_module.addImport("ros_core", ros_core);

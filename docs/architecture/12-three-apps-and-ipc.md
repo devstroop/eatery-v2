@@ -1,9 +1,11 @@
 # Three apps and the protocol between them
 
-> **Status:** Target design. No code exists. The decision is
+> **Status:** Target design. The three shells exist and build
+> ([slice 9.1 and the shell split](../plan/phase-9-three-apps-and-ipc.md));
+> the fabric between them does not. The decision is
 > [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md); the delivery
 > order is [`plan/phase-9`](../plan/phase-9-three-apps-and-ipc.md).
-> **Last reviewed:** 2026-10-21, by source review of the SDK and Zig 0.16.
+> **Last reviewed:** 2026-10-23, after `apps/ros` became `apps/admin`.
 
 ## What this page is
 

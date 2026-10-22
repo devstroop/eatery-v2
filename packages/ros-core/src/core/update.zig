@@ -569,6 +569,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .pick_role => |index| {
             const role = std.enums.fromInt(Role, index) orelse return;
+            // A binary runs its own roles only. The kiosk may choose
+            // between its two boards; admin and service may not be moved
+            // to a role the build does not carry.
+            if (!model_mod.allows_role(role)) return;
             // Choosing a role is a session boundary. The previous
             // operator's cart, filters and history end here.
             resetSession(model, if (role.needs_sign_in()) .login else rbac.home(role));
@@ -611,6 +615,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.error_text = "That employee has no role this app knows";
                 return;
             };
+            // The app is one role. A waiter's row must not open the
+            // back office because the device happens to be an admin
+            // till: the person's role and the binary's role have to
+            // agree, which is the same rule the PIN check applies.
+            if (!model_mod.allows_role(role)) {
+                model.error_text = "That person does not work on this device";
+                return;
+            }
             resetSession(model, .login);
             model.role = role;
             model.role_chosen = true;
@@ -2047,6 +2059,12 @@ fn resetSession(model: *Model, gate: Screen) void {
     model.operator_buf.reset();
     model.pin.set("");
     model.login_error = "";
+
+    // The person the sign-in screen was asking about. A stale selection
+    // would let the next PIN typed at the picker open the previous
+    // person's session.
+    model.sign_in_employee_id = 0;
+    model.sign_in_employee_name_len = 0;
 
     // Nothing the last operator put in the cart or typed into a filter
     // belongs to the next one.

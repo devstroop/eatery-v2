@@ -1,9 +1,9 @@
 {
     "$schema": "https://schema.native-sdk.dev/app/v1.json",
-    "id": "com.devstroop.ros",
-    "name": "ros",
-    "display_name": "Restaurant OS",
-    "description": "Restaurant operating system: point of sale, kitchen display, customer display and back office in one native binary.",
+    "id": "com.devstroop.ros.service",
+    "name": "ros-service",
+    "display_name": "Restaurant OS Service",
+    "description": "Restaurant OS service: the waiter's floor, menu and open orders.",
     "version": "0.1.0",
     "icons": [
         "assets/icon.png"
@@ -40,7 +40,7 @@
         "windows": [
             {
                 "label": "main",
-                "title": "Restaurant OS",
+                "title": "Restaurant OS Service",
                 "width": 1280,
                 "height": 800,
                 "min_width": 960,
@@ -51,8 +51,8 @@
                         "label": "main-canvas",
                         "kind": "gpu_surface",
                         "fill": true,
-                        "role": "Restaurant OS canvas",
-                        "accessibility_label": "Restaurant OS",
+                        "role": "Restaurant OS Service canvas",
+                        "accessibility_label": "Restaurant OS Service",
                         "gpu_backend": "metal",
                         "gpu_pixel_format": "bgra8_unorm",
                         "gpu_present_mode": "timer",

@@ -10,7 +10,7 @@ set -u
 
 cd "$(dirname "$0")/.." || exit 1
 
-app="${1:-apps/ros}"
+app="${1:-apps/admin}"
 
 if ! command -v native >/dev/null 2>&1; then
   printf 'ros: the native CLI is not on PATH - run scripts/setup.sh\n' >&2

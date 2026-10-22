@@ -1,0 +1,104 @@
+<!-- The service app's shell: the waiter's rail and the waiter's screens.
+
+     The shell chrome is the same in all three apps - the title bar, the
+     loading and error banners, the session screens and the status bar -
+     because a fresh installation of any of them starts on the setup
+     screen. What differs is the content pane: only the screens the
+     waiter role may open are mounted here.
+
+     The gates are the `core/navigation.zig` enum indices. That enum is
+     append-only, so these numbers stay true. -->
+
+<import src="screens/screen-session.native"/>
+<import src="screens/screen-sell.native"/>
+<import src="screens/screen-orders.native"/>
+<import src="screens/screen-floor.native"/>
+<import src="screens/screen-people.native"/>
+<import src="screens/screen-service.native"/>
+
+<column grow="1" background="background">
+  <row padding="12" gap="8" cross="center" background="surface">
+    <text size="lg" grow="1">{company_label}</text>
+    <badge>{role_label}</badge>
+    <button size="sm" variant="ghost" on-press="toggle_theme">Theme</button>
+  </row>
+
+  <if test="{is_loading}">
+    <row padding="6" gap="8" cross="center" background="surface">
+      <text size="sm" foreground="text_muted">Loading...</text>
+    </row>
+  </if>
+
+  <if test="{has_error}">
+    <row padding="8" gap="8" cross="center" background="destructive">
+      <text foreground="destructive_text" grow="1">{error_message}</text>
+      <if test="{can_retry}">
+        <button size="sm" variant="ghost" on-press="retry_read">Try again</button>
+      </if>
+      <button size="sm" variant="ghost" on-press="dismiss_error">Dismiss</button>
+    </row>
+  </if>
+
+  <if test="{show_setup}">
+    <use template="screen-setup"/>
+  </if>
+
+  <if test="{show_create_company}">
+    <use template="screen-create-company"/>
+  </if>
+
+  <if test="{show_upgrade}">
+    <use template="screen-upgrade"/>
+  </if>
+
+  <if test="{show_landing}">
+    <use template="screen-landing"/>
+  </if>
+
+  <if test="{show_wizard}">
+    <use template="screen-wizard"/>
+  </if>
+
+  <if test="{show_role_picker}">
+    <use template="screen-role-picker"/>
+  </if>
+
+  <if test="{show_login}">
+    <use template="screen-login"/>
+  </if>
+
+  <if test="{show_shell}">
+    <split grow="1" value="{rail_split}" on-resize="rail_resized">
+      <column width="200" gap="2" padding="12" background="surface">
+        <text size="sm" foreground="text_muted">NAVIGATION</text>
+        <for each="nav_sections" key="id" as="section">
+          <list-item selected="{section.id == nav_section}" on-press="open_section:{section.id}">{section.label}</list-item>
+        </for>
+        <separator/>
+        <text size="sm" foreground="text_muted">{operator_label}</text>
+      </column>
+      <column grow="1">
+        <if test="{read_failed_here}">
+          <column grow="1" gap="8" padding="16" background="background">
+            <text size="heading">Could not load this</text>
+            <text foreground="text_muted">{error_message}</text>
+            <button variant="primary" on-press="retry_read">Try again</button>
+          </column>
+        </if>
+        <else>
+          <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
+          <if test="{screen_index == 13}"><use template="screen-orders"/></if>
+          <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
+          <if test="{screen_index == 16}"><use template="screen-customers"/></if>
+          <if test="{screen_index == 6}"><use template="screen-reset-pin"/></if>
+          <if test="{screen_index == 37}"><use template="screen-waiter-tables"/></if>
+          <if test="{screen_index == 38}"><use template="screen-waiter-menu"/></if>
+          <if test="{screen_index == 39}"><use template="screen-waiter-cart"/></if>
+          <if test="{screen_index == 40}"><use template="screen-waiter-orders"/></if>
+        </else>
+      </column>
+    </split>
+  </if>
+
+  <status-bar>{screen_title} | {company_label} | {operator_label}</status-bar>
+</column>
