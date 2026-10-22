@@ -236,9 +236,43 @@ shared package: a client built on `fx.fetch`, a server built on
 
 `GET /v1/hello` first, then `GET /v1/ops` and `POST /v1/ops`.
 
+**Landed** in `packages/ros-core/src/net/`, with the app-side joint in
+`packages/ros-core/src/core/net_bridge.zig`:
+
+| File | What it is |
+|---|---|
+| `protocol.zig` | the version, the ports, the endpoints, and the `Hello` card - one record, two carriers (beacon and `GET /v1/hello`) |
+| `record.zig` | the op record: encode, decode, validate, and the refusal of fractional money |
+| `cursor.zig` | the vector cursor - the highest clock applied, per source device |
+| `outbox.zig` | the per-connection answer slot, single-producer/single-consumer |
+| `server.zig` | the listener: HTTP/1.1 head and body, endpoint dispatch, the answer slot |
+| `client.zig` | the URLs and the NDJSON decode; the request itself is `fx.fetch` |
+| `discovery.zig` | the UDP beacon on 45872: send, receive, and a timeout that is not an error |
+| `../core/net_bridge.zig` | the joint with the app: opens the channel in `boot`, answers requests in `update`, records answers |
+
+`ros-admin` and `ros-service` answer `GET /v1/hello` with their own
+device id, role and bound port, and `404` for a path they do not serve.
+`GET /v1/ops` answers an empty NDJSON body and `POST /v1/ops` counts
+what it received: the ops themselves are 9.3, and an empty honest answer
+beats a fabricated one.
+
+Two limits are deliberate and written down rather than papered over:
+
+- **One connection at a time.** The listener reads a request, waits for
+  the answer, writes it and closes before accepting the next. That is
+  enough for three devices exchanging short requests; `/v1/events` (9.6)
+  holds a connection open, and that needs a thread per connection.
+- **The device id is the installation token**, stable for the life of the
+  process and not across restarts. 9.3 replaces it with the `device` row.
+
 **Done when:** two app instances on one machine exchange ops over a real
 socket, and the exchange is covered by a test that runs against the
 fake executor for the client side.
+
+It is: `server.zig`'s *two instances exchange an op over a real socket*
+runs two listeners in one process and moves an op between them over TCP,
+and `apps/admin/src/tests.zig` drives the client path through `update`
+with the `EffectResponse` the executor delivers.
 
 ### 9.3 — Ops in and ops out (5 days)
 

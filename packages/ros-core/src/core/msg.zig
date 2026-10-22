@@ -400,6 +400,14 @@ pub const Msg = union(enum) {
     /// The status write came back.
     order_status_saved: native_sdk.EffectDbResult,
 
+    // ------------------------------------------------------------- the wire
+
+    /// A frame from the net thread: the listener's port, or a request
+    /// for this device to answer.
+    net: native_sdk.EffectChannelEvent,
+    /// A peer's answer to a fetch this app made.
+    peer: native_sdk.EffectResponse,
+
     // -------------------------------------------------------------- data
 
     products_loaded: native_sdk.EffectDbResult,
@@ -469,6 +477,8 @@ pub const Msg = union(enum) {
     }
 
     pub const view_unbound = .{
+        "net",
+        "peer",
         "login_checked",
         "products_loaded",
         "categories_loaded",
