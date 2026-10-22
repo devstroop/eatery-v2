@@ -61,6 +61,9 @@ date before that phase starts.
 | A19 | What is the day boundary and timezone for reporting? | Epoch-ms is UTC; reports are local | Accountant + product | Product | Open |
 | A20 | What happens when two waiters edit one table? | Shared model and sync | Interviews + pilot | Product | Open |
 | A21 | Can a customer take the goods and settle later, and who may allow it? | An order now closes only when it is paid for, so "pay later" needs an explicit action | Interviews + product | Product | Open |
+| A22 | Is the counter POS the `admin` app or the `service` app? | The three-app split puts `pos` and `payments` in `admin` today, which means the till is the dedicated machine. If the till is a counter tablet, the permission matrix and the partition both change. | Product decision + a store visit | Product | Open |
+| A23 | Does the `service` app ever take money? | The waiter role cannot open `payments` today. If a waiter takes a card, the money must be replicated with the same discipline as the order. | Interviews + product | Product | Open |
+| A24 | Does the kiosk app run one board or both? | A single `kiosk` binary serves the kitchen and the customer display; the device chooses at install. A restaurant wanting both on one screen is a different requirement. | Store visit | Product | Open |
 
 ## B. Data and migration
 
@@ -119,6 +122,13 @@ date before that phase starts.
 | D10 | What happens after a restore from backup with an old clock? | Correctness | Design + test | Eng | Open |
 | D11 | How does a new device bootstrap: full snapshot or replay? | Time to join, data size | Design | Eng | Open |
 | D12 | Are there regulatory constraints on LAN traffic? | Security | Legal/IT review | Product | Open |
+| D13 | Are peers authenticated, and with what? | A trusted LAN means any device on the wire is a device in the restaurant. A shared secret in the handshake is the smallest answer that is not nothing. | Design | Eng | Open |
+| D14 | Which app owns which entity, formally? | The ownership table in `architecture/12` is a proposal. Moving an entity between owners later is a protocol change. | Design review | Eng | Open |
+| D15 | How are ops compacted into a snapshot, and when? | The log grows without bound and a device that joins late replays it. | Design + load test | Eng | Open |
+| D16 | What happens to the ops of a device that is removed from the restaurant? | The history of a sale outlives the till that took it | Product decision | Product | Open |
+| D17 | What is the acceptable convergence latency, and is a poll enough? | The kitchen board must show a ticket when it is placed, not on the next tick | Measurement | Product | Open |
+| D18 | Is the admin app the preferred bootstrap peer and the reference-data seed? | A peer design does not need a seed, but a restaurant with one always-on machine should not pay for a slower join | Design | Eng | Open |
+| D19 | Does the PIN salt become per-employee, or does the installation salt replicate as reference data? | The PIN hash is computed from the **installation** salt and the sign-in matches it for equality, and each app has its own installation salt - so the `service` app cannot let a waiter in. **Answered: per-employee**, by [#95](https://github.com/devstroop/eatery-v2/issues/95) - the sign-in identifies the employee before it hashes, so the row is self-verifying and no shared secret crosses the wire. | Product decision + a migration | Product/Eng | Answered - [#95](https://github.com/devstroop/eatery-v2/issues/95) |
 
 ## E. Printing and hardware
 
