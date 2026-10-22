@@ -74,24 +74,16 @@
   </column>
 </template>
 
-<!-- The picker: the first screen of the app. Two lists, because
-     there are two kinds of thing that uses a device.
-
-     A PERSON signs in. They say who they are, and then they prove it
-     with a PIN. Their stored role says which mode they work in, so
-     the picker does not ask twice.
-
-     A DEVICE signs in by being the device. The kitchen board and the
-     customer display are not a person, and nobody types a PIN into
-     them.
-
-     The choice is a message, not a route change: `update` moves the
-     model and the shell redraws. -->
+<!-- The role picker: the first screen of the app. A device runs one
+     role at a time, and the role decides which whole app the operator
+     sees - admin, waiter, kitchen display or customer display. The
+     choice is a message, not a route change: `update` moves the model
+     and the shell redraws. -->
 
 <template name="screen-role-picker">
   <column grow="1" gap="16" padding="32" main="center" cross="center" background="background">
 <text size="display">Restaurant OS</text>
-    <text foreground="text_muted">Choose how this device works today.</text>
+    <text foreground="text_muted">Who is using this device?</text>
 
     <column gap="8" width="420">
       <for each="employees" key="id" as="employee">
@@ -125,12 +117,10 @@
   </column>
 </template>
 
-<!-- The sign-in screen: a PIN pad for the person the picker chose.
-     The PIN is never stored in the clear - `update` reads the row the
-     picker named and checks the PIN against the hash in it, and a
-     bcrypt hash carries its own salt, so the check needs nothing
-     else. The error line comes from the model, so the view never
-     decides whether a sign-in failed. -->
+<!-- The sign-in screen: a PIN pad. The PIN is never stored in the
+     clear - `update` hashes it with the installation salt and asks the
+     database whether anybody matches. The error line comes from the
+     model, so the view never decides whether a sign-in failed. -->
 
 <template name="screen-login">
   <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
@@ -152,7 +142,6 @@
         </if>
         <button variant="primary" on-press="submit_login">Sign in</button>
 <button variant="ghost" on-press="pick_role_again">Change person</button>
-        <button variant="ghost" on-press="open_landing">About Restaurant OS</button>
       </column>
     </card>
   </column>

@@ -70,11 +70,16 @@ raw TCP.**
    | `kiosk` | `kds`, `display` | device | The kitchen board and the customer display |
 
    The role stops being model state and becomes a constant of the
-   binary: the role picker is no longer mounted in `admin` or `service`,
-   and in `kiosk` it survives as the one-time choice between the kitchen
-   board and the customer display. The permission matrix in `rbac.zig`
-   becomes three matrices that are each a subset of the one matrix it is
-   today.
+   binary. The permission matrix in `rbac.zig` becomes three matrices
+   that are each a subset of the one matrix it is today.
+
+   The picker changes meaning, and it changes because of
+   [ADR-0018](0018-the-pin-hash-is-the-employees.md): the sign-in
+   names the *person*, and the PIN says they are that person. So the
+   picker is a list of the people who work here, each with the mode they
+   work in, and it is the way in to the PIN - which means `admin` and
+   `service` both need it, and `kiosk` carries the two device modes
+   with it. It is mounted in all three apps.
 
 2. **One shared core.** The domain, the model, the messages, `update`,
    the repositories and the wire protocol live in one package that all

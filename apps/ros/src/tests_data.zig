@@ -1593,11 +1593,14 @@ test "a fresh install becomes a restaurant through the app alone" {
 
     // The operator's PIN is the one they chose, and the database holds
     // a hash of it and never the PIN. The sign-in names the person
-    // first: the operator is the setup's first employee.
-    harness.loadEmployees();
-    harness.send(Msg{ .pick_employee = repos.first_employee_id });
+    // first, and the PIN says they are that person.
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
+    harness.model.pin.set("482155");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+    harness.loadEmployees();
+    harness.send(Msg{ .pick_employee = 1 });
     harness.model.pin.set("482155");
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(harness.model.signed_in);
@@ -2234,11 +2237,17 @@ test "a manager can reset an employee's PIN" {
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
     harness.model.pin.set("482155");
+    harness.loadEmployees();
+    harness.send(Msg{ .pick_employee = 7 });
+    harness.model.pin.set("482155");
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(!harness.model.signed_in);
 
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
+    harness.model.pin.set("918273");
+    harness.loadEmployees();
+    harness.send(Msg{ .pick_employee = 7 });
     harness.model.pin.set("918273");
     harness.send(Msg{ .submit_login = {} });
     try testing.expect(harness.model.signed_in);

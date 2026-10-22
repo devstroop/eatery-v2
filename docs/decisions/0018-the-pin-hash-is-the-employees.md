@@ -1,6 +1,6 @@
 # ADR-0018: The PIN hash is the employee's
 
-> **Status:** Proposed
+> **Status:** Accepted
 > **Date:** 2026-10-22
 > **Deciders:** Devstroop maintainers
 > **Related:** [ADR-0016](0016-what-a-pin-is.md) (decision 3 is

@@ -19,8 +19,8 @@ It is the target, not the as-built. The as-built picture is
 
 | App | Role | Sign-in | Home | Screens |
 |---|---|---|---|---|
-| `admin` | `admin` | PIN | `admin_dashboard` | 38 |
-| `service` | `waiter` | PIN | `waiter_tables` | 11 |
+| `admin` | `admin` | PIN | `admin_dashboard` | 50 |
+| `service` | `waiter` | PIN | `waiter_tables` | 9 |
 | `kiosk` | `kds` or `display`, chosen at install | device | `kds_board` or `display_board` | 3 per mode |
 
 Each app is a separate Native SDK app: its own `app.json`, its own id
@@ -34,12 +34,26 @@ The split follows the permission matrix in `src/core/rbac.zig` exactly.
 `Role.needs_sign_in()` is already the boundary: `admin` and `waiter`
 sign in with a PIN, `kds` and `display` sign in by device.
 
-The counts are read off the enum and the matrix, not estimated: the
-`admin` app mounts the 38 screens that are neither the role picker, the
-four waiter screens nor the two kiosk boards; the `service` app mounts
-the 11 the waiter role may open, less the role picker; the `kiosk` app
-mounts 3 per mode - its board, `login` and `order_detail` - plus the
-role picker on first run.
+The counts are read off the enum and the matrix, not estimated. The
+`admin` app mounts the 50 screens the admin role may open, less the
+three every app shares; the `service` app mounts the 9 the waiter role
+may open, less those three; the `kiosk` app mounts 3 per mode - its
+board and `order_detail` - plus the person picker and the sign-in.
+
+**These counts move, and they have moved.** The first draft of this
+page said 38, 11 and 3, read off the enum as it stood on 2026-10-21.
+The enum has grown since - the back office added the payments, the
+report, the stock, the dishes, the control centre, the database
+inspector, the customer and modifier forms, the cart, the table
+categories and the floor plan - and the numbers with it. The counts
+here are read off the tree **this phase will be built on**, which is
+the back office merged: 53 screens in the enum, 50 for the admin app.
+
+The partition is not something to maintain by hand. The matrix is
+walked against the enum by a test in `src/tests.zig`, and the shell's
+gates are pinned to the enum by another, so a screen cannot be added
+or moved without a test saying so. The table below is the partition
+those two tests describe.
 
 | Screen group | admin | service | kiosk |
 |---|---|---|---|
@@ -53,21 +67,39 @@ role picker on first run.
 | `dining_tables`, `table_categories`, `floor_plan`, `reservations` | ● | | |
 | `kitchen_dishes`, `inventory_items`, `product_categories`, `suppliers`, `purchase_orders` | ● | | |
 | `employees`, `employee_form`, `reports` | ● | | |
-| `settings` and its six children, `data_management`, `db_inspector` | ● | | |
+| `settings`, `settings_company`, `settings_currency`, `settings_tax`, `settings_modifiers`, `settings_discounts`, `settings_printers`, `data_management`, `db_inspector` | ● | | |
 | `product_form` | ● | | |
+| `tax_slab_form`, `discount_form`, `category_form`, `categories` | ● | | |
+| `modifier_group_form`, `customer_form`, `table_category_form`, `stock_count` | ● | | |
 | `waiter_tables`, `waiter_menu`, `waiter_cart`, `waiter_orders` | | ● | |
 | `kds_board` | | | ● in kitchen mode |
 | `display_board` | | | ● in display mode |
 | `login` | ● | ● | ● |
 | `landing`, `reset_pin` | ● | ● | |
 | `setup`, `wizard`, `create_company`, `upgrade` | ● | | |
-| `role_picker` | | | ● on first run |
+| `role_picker` (the person picker) | ● | ● | ● |
 
-`role_picker` is the one screen whose meaning changes. It was a runtime
-choice between four roles; in the three apps it survives only in
-`kiosk`, where it chooses between the kitchen board and the customer
-display on first run and the answer is stored in the device's
-configuration. In `admin` and `service` it is never mounted.
+`role_picker` is the one screen whose meaning changes, and **it is
+mounted in all three apps** - which is a change from the first draft of
+this page, and the change is a correction.
+
+Under [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)
+the sign-in names the *person* and the PIN says they are that person.
+So the picker is no longer a choice between four roles: it is a list of
+the people who work here, each with the mode they work in, and it is
+the way in to the PIN. `admin` and `service` both sign in with a PIN,
+so both need it. In `kiosk` it carries the two device modes as well -
+the kitchen board and the customer display are not people, and nobody
+types a PIN into them - and the choice is stored in the device's
+configuration.
+
+The first draft of this page said the picker survived only in `kiosk`.
+That was written against the salt being settled but not implemented, and
+it does not match the code: `pick_employee` in `core/update.zig` is the
+entry to the PIN, and the login screen refuses a sign-in with "Choose
+who you are first" when it has not been sent. The enum's name stays -
+the enum is append-only - but the screen behind it is the **person
+picker** now, and it is mounted wherever a person signs in.
 
 The `Screen` enum stays append-only. Nothing is renumbered and no
 ordinal moves: the markup's contract is the enum's order, and the
@@ -141,14 +173,6 @@ This outbox is the one piece of shared mutable state in an app. It is
 app-owned memory, not the world: no clock, no allocator, no I/O happens
 in `update`. It is called out here because it is the one place the
 design bends, and because a reader should be able to find it.
-
-**The sign-in problem is solved, and it is worth saying how.** The
-employee row carries a bcrypt hash, and a bcrypt string carries its own
-salt. So a peer that holds the row can check a PIN against it with
-nothing else - no installation salt, no shared secret, nothing to
-protect on the wire. That is what the per-employee salt bought: the
-hash is the employee's, and the row is self-verifying. See
-[ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md).
 
 **It does not need a lock, and that is a finding rather than a
 preference.** `std.Thread.Mutex` is gone in Zig 0.16, and
@@ -418,7 +442,7 @@ impossible, and only accepted where it cannot.
 | Entity | Writer | How it reaches other devices | Merge |
 |---|---|---|---|
 | Company, settings, tax slabs, printers | `admin` | `GET /v1/reference` | The admin's row wins; a peer accepts only a newer version |
-| Employees and PINs | `admin` | `GET /v1/reference` | Same. A PIN hash carries its own salt, so the row verifies a PIN by itself - **no secret travels** ([ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)) |
+| Employees and PINs | `admin` | `GET /v1/reference` | Same - but see [The sign-in problem](#the-sign-in-problem) before trusting this row |
 | Product categories, products, modifier groups | `admin` | `GET /v1/reference` | Same |
 | Dining tables, table categories | `admin` | `GET /v1/reference` | Same |
 | Customers | the device that created the row | ops | Last writer - on the **vector** clock and then the device id, because two devices' scalar clocks are not comparable |
@@ -509,15 +533,18 @@ the whole three-app design needs. Option A is cheaper to build and
 weakens the threat model in a way that is awkward to undo later, because
 once a secret has crossed a wire in plaintext it has crossed it.
 
+The question belongs to the product as much as to engineering, so it is
+[open question D19](../plan/open-questions.md) and it must be answered
+before the protocol is frozen - not during the implementation of it.
+
 **It is answered: the salt becomes per-employee**, by
-[ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md) and
-[#95](https://github.com/devstroop/ros/issues/95). The sign-in
+[#95](https://github.com/devstroop/ros/issues/95) - the sign-in
 identifies the employee before it hashes, so the row is self-verifying
-and no shared secret crosses the wire. The picker that makes this
-possible sits *in place of the role picker*, which the three-app split
-makes convenient: the `service` app signs in by picking an employee,
-and the role picker is only still needed by `kiosk`, for the choice
-between the kitchen board and the customer display.
+and no shared secret crosses the wire. That issue also plans the picker
+*in place of the role picker*, which the three-app split makes
+convenient: the `service` app signs in by picking an employee, and the
+role picker is only still needed by `kiosk`, for the choice between the
+kitchen board and the customer display.
 
 Whichever way it goes, one thing is settled now: **the employee row
 replicates as reference data, and the row must contain everything a
