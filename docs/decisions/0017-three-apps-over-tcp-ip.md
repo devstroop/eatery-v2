@@ -233,6 +233,32 @@ paths are given so a reader can check the claim rather than trust it.
 - [`architecture/08`](../architecture/08-sync.md): the
   transport-out, protocol-in shape this refines.
 
+**Proved by running it** - `apps/net-spike`, in this repository, in
+the suite. A net thread with a real listener and an app with a real
+model, calling its own listener:
+
+- a `std.Io.net` listener in a `main` thread accepts a connection and
+  serves HTTP/1.1;
+- `fx.fetch` reaches it, and the response arrives as a `Msg`;
+- bytes posted with `ChannelHandle.post` arrive as a `Msg` payload, and
+  a response written by `update` reaches the socket.
+
+```
+SEAM: the net thread bound port 63627
+SEAM: fetch outcome=ok status=200 body="pong" -> SEAM OK
+```
+
+It settled that the outbox needs **no lock**: `std.Thread.Mutex` is
+gone in Zig 0.16 and `std.Io.Mutex` needs the `Io` that `update` does
+not have, so the ring is single-producer/single-consumer and two
+atomic counters do the job. It settled that the outbox must be **per
+connection**, because a frame carries no peer id and an answer could
+otherwise reach the wrong peer. It settled that a thread owning a
+socket needs a **stop** that makes `accept` return, because a flag
+alone cannot. And it settled that plain `http://` works, because the
+SDK's fetch is built on Zig's `std.http.Client` rather than on the
+platform's, so App Transport Security does not apply.
+
 **In the Native SDK** (`~/native-sdk`, v0.11.0):
 
 - `src/runtime/effects.zig`: `FetchOptions` - the `url` is "http:// or

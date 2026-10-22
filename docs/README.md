@@ -135,6 +135,7 @@ until the three-app one is accepted.
 | [plan/phase-7-printing-hardware](plan/phase-7-printing-hardware.md) | Printing and devices |
 | [plan/phase-8-packaging-cutover](plan/phase-8-packaging-cutover.md) | Packaging, migration, release |
 | [plan/phase-9-three-apps-and-ipc](plan/phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP; supersedes phase 6 |
+| [apps/net-spike](../apps/net-spike/README.md) | The seam: a net thread and the loop thread, proved by running |
 | [plan/risks](plan/risks.md) | Risk register |
 | [plan/open-questions](plan/open-questions.md) | Known unknowns and unknown unknowns |
 
