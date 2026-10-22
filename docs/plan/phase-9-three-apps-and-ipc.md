@@ -53,7 +53,7 @@ the mDNS, the WebSocket and the host election.
 | Packages | A shared package; three app packages that depend on it |
 | Manifests | Three manifests with three ids |
 | The role | A constant per binary instead of model state |
-| Screens | A partition, and the retirement of the role picker |
+| Screens | A partition, and the role picker as a person picker in all three apps |
 | Wire | A frame format, an endpoint set, a version |
 | Client | Nothing: `fx.fetch` is the client |
 | Server | A TCP listener on `std.Io.net`, an HTTP/1.1 parser, a writer |
@@ -70,7 +70,62 @@ the mDNS, the WebSocket and the host election.
 ## The slices
 
 Each slice leaves the tree green. `scripts/verify-all.sh` and
-`scripts/build.sh` are green after every one of them.
+`scripts/build.sh` are green after every one of them - and no slice
+leaves a restaurant unable to serve, which is a stronger rule and the
+one the [order](#the-order-of-the-slices) is built around.
+
+### What this phase costs to merge with the back office
+
+The back-office work (PR #101) and this branch touch the same ten
+files, and the merge is small. It has been done and measured: three
+files conflict, and the whole of the resolution is one line plus three
+test changes.
+
+| Conflict | What it is | How it resolves |
+|---|---|---|
+| `core/update.zig` | The boot reads, and the salt change adds one more read | Both sides keep their reads; the loader takes the model, so the calls change shape |
+| `screens/screen-login.native`, `screens/screen-role-picker.native` | The back office grouped the session screens into one file, and the salt change edited them where they were | The salt change's two templates move into the grouped file |
+| `core/update.zig` (the PIN reset) | `hashPin` now takes the employee's id, because the hash is the employee's | One argument: the reset already knows whose PIN it is resetting |
+| `tests_data.zig` | The sign-in names the person before it hashes | The tests pick a person and type the PIN again, because a failed attempt clears it |
+
+Merged, the two lines of work run **123/123 green**. That number is
+worth having before the phase starts: the split is not a fork of the
+back office, it is a continuation of it.
+
+### The order of the slices
+
+**The split comes last, and the reason is the database.**
+
+Each app gets its own engine-owned database in its own data directory,
+and the database cannot be shared. So replication over the network is
+mandatory for **any** multi-device deployment - one binary with four
+roles on three machines needs it just as much as three binaries do.
+The split does not cause the fabric; the SDK's pathless database does.
+
+That has a consequence for the order, and the consequence is not
+cosmetic. If the three shells are built before the fabric, then for
+the slices in between:
+
+- the `service` app **cannot sign anybody in**. The sign-in names the
+  person, and the picker lists the people who work here - and the
+  service app's own database has none of them, because the people
+  arrive as reference data in 9.5. The salt (9.0) fixes the *hash*; it
+  does not deliver the *rows*;
+- the `kiosk` board **shows no orders**, because the orders arrive as
+  ops in 9.3 and are pushed in 9.6;
+- a restaurant running the three apps **cannot serve a customer**.
+
+A green test suite is not a working restaurant, and the slices are
+ordered so that no slice leaves a restaurant worse off than the one
+before it. The split is a **release event, not a development event**:
+the code can be written early, but the three apps are not what a
+restaurant runs until the fabric under them works.
+
+The other half of the order is the same argument seen from the other
+side: the protocol is the risky part - it is the only part of the
+phase that has to survive a network - and the spike exists to find out
+whether it can be done at all. So the risky part goes first, while
+there is still one app to fall back on.
 
 ### 9.0 — The blockers (6 days)
 
@@ -111,7 +166,7 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
    platform's, so App Transport Security does not stand in the way of a
    LAN address.
 
-   What it does not prove, and what slice 9.3 must: a **peer on a
+   What it does not prove, and what slice 9.2 must: a **peer on a
    different machine** - the spike fetches its own listener, so the
    traffic never leaves the host, and a same-subnet bind proves the
    seam but not the network; more than one connection in flight at
@@ -127,21 +182,33 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
    EATERY_SPIKE_BIND=192.168.1.42 ./zig-out/bin/net-spike
    ```
 
-2. **The salt** (4 days) — **NOT DONE.** Settle the sign-in, because
-   the `service` app cannot let a waiter in until it is settled: the
-   PIN hash is computed from the **installation** salt and the sign-in
-   matches that hash for equality, and each app has its own
-   installation salt. **Decided: the salt becomes per-employee**, by
-   [#95](https://github.com/devstroop/eatery-v2/issues/95) - the sign-in
-   identifies the employee before it hashes, so the employee row is
-   self-verifying and no shared secret has to cross the wire. This
-   slice implements it: the migration, the sign-in, and the picker that
-   replaces the role picker. See
+2. **The salt** (4 days) - **DONE.** The `service` app cannot let a
+   waiter in unless the sign-in works without the installation salt,
+   and each app has its own installation salt.
+
+   **This one does not wait for the go/no-go, and it should not.** It
+   is the recorded follow-up of an *accepted* decision (ADR-0016 says
+   the per-employee salt is the fix, "when the sign-in can identify the
+   employee before it hashes"), it stands on its own as a security
+   property - a cracked database gives up one PIN, not every PIN - and
+   it makes the sign-in better for the same product: a person picks
+   their own name instead of a role. Landed on its own, it is a
+   security fix; held until the three apps are decided, it is a
+   security fix that waits for a product decision about packaging. **The salt becomes
+   per-employee**, by
+   [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)
+   and [#95](https://github.com/devstroop/eatery-v2/issues/95) - the
+   sign-in identifies the employee before it hashes, so the employee row
+   is self-verifying and no shared secret has to cross the wire. The
+   picker that makes this possible sits in place of the role picker: a
+   person is on the picker with the mode they work in, and the two
+   device modes sign in by being the device. It landed on `develop` on
+   its own in [#117](https://github.com/devstroop/ros/pull/117). See
    [`architecture/12`](../architecture/12-three-apps-and-ipc.md#the-sign-in-problem).
 
 **Done when:** one app, one loop thread, one net thread, one request
-answered, one test per direction; and the salt decision written down in
-an ADR and implemented.
+answered, one test per direction; and the salt landed on `develop` in
+[#117](https://github.com/devstroop/ros/pull/117).
 
 ### 9.1 — The package split (3 days)
 
@@ -154,18 +221,7 @@ app keeps working, and its tests keep passing.
 the domain and the schema; `apps/eatery` is a shell over it; the suite
 is green and unchanged.
 
-### 9.2 — The three shells (4 days)
-
-Add `apps/admin`, `apps/service` and `apps/kiosk`. Each declares its
-role as a constant. Each mounts its own screens and its own import
-closure. `role_picker` survives only in `kiosk`, as the first-run choice
-between the kitchen board and the customer display.
-
-**Done when:** three binaries build; each refuses the screens its role
-may not open, by the same code path and the same test as today; the
-permission matrix test walks all three.
-
-### 9.3 — The wire (5 days)
+### 9.2 — The wire (5 days)
 
 The frame format, the endpoints, the version. A `net` module in the
 shared package: a client built on `fx.fetch`, a server built on
@@ -177,7 +233,7 @@ shared package: a client built on `fx.fetch`, a server built on
 socket, and the exchange is covered by a test that runs against the
 fake executor for the client side.
 
-### 9.4 — Ops in and ops out (5 days)
+### 9.3 — Ops in and ops out (5 days)
 
 Every mutation writes an `op_log` row in the same transaction as the
 write itself - `saveOrder` and `setOrderStatus` already build
@@ -198,7 +254,7 @@ an op delivered twice changes nothing the second time, and a test
 proves that ops from two peers with unrelated counters are both
 delivered.
 
-### 9.5 — Discovery (2 days)
+### 9.4 — Discovery (2 days)
 
 The UDP beacon, the peer list, and the manual address. The port is
 chosen at bind time and advertised, so three apps on one machine do not
@@ -207,7 +263,7 @@ collide.
 **Done when:** an app finds a peer with no configuration on a plain LAN,
 and a second app with a manually entered address finds it too.
 
-### 9.6 — Reference data (4 days)
+### 9.5 — Reference data (4 days)
 
 The admin app owns the reference rows and pushes them with a version
 number. A peer accepts only a newer version, and keeps the last one it
@@ -216,7 +272,7 @@ received when the admin app is away.
 **Done when:** a catalogue edit in the admin app reaches the service and
 kiosk apps, and a peer that misses it gets it on reconnect.
 
-### 9.7 — Push (3 days)
+### 9.6 — Push (3 days)
 
 `GET /v1/events`, held open by the server, read by the client with
 `fx.fetch` in `.stream` mode. The kitchen board updates when the order
@@ -225,7 +281,7 @@ is placed, not on the next poll.
 **Done when:** an order placed on the service app appears on the kiosk
 app's board without a poll tick in between.
 
-### 9.8 — Bootstrap, compaction and the three-device proof (6 days)
+### 9.7 — Bootstrap, compaction and the three-device proof (6 days)
 
 A device that joins replays the log; a compacted log answers with a
 snapshot. The op log grows, so it is summarised. Then the proof: three
@@ -235,6 +291,24 @@ middle of it.
 **Done when:** the kitchen keeps cooking and the till keeps selling
 with the admin app closed; a device that has been off for a week
 converges; the log is compacted and a new device still converges.
+
+### 9.8 — The three shells (4 days)
+
+Add `apps/admin`, `apps/service` and `apps/kiosk`. Each declares its
+role as a constant. Each mounts its own screens and its own import
+closure.
+
+This slice is **last before the release**, and that is the point. The
+split is not what makes the three apps talk to each other - the
+SDK's pathless database does that, and it does it whether there is one
+binary or three. The split is a packaging and a safety decision on top
+of a fabric that already works, so it belongs at the end of the fabric
+and not in the middle of it. See [the order of the slices](#the-order-of-the-slices).
+
+**Done when:** three binaries build; each refuses the screens its role
+may not open, by the same code path and the same test as today; the
+permission matrix test walks all three; and a restaurant running the
+three apps serves a customer exactly as it did when it ran one.
 
 ### 9.9 — Packaging (4 days, overlaps Phase 8)
 
@@ -265,11 +339,11 @@ kiosk asks for the Local Network permission in its own words.
 |---|---|
 | The outbox seam breaks the pure-core rule | 9.0 exists only to find this out, before anything is built on it. If it breaks, the protocol moves to a polling model and the transport gets simpler. |
 | **No waiter can sign in on the `service` app** | The installation salt is per app and the hash is matched for equality, so the sign-in does not work across apps as the code stands. Decided: the salt becomes per-employee ([#95](https://github.com/devstroop/eatery-v2/issues/95)), and slice 9.0 implements it before the protocol is frozen. |
-| A scalar cursor drops ops | The cursor is a vector, per source device, and 9.4 has a test with two peers whose counters disagree. |
+| A scalar cursor drops ops | The cursor is a vector, per source device, and 9.3 has a test with two peers whose counters disagree. |
 | Three apps drift apart | The shared package is one package; the build proves all three compile against it. A fix lands in one place. |
 | The protocol changes after devices ship | Freeze it before the first restaurant. `/v1/hello` carries the version and a mismatched peer refuses to talk rather than half-working. |
 | Broadcast is blocked, or macOS withholds the Local Network permission | The manual address is a first-class path, not a fallback. The kiosk's install asks for the permission. |
-| The op log grows without bound | Compaction is in 9.8, not later. A snapshot is the answer to a device that joins late. |
+| The op log grows without bound | Compaction is in 9.7, not later. A snapshot is the answer to a device that joins late. |
 | Two waiters edit one table's order | Already an open question (A20). The ownership table in `architecture/12` names the one place where a conflict is accepted. |
 | The admin app owns too much | Reference data is a small, slow-changing set. If the split is wrong, moving an entity between owners is a protocol change, not a rewrite. |
 | Security is a trusted LAN | An explicit decision with a named follow-up: a shared secret in `/v1/hello`. Small, and it should land before the first real restaurant. |
