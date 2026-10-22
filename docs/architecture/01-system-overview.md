@@ -189,3 +189,5 @@ See [`plan/status.md`](../plan/status.md) for the screen-by-screen view.
 - The contract: [02-app-model-and-effects](02-app-model-and-effects.md)
 - The as-built picture: [plan/status](../plan/status.md)
 - The unknowns: [plan/open-questions](../plan/open-questions.md)
+- The target shape, once the one binary becomes three:
+  [12-three-apps-and-ipc](12-three-apps-and-ipc.md)
