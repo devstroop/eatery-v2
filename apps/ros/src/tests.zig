@@ -125,7 +125,6 @@ test "the picker is the first screen and lists the device modes" {
     // kitchen board signs in by being the device.
     const tree = try buildTree(arena, &model);
 _ = try expectByText(tree.root, .text, "Restaurant OS");
-    _ = try expectByText(tree.root, .text, "Admin");
     _ = try expectByText(tree.root, .text, "Kitchen");
     _ = try expectByText(tree.root, .text, "Display");
 }

@@ -124,7 +124,7 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
    exercisable without a rebuild:
 
    ```sh
-   EATERY_SPIKE_BIND=192.168.1.42 ./zig-out/bin/net-spike
+   ROS_SPIKE_BIND=192.168.1.42 ./zig-out/bin/net-spike
    ```
 
 2. **The salt** (4 days) - **DONE.** The `service` app cannot let a
@@ -132,7 +132,7 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
    and each app has its own installation salt. **The salt becomes
    per-employee**, by
    [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)
-   and [#95](https://github.com/devstroop/eatery-v2/issues/95) - the
+   and [#95](https://github.com/devstroop/ros/issues/95) - the
    sign-in identifies the employee before it hashes, so the employee row
    is self-verifying and no shared secret has to cross the wire. The
    picker that makes this possible sits in place of the role picker: a
@@ -146,13 +146,13 @@ an ADR and implemented.
 
 ### 9.1 — The package split (3 days)
 
-Move the shared code into `packages/eatery-core` and make the three
+Move the shared code into `packages/ros-core` and make the three
 apps depend on it. `native eject` each app so the build owns its
 dependency on the shared package. **No behaviour changes.** The single
 app keeps working, and its tests keep passing.
 
-**Done when:** `packages/eatery-core` holds the core, the data layer,
-the domain and the schema; `apps/eatery` is a shell over it; the suite
+**Done when:** `packages/ros-core` holds the core, the data layer,
+the domain and the schema; `apps/ros` is a shell over it; the suite
 is green and unchanged.
 
 ### 9.2 — The three shells (4 days)
@@ -265,7 +265,7 @@ kiosk asks for the Local Network permission in its own words.
 | Risk | Mitigation |
 |---|---|
 | The outbox seam breaks the pure-core rule | 9.0 exists only to find this out, before anything is built on it. If it breaks, the protocol moves to a polling model and the transport gets simpler. |
-| **No waiter can sign in on the `service` app** | The installation salt is per app and the hash is matched for equality, so the sign-in does not work across apps as the code stands. Decided: the salt becomes per-employee ([#95](https://github.com/devstroop/eatery-v2/issues/95)), and slice 9.0 implements it before the protocol is frozen. |
+| **No waiter can sign in on the `service` app** | The installation salt is per app and the hash is matched for equality, so the sign-in does not work across apps as the code stands. Decided: the salt becomes per-employee ([#95](https://github.com/devstroop/ros/issues/95)), and slice 9.0 implements it before the protocol is frozen. |
 | A scalar cursor drops ops | The cursor is a vector, per source device, and 9.4 has a test with two peers whose counters disagree. |
 | Three apps drift apart | The shared package is one package; the build proves all three compile against it. A fix lands in one place. |
 | The protocol changes after devices ship | Freeze it before the first restaurant. `/v1/hello` carries the version and a mismatched peer refuses to talk rather than half-working. |
@@ -279,7 +279,7 @@ kiosk asks for the Local Network permission in its own words.
 
 - **The PIN salt is decided and landed**: per-employee, by
   [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)
-  and [#95](https://github.com/devstroop/eatery-v2/issues/95). The
+  and [#95](https://github.com/devstroop/ros/issues/95). The
   sign-in now works across the apps: the employee row is
   self-verifying, and no secret crosses the wire.
 - Is the counter POS the `admin` app or the `service` app? The matrix

@@ -2,7 +2,7 @@
 
 > **Status:** Proposed
 > **Date:** 2026-10-22
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [ADR-0016](0016-what-a-pin-is.md) (decision 3 is
 > replaced by this one; the rest of it stands),
 > [ADR-0017](0017-three-apps-over-tcp-ip.md),
