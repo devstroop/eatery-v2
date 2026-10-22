@@ -65,6 +65,21 @@ pub fn home(role: Role) Screen {
     };
 }
 
+/// The operating mode an employee works in, from their stored role.
+///
+/// The reverse of `employee_role`: the picker knows a PERSON, and a
+/// person's role says which mode they work in. Null when the stored
+/// role is not one this app knows.
+pub fn role_for_employee(stored_role: i64) ?Role {
+    const stored = domain.EmployeeRole.fromInt(stored_role) orelse return null;
+    return switch (stored) {
+        .admin => .admin,
+        .waiter => .waiter,
+        .kitchen => .kds,
+        .display => .display,
+    };
+}
+
 /// The stored role an employee must hold to work this operating mode.
 ///
 /// The device's mode and the employee's role are two different things: a

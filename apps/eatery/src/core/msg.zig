@@ -17,8 +17,13 @@ const canvas = native_sdk.canvas;
 pub const Msg = union(enum) {
     // ------------------------------------------------------------ session
 
-    /// The role picker: the chosen role's index.
+    /// The picker: the chosen role's index. A role is a DEVICE's
+    /// operating mode - the kitchen board, the customer display - and a
+    /// device signs in by being the device.
     pick_role: u8,
+    /// The picker: the chosen employee's id. An employee is a PERSON,
+    /// and a person proves who they are with a PIN.
+    pick_employee: i64,
     /// The sign-in PIN changed (the payload is the runtime's text edit).
     pin_edit: canvas.TextInputEvent,
     /// The sign-in form was submitted.

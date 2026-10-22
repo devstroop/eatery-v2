@@ -210,7 +210,7 @@ pub const Screen = enum {
     }
 };
 
-/// One card of the role picker. Plain data, because the markup cannot
+/// One card of the picker. Plain data, because the markup cannot
 /// call a method on a row.
 pub const RoleCard = struct {
     id: usize,
@@ -219,20 +219,23 @@ pub const RoleCard = struct {
     kind: []const u8,
 };
 
-// The role cards are a FILE-SCOPE constant on purpose: a composite
+// The device cards are a FILE-SCOPE constant on purpose: a composite
 // literal built inside a function lives on that function's stack frame,
 // and returning a slice to it hands back a pointer to dead memory. The
 // markup reads these rows on a later frame.
-const role_cards = [_]RoleCard{
-    .{ .id = @intFromEnum(Role.admin), .title = "Admin", .blurb = "Full point of sale, management, configuration and reports.", .kind = "PIN sign-in" },
-    .{ .id = @intFromEnum(Role.waiter), .title = "Waiter", .blurb = "Order taking, table management and the floor plan.", .kind = "PIN sign-in" },
+//
+// They are the DEVICE modes only. A kitchen board and a customer
+// display sign in by being the device, and nobody types a PIN into
+// them. The people who work here are on the picker's other list, and
+// their stored role says which mode they work in.
+const device_cards = [_]RoleCard{
     .{ .id = @intFromEnum(Role.kds), .title = "Kitchen", .blurb = "Live kitchen tickets, station by station. No sign-in.", .kind = "Kiosk" },
     .{ .id = @intFromEnum(Role.display), .title = "Display", .blurb = "Customer-facing order status. No sign-in.", .kind = "Kiosk" },
 };
 
-/// The four roles, in the order the picker shows them.
-pub fn roleCards() []const RoleCard {
-    return &role_cards;
+/// The device modes, for the picker.
+pub fn deviceCards() []const RoleCard {
+    return &device_cards;
 }
 
 /// One row of the navigation rail. The markup binds `id` and `label`

@@ -119,6 +119,7 @@ date before that phase starts.
 | D10 | What happens after a restore from backup with an old clock? | Correctness | Design + test | Eng | Open |
 | D11 | How does a new device bootstrap: full snapshot or replay? | Time to join, data size | Design | Eng | Open |
 | D12 | Are there regulatory constraints on LAN traffic? | Security | Legal/IT review | Product | Open |
+| D19 | Does the PIN salt become per-employee, or does the installation salt replicate as reference data? | The PIN hash is computed from the **installation** salt and the sign-in matches it for equality, and each app has its own installation salt - so a second device cannot let a waiter in. **Answered: per-employee**, by [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md) and [#95](https://github.com/devstroop/eatery-v2/issues/95) - the picker identifies the employee before it hashes, so the row is self-verifying and no shared secret crosses the wire. | Product decision + a migration | Product/Eng | Answered - ADR-0018, [#95](https://github.com/devstroop/eatery-v2/issues/95) |
 
 ## E. Printing and hardware
 
