@@ -13,4 +13,8 @@ test {
     _ = @import("protocol.zig");
     _ = @import("cursor.zig");
     _ = @import("record.zig");
+    _ = @import("outbox.zig");
+    _ = @import("server.zig");
+    _ = @import("client.zig");
+    _ = @import("discovery.zig");
 }
