@@ -155,10 +155,11 @@ test "the port arrives as bytes, and the fetch is issued to it" {
     main.update(&model, .{ .net = .{
         .key = main.channel_key,
         .kind = .data,
-        .bytes = "PORT 45123\n",
+        .bytes = "PORT 45123 127.0.0.1\n",
     } }, &fx);
 
     try testing.expectEqual(@as(u16, 45123), model.port);
+    try testing.expectEqualStrings("127.0.0.1", model.host_text());
 
     // And the fetch went out to that port.
     try testing.expectEqual(@as(usize, 1), fx.pendingFetchCount());
@@ -171,7 +172,7 @@ test "the port arrives as bytes, and the fetch is issued to it" {
     main.update(&model, .{ .net = .{
         .key = main.channel_key,
         .kind = .data,
-        .bytes = "PORT 45124\n",
+        .bytes = "PORT 45124 127.0.0.1\n",
     } }, &fx);
     try testing.expectEqual(@as(usize, 1), fx.pendingFetchCount());
 }
