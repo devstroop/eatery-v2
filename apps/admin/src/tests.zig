@@ -21,6 +21,7 @@ const theme = @import("ros_core").theme;
 const repos = @import("ros_core").repos;
 const page = @import("ros_core").page;
 const auth = @import("ros_core").auth;
+const net_bridge = @import("ros_core").net.bridge;
 const domain = @import("ros_core").models;
 
 const canvas = native_sdk.canvas;
@@ -502,7 +503,7 @@ test "money stays integer: two hundred and fifty cents is never a float" {
 
 test "a PIN is hashed, never stored" {
     // A salt long enough for the hash to be derived from.
-    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const salt = "0123456789abcdef0123456789abcdef";
     var hash_a: [auth.hash_length]u8 = undefined;
     var hash_b: [auth.hash_length]u8 = undefined;
     var hash_c: [auth.hash_length]u8 = undefined;
@@ -527,7 +528,7 @@ test "a PIN is hashed, never stored" {
 }
 
 test "a PIN verifies against its own hash and nothing else" {
-    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const salt = "0123456789abcdef0123456789abcdef";
     var hash: [auth.hash_length]u8 = undefined;
     const stored = auth.hashPin(salt, 1, "123456", &hash) orelse return error.NoHash;
 
@@ -540,7 +541,7 @@ test "a PIN verifies against its own hash and nothing else" {
 }
 
 test "the old hash still verifies, so a running restaurant still works" {
-    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const salt = "0123456789abcdef0123456789abcdef";
     var legacy: [auth.legacy_len]u8 = undefined;
     const stored = auth.legacyHash(salt, "123456", &legacy) orelse return error.NoHash;
 
@@ -557,7 +558,7 @@ test "the old hash still verifies, so a running restaurant still works" {
 test "two employees with the same PIN have different hashes" {
     // The salt is the installation's AND the employee's, so a database
     // that is cracked gives up one PIN rather than every PIN.
-    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const salt = "0123456789abcdef0123456789abcdef";
     var first: [auth.hash_length]u8 = undefined;
     var second: [auth.hash_length]u8 = undefined;
 
@@ -787,8 +788,8 @@ test "a decoded company does not point at the page bytes" {
     try appendInt(&bytes, 9); // column count
     try appendInt(&bytes, 1); // row count
     for ([_][]const u8{
-        "id",          "name",           "currency_code", "currency_symbol", "tax_inclusive",
-        "address",     "phone",          "tax_number",    "currency_decimals",
+        "id",      "name",  "currency_code", "currency_symbol",   "tax_inclusive",
+        "address", "phone", "tax_number",    "currency_decimals",
     }) |name| {
         try appendBytes(&bytes, name);
     }
@@ -940,10 +941,9 @@ const max_view_widgets = 1024;
 /// fails here means "append, do not insert".
 const gated_ordinals = [_]usize{
     6,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-    25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+    25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+    43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
 };
-
 
 /// The text that proves a screen rendered ITSELF, and not just the
 /// shell around it.
@@ -1289,4 +1289,88 @@ fn appendI64(bytes: *std.ArrayList(u8), value: i64) !void {
 fn appendText(bytes: *std.ArrayList(u8), text: []const u8) !void {
     try appendTag(bytes, 3);
     try appendBytes(bytes, text);
+}
+
+// ---------------------------------------------------------------- the wire
+
+test "the listener's port lands in the model as a message" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    try testing.expectEqual(@as(u16, 0), model.net_port);
+    try testing.expect(!model.net_bound);
+
+    main.update(&model, .{ .net = .{
+        .key = 2,
+        .kind = .data,
+        .bytes = "PORT 45871 192.168.1.7\n",
+    } }, &fx);
+
+    try testing.expectEqual(@as(u16, 45871), model.net_port);
+    try testing.expect(model.net_bound);
+    try testing.expectEqualStrings("192.168.1.7", model.net_host_buf[0..model.net_host_len]);
+}
+
+test "a request from the net thread is answered with the peer card" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    // The thread reports its port first, as it does on boot.
+    main.update(&model, .{ .net = .{
+        .key = 2,
+        .kind = .data,
+        .bytes = "PORT 45871 127.0.0.1\n",
+    } }, &fx);
+
+    const token = "0123456789abcdef";
+    @memcpy(model.device_token_buf[0..token.len], token);
+    model.device_token_len = token.len;
+
+    main.update(&model, .{ .net = .{
+        .key = 2,
+        .kind = .data,
+        .bytes = "CONN 1\nGET /v1/hello HTTP/1.1\nHost: 127.0.0.1\n\n",
+    } }, &fx);
+
+    var answer: [2048]u8 = undefined;
+    const len = net_bridge.takeAnswer(1, &answer) orelse return error.NoAnswer;
+    const text = answer[0..len];
+    try testing.expect(std.mem.indexOf(u8, text, "200 OK") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\"proto\":\"ros/1\"") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\"device\":\"0123456789abcdef\"") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\"role\":\"admin\"") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\"tcp\":45871") != null);
+
+    // An endpoint this build does not serve says so, rather than
+    // answering with somebody else's data.
+    main.update(&model, .{ .net = .{
+        .key = 2,
+        .kind = .data,
+        .bytes = "CONN 2\nGET /v1/nothing HTTP/1.1\n\n",
+    } }, &fx);
+    const not_found_len = net_bridge.takeAnswer(2, &answer) orelse return error.NoAnswer;
+    try testing.expect(std.mem.indexOf(u8, answer[0..not_found_len], "404 Not Found") != null);
+}
+
+test "a peer's answer arrives as a message and is recorded" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    const body =
+        \\{"id":"dev-a:10:1","entity_table":"order","entity_id":"O-1","operation":"create","logical_clock":10,"device_id":"dev-a","created_at":1,"data":{}}
+        \\
+    ;
+    main.update(&model, .{ .peer = .{
+        .key = 3,
+        .outcome = .ok,
+        .status = 200,
+        .body = body,
+    } }, &fx);
+
+    try testing.expectEqual(@as(u16, 200), model.peer_status);
+    try testing.expectEqualStrings("ok", model.peer_outcome);
+    try testing.expectEqualStrings(body, model.peer_body_buf[0..model.peer_body_len]);
 }

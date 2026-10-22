@@ -190,6 +190,16 @@ pub const Model = struct {
         "login_hash",
         "login_hash_len",
         "login_legacy_hash",
+        "net_host_buf",
+        "net_host_len",
+        "net_port",
+        "net_bound",
+        "net_requests",
+        "net_dropped",
+        "peer_status",
+        "peer_outcome",
+        "peer_body_buf",
+        "peer_body_len",
     };
 
     // ------------------------------------------------------------ session
@@ -212,6 +222,27 @@ pub const Model = struct {
     sign_in_employee_name_buf: [64]u8 = undefined,
     sign_in_employee_name_len: usize = 0,
     employee_name: []const u8 = "",
+
+    // ------------------------------------------------------------- the wire
+
+    /// The port this device's listener bound, learned from the net
+    /// thread as a message. Zero until it is up.
+    net_port: u16 = 0,
+    /// True once the listener reported its port.
+    net_bound: bool = false,
+    /// The address the listener bound.
+    net_host_buf: [64]u8 = undefined,
+    net_host_len: usize = 0,
+    /// Requests the listener has delivered since boot.
+    net_requests: u32 = 0,
+    /// Answers the outbox refused because they did not fit.
+    net_dropped: u32 = 0,
+    /// The last peer's answer: its outcome, status and body. 9.3 applies
+    /// the ops it carries; the seam is visible before that.
+    peer_status: u16 = 0,
+    peer_outcome: []const u8 = "none",
+    peer_body_buf: [4096]u8 = undefined,
+    peer_body_len: usize = 0,
 
     // --------------------------------------------------------- navigation
 

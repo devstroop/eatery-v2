@@ -11,6 +11,7 @@ const native_sdk = @import("native_sdk");
 
 const model_mod = @import("model.zig");
 const msg_mod = @import("msg.zig");
+const net_bridge = @import("net_bridge.zig");
 const nav = @import("navigation.zig");
 const rbac = @import("rbac.zig");
 const domain = @import("../domain/models.zig");
@@ -31,6 +32,12 @@ pub const clock_timer_key: u64 = 100;
 /// Boot effects: the clock timer and the first read of the database.
 pub fn boot(model: *Model, fx: *Effects) void {
     model.now_ms = fx.wallMs();
+
+    // The wire. The channel is opened here because this is the loop
+    // thread's first turn; the net thread is already listening and is
+    // waiting for this handle before it posts anything.
+    net_bridge.open(fx);
+
     fx.startTimer(.{
         .key = clock_timer_key,
         .interval_ms = 1000,
@@ -273,7 +280,7 @@ fn openTaxSlabForm(model: *Model, id: i64) void {
 fn rateAsTyped(rate_bps: i64) []const u8 {
     var buffer: [24]u8 = undefined;
     if (@mod(rate_bps, 100) == 0) {
-        const written = std.fmt.bufPrint(&buffer, "{d}", .{ @divTrunc(rate_bps, 100) }) catch return "";
+        const written = std.fmt.bufPrint(&buffer, "{d}", .{@divTrunc(rate_bps, 100)}) catch return "";
         return written;
     }
     const written = std.fmt.bufPrint(&buffer, "{d}.{d:0>2}", .{ @divTrunc(rate_bps, 100), @mod(rate_bps, 100) }) catch return "";
@@ -565,6 +572,11 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
     }
 
     switch (msg) {
+        // ----------------------------------------------------------- the wire
+
+        .net => |event| net_bridge.onChannel(model, event),
+        .peer => |response| net_bridge.onResponse(model, response),
+
         // -------------------------------------------------------- session
 
         .pick_role => |index| {

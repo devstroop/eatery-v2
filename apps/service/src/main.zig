@@ -26,6 +26,7 @@ const msg_mod = @import("ros_core").msg;
 const update_mod = @import("ros_core").update;
 const theme = @import("ros_core").theme;
 const auth = @import("ros_core").auth;
+const net_bridge = @import("ros_core").net.bridge;
 
 const Model = core.Model;
 const Msg = msg_mod.Msg;
@@ -121,6 +122,20 @@ pub fn main(init: std.process.Init) !void {
     // for a retry of their own.
     auth.makeToken(init.io, &app_state.model.device_token_buf);
     app_state.model.device_token_len = app_state.model.device_token_buf.len;
+
+    // The wire. `main` is the one place with an `Io`, so the listener
+    // thread starts here; its channel is opened by `boot`, on the loop
+    // thread, and the thread waits for that before it posts.
+    const bind_host = init.environ_map.get("ROS_NET_BIND") orelse "127.0.0.1";
+    const bind_port: u16 = blk: {
+        const text = init.environ_map.get("ROS_NET_PORT") orelse break :blk 0;
+        break :blk std.fmt.parseInt(u16, text, 10) catch 0;
+    };
+    const net_thread = try net_bridge.start(init.io, bind_host, bind_port);
+    defer {
+        net_bridge.stop(init.io);
+        net_thread.join();
+    }
 
     try runner.runWithOptions(app_state.app(), .{
         .app_name = "ros-service",

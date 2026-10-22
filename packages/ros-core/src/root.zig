@@ -35,6 +35,13 @@ pub const net = struct {
     pub const protocol = @import("net/protocol.zig");
     pub const cursor = @import("net/cursor.zig");
     pub const record = @import("net/record.zig");
+    pub const outbox = @import("net/outbox.zig");
+    pub const server = @import("net/server.zig");
+    pub const client = @import("net/client.zig");
+    pub const discovery = @import("net/discovery.zig");
+    /// The app side of the wire. This one imports the SDK, which the
+    /// pure records above deliberately do not.
+    pub const bridge = @import("core/net_bridge.zig");
 };
 
 test {
