@@ -206,6 +206,9 @@ pub const Msg = union(enum) {
 pub const Model = struct {
     /// The port the net thread bound, learned from the wire.
     port: u16 = 0,
+    /// The host it bound, learned from the wire.
+    host: [64]u8 = undefined,
+    host_len: u16 = 0,
     /// The request the net thread delivered, as text.
     request: [512]u8 = undefined,
     request_len: u16 = 0,
@@ -228,6 +231,8 @@ pub const Model = struct {
     /// Fields the view never binds directly. Keep this list honest: it
     /// is the boundary between "the model" and the interface.
     pub const view_unbound = .{
+        "host",
+        "host_len",
         "request",
         "request_len",
         "body",
@@ -235,6 +240,10 @@ pub const Model = struct {
         "ok",
         "fetch_sent",
     };
+
+    pub fn host_text(model: *const Model) []const u8 {
+        return model.host[0..model.host_len];
+    }
 
     pub fn request_text(model: *const Model) []const u8 {
         return model.request[0..model.request_len];
@@ -295,8 +304,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
 /// What the net thread posted.
 const Wire = union(enum) {
-    /// The port the listener bound.
-    port: u16,
+    /// Where the listener is: the port it bound and the host it bound
+    /// it on. The host travels with the port so the app builds its own
+    /// URL from the wire, and never from a second source of truth.
+    listener: struct { host: []const u8, port: u16 },
     /// A request, and the connection it belongs to.
     request: struct { conn: u32, bytes: []const u8 },
 };
@@ -307,9 +318,12 @@ const Wire = union(enum) {
 /// with "PORT " would otherwise be mistaken for the control message.
 fn parseWire(bytes: []const u8) ?Wire {
     if (std.mem.startsWith(u8, bytes, "PORT ")) {
-        const digits = std.mem.trim(u8, bytes["PORT ".len..], " \r\n");
-        const port = std.fmt.parseInt(u16, digits, 10) catch return null;
-        return .{ .port = port };
+        const rest = bytes["PORT ".len..];
+        const end = std.mem.indexOfScalar(u8, rest, ' ') orelse return null;
+        const port = std.fmt.parseInt(u16, std.mem.trim(u8, rest[0..end], " \r\n"), 10) catch return null;
+        const host = std.mem.trim(u8, rest[end + 1 ..], " \r\n");
+        if (host.len == 0) return null;
+        return .{ .listener = .{ .host = host, .port = port } };
     }
     if (std.mem.startsWith(u8, bytes, "CONN ")) {
         const end = std.mem.indexOfScalar(u8, bytes, '\n') orelse return null;
@@ -327,15 +341,18 @@ fn onNet(model: *Model, event: native_sdk.EffectChannelEvent, fx: *Effects) void
             // copy what the model keeps.
             const wire = parseWire(event.bytes) orelse return;
             switch (wire) {
-                .port => |port| {
-                    model.port = port;
+                .listener => |where| {
+                    model.port = where.port;
+                    const len = @min(where.host.len, model.host.len);
+                    @memcpy(model.host[0..len], where.host[0..len]);
+                    model.host_len = @intCast(len);
                     if (shared.verbose.load(.acquire)) {
-                        std.debug.print("SEAM: the net thread bound port {d}\n", .{model.port});
+                        std.debug.print("SEAM: the net thread bound {s}:{d}\n", .{ model.host_text(), model.port });
                     }
                     if (model.port != 0 and !model.fetch_sent) {
                         model.fetch_sent = true;
-                        var url_buf: [128]u8 = undefined;
-                        const url = std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/ping", .{model.port}) catch return;
+                        var url_buf: [160]u8 = undefined;
+                        const url = std.fmt.bufPrint(&url_buf, "http://{s}:{d}/ping", .{ model.host_text(), model.port }) catch return;
                         fx.fetch(.{
                             .key = fetch_key,
                             .url = url,
@@ -424,11 +441,11 @@ fn readRequest(io: std.Io, stream: *std.Io.net.Stream, out: []u8) ?[]const u8 {
 }
 
 /// The net thread. It owns the socket and nothing else.
-fn netThread(io: std.Io) void {
+fn netThread(io: std.Io, bind_host: []const u8) void {
     // A loopback listener on an ephemeral port: the kernel picks the
     // port and the app is told which one, which is the same shape the
     // real protocol uses - a device advertises the port it bound.
-    var address = std.Io.net.IpAddress.parseIp4("127.0.0.1", 0) catch {
+    var address = std.Io.net.IpAddress.parseIp4(bind_host, 0) catch {
         std.debug.print("SEAM: the loopback address did not parse\n", .{});
         return;
     };
@@ -452,8 +469,8 @@ fn netThread(io: std.Io) void {
 
     // The port, as a message. The app learns the port the way it will
     // learn everything else over the wire: as bytes.
-    var port_line: [32]u8 = undefined;
-    const port_text = std.fmt.bufPrint(&port_line, "PORT {d}\n", .{port}) catch return;
+    var port_line: [96]u8 = undefined;
+    const port_text = std.fmt.bufPrint(&port_line, "PORT {d} {s}\n", .{ port, bind_host }) catch return;
     if (!postBytes(handle, port_text)) {
         std.debug.print("SEAM: the port message was refused\n", .{});
         return;
@@ -563,8 +580,12 @@ pub fn main(init: std.process.Init) !void {
     app_state.model = initialModel();
 
     // The net thread. `main` is the one place with an `Io`, and the
-    // socket needs one.
-    const thread = try std.Thread.spawn(.{}, netThread, .{init.io});
+    // socket needs one. The bind address comes from the environment
+    // so the LAN path can be exercised without a rebuild: a loopback
+    // bind proves the seam, and a LAN bind proves the seam over the
+    // network the three apps will actually use.
+    const bind_host = init.environ_map.get("EATERY_SPIKE_BIND") orelse "127.0.0.1";
+    const thread = try std.Thread.spawn(.{}, netThread, .{ init.io, bind_host });
     defer {
         // Stop the net thread before joining it. The thread has no
         // exit of its own - it is in `accept` - so it is woken the way

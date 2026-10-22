@@ -212,11 +212,23 @@ Seven things the spike settled that the design had assumed:
    frame's full length, so the caller can refuse rather than write
    half a response to a socket.
 
-What the spike does **not** prove, and what a later slice must: a LAN
-address rather than loopback, which is where macOS's Local Network
-permission may ask the user; more than one connection in flight at
-once, which the per-connection slots make room for but the spike does
-not exercise; and the wake-up path that a self-pipe would give.
+The spike binds the address it is told to bind, so the LAN path can be
+exercised without a rebuild:
+
+```sh
+EATERY_SPIKE_BIND=192.168.1.42 ./zig-out/bin/net-spike
+```
+
+What the spike still does **not** prove, and what a later slice must:
+a peer on a **different** machine - the spike fetches its own listener,
+so the traffic never leaves the host, and a loopback or same-subnet
+path proves the seam but not the network; more than one connection in
+flight at once, which the per-connection slots make room for but the
+spike does not exercise; and the wake-up path that a self-pipe would
+give. The macOS Local Network permission is also still untested: it is
+asked the first time an app opens a socket to a local-network address,
+which is exactly what the LAN bind does, and a machine that has never
+been asked will show the prompt.
 
 ### Why the client is `fx.fetch` and not a socket
 

@@ -5,7 +5,7 @@
     <text grow="1">Net spike</text>
     <text>{verdict}</text>
   </row>
-  <text>listener port: {port}</text>
+  <text>listener: {host_text}:{port}</text>
   <text>request seen by the app: {request_text}</text>
   <text>connection: {conn_id}</text>
   <text>fetch outcome: {outcome} status: {status}</text>

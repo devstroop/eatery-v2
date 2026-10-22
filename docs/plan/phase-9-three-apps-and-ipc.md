@@ -111,11 +111,21 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
    platform's, so App Transport Security does not stand in the way of a
    LAN address.
 
-   What it does not prove, and what slice 9.3 must: a LAN address
-   rather than loopback, which is where macOS's Local Network
-   permission may ask the user; more than one connection in flight at
+   What it does not prove, and what slice 9.3 must: a **peer on a
+   different machine** - the spike fetches its own listener, so the
+   traffic never leaves the host, and a same-subnet bind proves the
+   seam but not the network; more than one connection in flight at
    once, which the per-connection slots make room for; and the wake-up
-   path a self-pipe would give.
+   path a self-pipe would give. The macOS Local Network permission is
+   still untested too: it is asked the first time an app opens a
+   socket to a local-network address, which is what the LAN bind does.
+
+   The spike binds the address it is told to, so the LAN path is
+   exercisable without a rebuild:
+
+   ```sh
+   EATERY_SPIKE_BIND=192.168.1.42 ./zig-out/bin/net-spike
+   ```
 
 2. **The salt** (4 days) — **NOT DONE.** Settle the sign-in, because
    the `service` app cannot let a waiter in until it is settled: the
