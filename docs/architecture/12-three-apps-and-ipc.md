@@ -123,15 +123,100 @@ database.** It moves bytes. That is the whole of it.
   pure-core rule survives: `update` is still a function of the model and
   the message it was given.
 - **App to thread:** the SDK has no channel that runs the other way, so
-  the app owns a small, bounded, lock-protected outbox. `update` pushes
-  a response frame into it; the net thread pops frames and writes them.
+  the app owns a small, bounded outbox. `update` writes an answer into
+  it; the net thread reads the answer back and writes it to the socket.
   The net thread is woken by a self-pipe where the platform offers one
   (`std.Io.Dispatch`), and by a short timed poll where it does not.
+- **The handshake:** the net thread cannot post into a channel that
+  does not exist yet, and the channel can only be opened from `update`,
+  which is the loop thread's job. So the loop thread opens it and
+  publishes the handle; the net thread waits for it. One atomic flag
+  and one handle.
+- **The stop:** a thread that owns a socket needs a way to stop, and
+  `accept` blocks, so a flag alone cannot wake it. The app sets the
+  flag and connects to its own listener, which is the portable way to
+  make `accept` return.
 
 This outbox is the one piece of shared mutable state in an app. It is
 app-owned memory, not the world: no clock, no allocator, no I/O happens
 in `update`. It is called out here because it is the one place the
 design bends, and because a reader should be able to find it.
+
+**It does not need a lock, and that is a finding rather than a
+preference.** `std.Thread.Mutex` is gone in Zig 0.16, and
+`std.Io.Mutex` takes the `Io` it locks against - which `update` does
+not have, because `update` is pure and has no `Io`. A mutex is
+therefore not available to the code that needs it. The outbox is
+single-producer and single-consumer: the loop thread is the only
+writer and the net thread is the only reader. Two atomic counters are
+enough, with a release store after a write and an acquire load before
+a read. `update` never blocks, and it never waits.
+
+**The outbox is per connection, not one shared ring.** A frame carries
+no peer id, so a shared ring would let one peer's answer reach
+another peer - and a leftover answer from a connection that timed out
+would be handed to the next connection that reused the slot. Each
+connection owns a slot, and the slot is cleared when the connection is
+accepted. The protocol will have several peers connected to one app at
+once, so this is not a nicety: it is the difference between an answer
+and the wrong answer.
+
+### What the spike proved
+
+`apps/net-spike` is the proof, and it runs in the repository's own
+suite. It is a net thread with a real listener and a real app with a
+real model, and it does one thing: it calls its own listener.
+
+| Claim | How it is proved |
+|---|---|
+| A `std.Io.net` listener in a `main` thread accepts a connection and speaks HTTP/1.1 | The app fetches its own listener and gets a 200 |
+| `fx.fetch` reaches that listener, and the response arrives as a `Msg` | The body arrives in the model as a `.fetched` message |
+| Bytes posted from the net thread arrive as a `Msg` payload | The app copies them out of the message and answers |
+| A response written by `update` reaches the socket | The fetch gets back the response `update` wrote |
+
+The round trip, from the app's own log:
+
+```
+SEAM: the net thread bound port 63627
+SEAM: fetch outcome=ok status=200 body="pong" -> SEAM OK
+```
+
+Seven things the spike settled that the design had assumed:
+
+1. **The outbox is lock-free**, as above. The design said "lock
+   protected"; the code says "two atomics", because a lock is not
+   available to `update`.
+2. **The outbox is per connection.** The first version of the spike
+   used one shared ring, and the review found the hole: a frame
+   carries no peer id, so an answer could reach the wrong peer, and an
+   answer left behind by a timed-out connection would be handed to the
+   next one. The slots fixed both, and the test that proves it is
+   "an answer never crosses to another connection".
+3. **The port is learned as bytes.** The net thread posts `PORT 45123`
+   and the app reads it out of a message, so the model is the only
+   place the port lives. A shared variable would have been a second
+   source of truth.
+4. **Plain `http://` works.** The SDK's fetch is built on Zig's own
+   `std.http.Client`, not on the platform's, so macOS App Transport
+   Security does not stand in the way of a LAN address.
+5. **The channel's bytes are drain scratch.** They are valid only for
+   the `update` call that receives them, so the app copies them. This
+   is the same rule the database's page bytes follow.
+6. **A thread that owns a socket needs a stop, and a flag is not
+   enough.** `accept` blocks. The app sets a flag *and* connects to
+   its own listener, which is what makes `accept` return. Without it
+   the app hangs on quit wherever the runtime returns from
+   `runWithOptions` instead of terminating the process - which is
+   Linux and Windows, and not macOS, where AppKit's `exit()` hides it.
+7. **An answer that does not fit must say so.** The read reports the
+   frame's full length, so the caller can refuse rather than write
+   half a response to a socket.
+
+What the spike does **not** prove, and what a later slice must: a LAN
+address rather than loopback, which is where macOS's Local Network
+permission may ask the user; more than one connection in flight at
+once, which the per-connection slots make room for but the spike does
+not exercise; and the wake-up path that a self-pipe would give.
 
 ### Why the client is `fx.fetch` and not a socket
 

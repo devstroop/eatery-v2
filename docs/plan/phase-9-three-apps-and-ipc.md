@@ -76,8 +76,8 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
 
 **The two things that are not solved by the protocol, spent first.**
 
-1. **The seam** (2 days). Build a throwaway app that proves three
-   things at once:
+1. **The seam** (2 days) — **DONE.** `apps/net-spike` proves all three
+   claims by calling its own listener:
    1. a `std.Io.net` listener in a `main` thread accepts a connection
       and serves HTTP/1.1;
    2. `fx.fetch` from the same app reaches that listener, and the
@@ -86,14 +86,42 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
       as a `Msg` payload, and a response written by `update` reaches the
       socket.
 
-   If (3) cannot be made to work without breaking the pure-core rule,
-   the design changes here, before anything is built on it.
+   The round trip, from the app's own log:
 
-2. **The salt** (4 days). Settle the sign-in, because the `service` app
-   cannot let a waiter in until it is settled: the PIN hash is computed
-   from the **installation** salt and the sign-in matches that hash for
-   equality, and each app has its own installation salt. **Decided: the
-   salt becomes per-employee**, by
+   ```
+   SEAM: the net thread bound port 63627
+   SEAM: fetch outcome=ok status=200 body="pong" -> SEAM OK
+   ```
+
+   It settled five things the design had assumed. **The outbox needs
+   no lock**: `std.Thread.Mutex` is gone in Zig 0.16 and `std.Io.Mutex`
+   needs the `Io` that `update` does not have, so the ring is
+   single-producer/single-consumer and two atomic counters do the job -
+   `update` never blocks and never waits. **The outbox is per
+   connection**, because a frame carries no peer id, so an answer could
+   otherwise reach the wrong peer, and a leftover answer could be
+   handed to the next connection. **A thread that owns a socket needs
+   a stop**, and a flag is not enough because `accept` blocks: the app
+   connects to its own listener to make it return - without that, the
+   app hangs on quit on Linux and Windows, where the runtime returns
+   from `runWithOptions` instead of terminating the process. **An
+   answer that does not fit must say so** rather than be truncated on
+   the way to the socket. And **plain `http://` works**, because the
+   SDK's fetch is built on Zig's `std.http.Client` rather than on the
+   platform's, so App Transport Security does not stand in the way of a
+   LAN address.
+
+   What it does not prove, and what slice 9.3 must: a LAN address
+   rather than loopback, which is where macOS's Local Network
+   permission may ask the user; more than one connection in flight at
+   once, which the per-connection slots make room for; and the wake-up
+   path a self-pipe would give.
+
+2. **The salt** (4 days) — **NOT DONE.** Settle the sign-in, because
+   the `service` app cannot let a waiter in until it is settled: the
+   PIN hash is computed from the **installation** salt and the sign-in
+   matches that hash for equality, and each app has its own
+   installation salt. **Decided: the salt becomes per-employee**, by
    [#95](https://github.com/devstroop/eatery-v2/issues/95) - the sign-in
    identifies the employee before it hashes, so the employee row is
    self-verifying and no shared secret has to cross the wire. This
