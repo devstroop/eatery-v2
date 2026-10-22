@@ -127,16 +127,17 @@ Each slice leaves the tree green. `scripts/verify-all.sh` and
    EATERY_SPIKE_BIND=192.168.1.42 ./zig-out/bin/net-spike
    ```
 
-2. **The salt** (4 days) — **NOT DONE.** Settle the sign-in, because
-   the `service` app cannot let a waiter in until it is settled: the
-   PIN hash is computed from the **installation** salt and the sign-in
-   matches that hash for equality, and each app has its own
-   installation salt. **Decided: the salt becomes per-employee**, by
-   [#95](https://github.com/devstroop/eatery-v2/issues/95) - the sign-in
-   identifies the employee before it hashes, so the employee row is
-   self-verifying and no shared secret has to cross the wire. This
-   slice implements it: the migration, the sign-in, and the picker that
-   replaces the role picker. See
+2. **The salt** (4 days) - **DONE.** The `service` app cannot let a
+   waiter in unless the sign-in works without the installation salt,
+   and each app has its own installation salt. **The salt becomes
+   per-employee**, by
+   [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)
+   and [#95](https://github.com/devstroop/eatery-v2/issues/95) - the
+   sign-in identifies the employee before it hashes, so the employee row
+   is self-verifying and no shared secret has to cross the wire. The
+   picker that makes this possible sits in place of the role picker: a
+   person is on the picker with the mode they work in, and the two
+   device modes sign in by being the device. See
    [`architecture/12`](../architecture/12-three-apps-and-ipc.md#the-sign-in-problem).
 
 **Done when:** one app, one loop thread, one net thread, one request
@@ -276,10 +277,11 @@ kiosk asks for the Local Network permission in its own words.
 
 ## Unknowns
 
-- **The PIN salt is decided**: per-employee, by
-  [#95](https://github.com/devstroop/eatery-v2/issues/95). It is the
-  first thing slice 9.0 implements, because the sign-in does not work
-  across the apps until it lands.
+- **The PIN salt is decided and landed**: per-employee, by
+  [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)
+  and [#95](https://github.com/devstroop/eatery-v2/issues/95). The
+  sign-in now works across the apps: the employee row is
+  self-verifying, and no secret crosses the wire.
 - Is the counter POS the `admin` app or the `service` app? The matrix
   today gives `pos` and `payments` to `admin` only, which puts the till
   on the dedicated machine.

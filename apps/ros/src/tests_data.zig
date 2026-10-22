@@ -137,6 +137,22 @@ const Harness = struct {
         self.drain();
     }
 
+    /// Load the people who work here, the way boot does, so the
+    /// picker has somebody to show.
+    fn loadEmployees(self: *Harness) void {
+        repos.loadEmployees(&self.model, self.fx);
+        self.drain();
+    }
+
+    /// Sign in the way the picker does: choose the person, then type
+    /// their PIN.
+    fn signIn(self: *Harness, employee_id: i64, pin: []const u8) void {
+        self.loadEmployees();
+        self.send(Msg{ .pick_employee = employee_id });
+        self.model.pin.set(pin);
+        self.send(Msg{ .submit_login = {} });
+    }
+
     /// The runtime's drain loop: take a delivered message, hand it to
     /// `update`, repeat until the channel is quiet.
     fn drain(self: *Harness) void {
@@ -744,8 +760,7 @@ test "an old PIN is rewritten in the modern form the next time it signs in" {
     @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
     harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
-    harness.model.pin.set("4821");
-    harness.send(Msg{ .submit_login = {} });
+    harness.signIn(1, "4821");
 
     // The sign-in worked: an employee whose PIN was hashed before
     // bcrypt can still sign in.
@@ -790,7 +805,7 @@ test "the till stops taking PINs after too many wrong ones" {
 
     // An employee whose PIN is not the one being typed.
     var hash: [auth.hash_length]u8 = undefined;
-    const hashed = auth.hashPin(test_salt, "482155", &hash) orelse return error.NoHash;
+    const hashed = auth.hashPin(test_salt, 1, "482155", &hash) orelse return error.NoHash;
     harness.fx.dbExec(.{
         .key = 922,
         .statements = &.{.{
@@ -806,7 +821,10 @@ test "the till stops taking PINs after too many wrong ones" {
     harness.model.salt_state = .confirmed;
     harness.model.now_ms = 1_700_000_000_000;
 
-    // The wrong PIN, five times.
+    // The wrong PIN, five times. The person is chosen once: the till
+    // counts the guesses, not the choices.
+    harness.loadEmployees();
+    harness.send(Msg{ .pick_employee = 1 });
     for (0..core.max_login_failures) |_| {
         harness.model.pin.set("000000");
         harness.send(Msg{ .submit_login = {} });
@@ -1042,7 +1060,7 @@ test "a PIN only matches the hash of the salted PIN" {
     defer harness.deinit();
 
     var hash: [auth.hash_length]u8 = undefined;
-    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
+    const hashed = auth.hashPin(test_salt, 1, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 901,
@@ -1058,22 +1076,18 @@ test "a PIN only matches the hash of the salted PIN" {
     @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
     harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
-    harness.model.pin.set("4821");
-    harness.send(Msg{ .submit_login = {} });
+    harness.signIn(1, "4821");
     try testing.expect(harness.model.signed_in);
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
     try testing.expectEqualStrings("Anita", harness.model.employee_name);
 
-    // The wrong PIN does not.
-    var other = try Harness.start(testing.allocator);
-    defer other.deinit();
-    @memcpy(other.model.pin_salt_buf[0..test_salt.len], test_salt);
-    other.model.pin_salt_len = test_salt.len;
-    other.model.salt_state = .confirmed;
-    other.model.pin.set("9999");
-    other.send(Msg{ .submit_login = {} });
-    try testing.expect(!other.model.signed_in);
-    try testing.expect(other.model.login_failed());
+    // The wrong PIN does not. The same person is still chosen: the
+    // PIN is what is being tested, not the choice.
+    harness.send(Msg{ .sign_out = {} });
+    harness.model.pin.set("9999");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+    try testing.expect(harness.model.login_failed());
 }
 
 test "back from home after a sign-in stays home" {
@@ -1081,7 +1095,7 @@ test "back from home after a sign-in stays home" {
     defer harness.deinit();
 
     var hash: [auth.hash_length]u8 = undefined;
-    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
+    const hashed = auth.hashPin(test_salt, 1, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 902,
@@ -1097,9 +1111,7 @@ test "back from home after a sign-in stays home" {
     harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
-    harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
-    harness.model.pin.set("4821");
-    harness.send(Msg{ .submit_login = {} });
+    harness.signIn(1, "4821");
     try testing.expect(harness.model.signed_in);
     try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
 
@@ -1116,7 +1128,7 @@ test "signing out clears the cart and the operator" {
     defer harness.deinit();
 
     var hash: [auth.hash_length]u8 = undefined;
-    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
+    const hashed = auth.hashPin(test_salt, 1, "4821", &hash) orelse return error.NoHash;
 
     harness.fx.dbExec(.{
         .key = 903,
@@ -1132,9 +1144,7 @@ test "signing out clears the cart and the operator" {
     harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
-    harness.send(.{ .pick_role = @intFromEnum(nav.Role.admin) });
-    harness.model.pin.set("4821");
-    harness.send(Msg{ .submit_login = {} });
+    harness.signIn(1, "4821");
     try testing.expect(harness.model.signed_in);
 
     harness.model.products = &.{
@@ -1157,21 +1167,32 @@ test "signing out clears the cart and the operator" {
     try testing.expectEqual(nav.Screen.login, harness.model.stack.current().?);
 }
 
-test "an employee's PIN only opens the mode they are stored for" {
-    // A waiter is a waiter. Their PIN must not open an admin session,
-    // however the till is set up.
+test "the sign-in checks one person, not the whole staff list" {
+    // Three people work here. The sign-in asks about ONE of them and
+    // makes NO hash to find them: the picker already said who, so the
+    // row's own hash checks the PIN. One slow hash, not one per
+    // person on the staff list.
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
     var hash: [auth.hash_length]u8 = undefined;
-    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
-
+    const hashed = auth.hashPin(test_salt, 1, "4821", &hash) orelse return error.NoHash;
     harness.fx.dbExec(.{
-        .key = 904,
-        .statements = &.{.{
-            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Ravi', 1, ?1, 1, 0);",
-            .params = &.{.{ .text = hashed }},
-        }},
+        .key = 905,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+                .params = &.{.{ .text = hashed }},
+            },
+            .{
+                .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (2, 'Ravi', 1, ?1, 1, 0);",
+                .params = &.{.{ .text = hashed }},
+            },
+            .{
+                .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (3, 'Gita', 1, ?1, 1, 0);",
+                .params = &.{.{ .text = hashed }},
+            },
+        },
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
@@ -1180,19 +1201,61 @@ test "an employee's PIN only opens the mode they are stored for" {
     harness.model.pin_salt_len = test_salt.len;
     harness.model.salt_state = .confirmed;
 
-    // The till is in admin mode: a waiter's PIN is refused.
-    harness.send(Msg{ .pick_role = @intFromEnum(nav.Role.admin) });
-    harness.model.pin.set("4821");
-    harness.send(Msg{ .submit_login = {} });
-    try testing.expect(!harness.model.signed_in);
-    try testing.expect(harness.model.login_failed());
-
-    // The same PIN in waiter mode signs the waiter in.
-    harness.send(Msg{ .pick_role = @intFromEnum(nav.Role.waiter) });
-    harness.model.pin.set("4821");
-    harness.send(Msg{ .submit_login = {} });
+    harness.signIn(1, "4821");
     try testing.expect(harness.model.signed_in);
-    try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+
+    // The whole staff list was on the picker.
+    try testing.expectEqual(@as(usize, 3), harness.model.employees.len);
+    // And the sign-in made NO hash to look the person up: the row's
+    // own hash carries its salt and checks the PIN by itself.
+    try testing.expectEqual(@as(usize, 0), harness.model.login_hash_len);
+}
+
+test "a person's sign-in opens the mode they are stored for" {
+    // A waiter is a waiter. The picker says WHO, and the mode comes
+    // from that person's row - so a waiter's PIN opens a waiter
+    // session, and it can never open an admin one.
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    var hash: [auth.hash_length]u8 = undefined;
+    const hashed = auth.hashPin(test_salt, 1, "4821", &hash) orelse return error.NoHash;
+
+    harness.fx.dbExec(.{
+        .key = 904,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
+                .params = &.{.{ .text = hashed }},
+            },
+            .{
+                .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (2, 'Ravi', 1, ?1, 1, 0);",
+                .params = &.{.{ .text = hashed }},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // Anita is an administrator: her sign-in opens the admin mode.
+    harness.signIn(1, "4821");
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Role.admin, harness.model.role);
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+    try testing.expectEqualStrings("Anita", harness.model.employee_name);
+
+    // Ravi is a waiter: the same PIN, and a waiter session. The mode
+    // is his row's, not the till's.
+    harness.send(Msg{ .sign_out = {} });
+    harness.send(Msg{ .pick_role_again = {} });
+    harness.signIn(2, "4821");
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Role.waiter, harness.model.role);
+    try testing.expectEqual(@as(i64, 2), harness.model.employee_id);
     try testing.expectEqualStrings("Ravi", harness.model.employee_name);
 }
 
@@ -1288,30 +1351,32 @@ test "a second instance adopts the salt that is already stored" {
     try testing.expectEqual(core.SaltState.confirmed, harness.model.salt_state);
 }
 
-test "a sign-in waits for the database to confirm the salt" {
+test "a legacy PIN waits for the database to confirm the salt" {
     var harness = try Harness.start(testing.allocator);
     defer harness.deinit();
 
     @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
     harness.model.pin_salt_len = test_salt.len;
-    var hash: [auth.hash_length]u8 = undefined;
-    const hashed = auth.hashPin(test_salt, "4821", &hash) orelse return error.NoHash;
+
+    // A PIN hashed before bcrypt: the old digest is salted with the
+    // installation, so checking it needs the installation salt.
+    var legacy: [auth.legacy_len]u8 = undefined;
+    const old = auth.legacyHash(test_salt, "4821", &legacy) orelse return error.NoHash;
     harness.fx.dbExec(.{
         .key = 903,
         .statements = &.{.{
             .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (1, 'Anita', 0, ?1, 1, 0);",
-            .params = &.{.{ .text = hashed }},
+            .params = &.{.{ .text = old }},
         }},
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
 
     // The salt in the model has not been confirmed by the database: it
-    // is the provisional one made at boot. A hash against it can never
-    // match, so the sign-in is refused rather than attempted.
+    // is the provisional one made at boot. A digest against it can
+    // never match, so the sign-in is refused rather than attempted.
     harness.model.salt_state = .unknown;
-    harness.model.pin.set("4821");
-    harness.send(Msg{ .submit_login = {} });
+    harness.signIn(1, "4821");
     try testing.expect(!harness.model.signed_in);
     try testing.expect(harness.model.login_failed());
 
@@ -1527,7 +1592,10 @@ test "a fresh install becomes a restaurant through the app alone" {
     try testing.expect(harness.model.tables.len >= 1);
 
     // The operator's PIN is the one they chose, and the database holds
-    // a hash of it and never the PIN.
+    // a hash of it and never the PIN. The sign-in names the person
+    // first: the operator is the setup's first employee.
+    harness.loadEmployees();
+    harness.send(Msg{ .pick_employee = repos.first_employee_id });
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
     harness.model.pin.set("482155");
@@ -2137,7 +2205,7 @@ test "a manager can reset an employee's PIN" {
 
     // The employee signs in with the PIN they were set up with.
     var old_hash: [auth.hash_length]u8 = undefined;
-    const old = auth.hashPin(test_salt, "482155", &old_hash) orelse return error.NoHash;
+    const old = auth.hashPin(test_salt, 7, "482155", &old_hash) orelse return error.NoHash;
     harness.fx.dbExec(.{
         .key = 931,
         .statements = &.{.{
@@ -2158,6 +2226,10 @@ test "a manager can reset an employee's PIN" {
     // The old PIN stops working and the new one works.
     repos.loadEmployees(&harness.model, harness.fx);
     harness.drain();
+
+    // The sign-in names the person first.
+    harness.loadEmployees();
+    harness.send(Msg{ .pick_employee = 7 });
 
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
@@ -2257,8 +2329,7 @@ test "the setup writes the company, the operator and the starter menu" {
     // database holds the hashed PIN, never the plaintext.
     harness.model.signed_in = false;
     harness.model.employee_id = 0;
-    harness.model.pin.set("482155");
-    harness.send(Msg{ .submit_login = {} });
+    harness.signIn(1, "482155");
     try testing.expect(harness.model.signed_in);
     try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
     try testing.expectEqualStrings("Anita", harness.model.employee_name);

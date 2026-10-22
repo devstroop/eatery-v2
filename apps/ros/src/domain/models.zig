@@ -253,6 +253,13 @@ pub const EmployeeRole = enum(i64) {
             .display => "Display",
         };
     }
+
+    /// The stored role, from the number the database holds. Null when
+    /// the number is not a role this app knows: a database value is
+    /// untrusted, and a role the app does not know is not a role.
+    pub fn fromInt(code: i64) ?EmployeeRole {
+        return std.enums.fromInt(EmployeeRole, code);
+    }
 };
 
 /// A reservation for a table.

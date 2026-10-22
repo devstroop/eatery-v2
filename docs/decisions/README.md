@@ -26,8 +26,9 @@ This project follows a lightweight MADR-style format.
 | [0013](0013-clock-based-order-ids.md) | Clock-based order IDs | Superseded by ADR-0014 |
 | [0014](0014-order-identity.md) | The order identity: a sequence, an id and a request key | Accepted |
 | [0015](0015-session-scoped-navigation.md) | A session owns its state and its history | Accepted |
-| [0016](0016-what-a-pin-is.md) | What a PIN is in this app | Accepted |
+| [0016](0016-what-a-pin-is.md) | What a PIN is in this app | Superseded by ADR-0018 (decision 3 only) |
 | [0017](0017-three-apps-over-tcp-ip.md) | Three apps, one core, TCP/IP between them | Proposed |
+| [0018](0018-the-pin-hash-is-the-employees.md) | The PIN hash is the employee's | Proposed |
 
 ADR-0017 proposes to supersede ADR-0004 and to revise ADR-0009. Both
 are still **Proposed**, so neither has been agreed in either version -

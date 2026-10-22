@@ -12,11 +12,15 @@
 //! later, the old hashes still verify, and a hash written by a future
 //! version of the app is readable by this one.
 //!
-//! The salt is the installation's, so two restaurants with the same PIN
-//! do not share a hash. It is DERIVED from the installation salt rather
-//! than random per employee, because the sign-in finds the employee by
-//! the hash it computes: a random per-employee salt would mean trying
-//! every employee in turn, and a slow hash for each of them.
+//! The salt is the installation's AND the employee's, so two
+//! restaurants with the same PIN do not share a hash, and two
+//! employees in one restaurant with the same PIN do not either.
+//!
+//! It is DERIVED rather than random, because `update` is pure: it has
+//! no randomness to draw from, so a salt it makes has to come from
+//! something it already has. The employee's id is that something - it
+//! is known when the hash is made, because the sign-in already knows
+//! which person it is checking.
 //!
 //! This module is pure - no clock, no allocation, no effects - so it
 //! runs inside `update` without breaking the model-is-a-pure-function
@@ -53,11 +57,15 @@ pub const min_pin_len = 6;
 
 /// Hash a PIN for storage.
 ///
+/// The bcrypt salt is derived from the installation salt and the
+/// employee's id, so the hash is that employee's and nobody else's.
 /// The result carries its own salt and cost, so it can be verified
-/// years later without knowing what the app was doing then. Null when
-/// the hash cannot be made.
-pub fn hashPin(salt: []const u8, pin: []const u8, out: *[hash_length]u8) ?[]const u8 {
-    const derived = deriveSalt(salt) orelse return null;
+/// years later without knowing what the app was doing then - and
+/// without knowing the installation salt at all, which is what lets a
+/// second device check a PIN it was never given the salt for. Null
+/// when the hash cannot be made.
+pub fn hashPin(salt: []const u8, employee_id: i64, pin: []const u8, out: *[hash_length]u8) ?[]const u8 {
+    const derived = deriveSalt(salt, employee_id) orelse return null;
     const options: bcrypt.HashOptions = .{
         .params = .{ .rounds_log = cost, .silently_truncate_password = false },
         .encoding = .crypt,
@@ -110,19 +118,33 @@ pub fn legacyHash(salt: []const u8, pin: []const u8, out: *[legacy_len]u8) ?[]co
     return out[0..];
 }
 
-/// The bytes bcrypt salts with, derived from the installation salt.
+/// The bytes bcrypt salts with, derived from the installation salt and
+/// the employee's id.
 ///
 /// The installation salt is hex, and the first sixteen bytes of it are
 /// the salt. A salt is not a secret - it is written into the hash
 /// string anyway - so this is a way of spreading one installation's
 /// salt over every hash it makes.
-fn deriveSalt(salt: []const u8) ?[salt_bytes]u8 {
+///
+/// The employee's id is mixed into it, so the salt is THEIRS: two
+/// employees with the same PIN get different hashes, and a database
+/// that is cracked gives up one PIN rather than every PIN. The id is
+/// not a secret either, but it is not in the hash string, so an
+/// attacker who has the database cannot line the two up without the
+/// installation salt.
+fn deriveSalt(salt: []const u8, employee_id: i64) ?[salt_bytes]u8 {
     if (salt.len < salt_bytes * 2) return null;
     var out: [salt_bytes]u8 = undefined;
     for (0..salt_bytes) |index| {
         const high = hexValue(salt[index * 2]) orelse return null;
         const low = hexValue(salt[index * 2 + 1]) orelse return null;
         out[index] = (high << 4) | low;
+    }
+    // The id, mixed in whole: every bit of it changes the salt, so two
+    // employees can never land on the same one.
+    const id_bits: u64 = @bitCast(employee_id);
+    for (0..8) |index| {
+        out[index] ^= @truncate(id_bits >> @intCast(index * 8));
     }
     return out;
 }

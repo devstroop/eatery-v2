@@ -111,7 +111,7 @@ fn fakeFx() !Effects {
 
 // --------------------------------------------------------------- tests
 
-test "the role picker is the first screen and lists the four roles" {
+test "the picker is the first screen and lists the device modes" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -121,13 +121,36 @@ test "the role picker is the first screen and lists the four roles" {
     try testing.expect(model.show_role_picker());
     try testing.expect(!model.show_shell());
 
+    // The device modes are on the picker even with nobody loaded: a
+    // kitchen board signs in by being the device.
     const tree = try buildTree(arena, &model);
-    _ = try expectByText(tree.root, .text, "Restaurant OS");
+_ = try expectByText(tree.root, .text, "Restaurant OS");
     _ = try expectByText(tree.root, .text, "Admin");
     _ = try expectByText(tree.root, .text, "Kitchen");
+    _ = try expectByText(tree.root, .text, "Display");
 }
 
-test "picking a role that needs a sign-in lands on the PIN screen" {
+test "the picker lists the people who work here" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var model = main.initialModel();
+    model.employees = &.{
+        .{ .id = 1, .name = "Anita", .role = 0, .role_label = "Admin", .active = true },
+        .{ .id = 2, .name = "Ravi", .role = 1, .role_label = "Waiter", .active = true },
+    };
+
+    // A person is on the picker with the name and the mode they work
+    // in: the picker says WHO, and the role comes from their row.
+    const tree = try buildTree(arena, &model);
+    _ = try expectByText(tree.root, .text, "Anita");
+    _ = try expectByText(tree.root, .text, "Admin");
+    _ = try expectByText(tree.root, .text, "Ravi");
+    _ = try expectByText(tree.root, .text, "Waiter");
+}
+
+test "picking a person lands on the PIN screen, in the mode they work in" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -136,16 +159,24 @@ test "picking a role that needs a sign-in lands on the PIN screen" {
     defer fx.deinit();
 
     var model = main.initialModel();
-    main.update(&model, .{ .pick_role = @intFromEnum(nav.Role.waiter) }, &fx);
+    model.employees = &.{
+        .{ .id = 2, .name = "Ravi", .role = 1, .role_label = "Waiter", .active = true },
+    };
+    main.update(&model, .{ .pick_employee = 2 }, &fx);
 
+    // The mode comes from the person's row, so the picker does not
+    // ask twice.
     try testing.expectEqual(nav.Role.waiter, model.role);
     try testing.expect(model.role_chosen);
     try testing.expect(!model.signed_in);
     try testing.expect(model.show_login());
     try testing.expectEqual(nav.Screen.login, model.screen());
+    try testing.expectEqual(@as(i64, 2), model.sign_in_employee_id);
+    try testing.expectEqualStrings("Ravi", model.sign_in_employee_name());
 
     const tree = try buildTree(arena, &model);
     _ = try expectByText(tree.root, .text, "Sign in");
+    _ = try expectByText(tree.root, .text, "Ravi - enter your PIN");
 }
 
 test "picking a kiosk role signs the device in and opens its board" {
@@ -422,12 +453,12 @@ test "a PIN is hashed, never stored" {
     var hash_b: [auth.hash_length]u8 = undefined;
     var hash_c: [auth.hash_length]u8 = undefined;
 
-    const a = auth.hashPin(salt, "123456", &hash_a) orelse return error.NoHash;
-    const b = auth.hashPin(salt, "123456", &hash_b) orelse return error.NoHash;
-    const c = auth.hashPin("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "123456", &hash_c) orelse return error.NoHash;
+    const a = auth.hashPin(salt, 1, "123456", &hash_a) orelse return error.NoHash;
+    const b = auth.hashPin(salt, 1, "123456", &hash_b) orelse return error.NoHash;
+    const c = auth.hashPin("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 1, "123456", &hash_c) orelse return error.NoHash;
 
-    // The same PIN and the same salt give the same hash: the sign-in
-    // finds the employee by the hash it computes.
+    // The same PIN, the same salt and the same employee give the same
+    // hash: the hash is made from what the app knows.
     try testing.expectEqualStrings(a, b);
     // A different salt gives a different hash: two restaurants with
     // the same PIN do not share a digest.
@@ -444,7 +475,7 @@ test "a PIN is hashed, never stored" {
 test "a PIN verifies against its own hash and nothing else" {
     const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     var hash: [auth.hash_length]u8 = undefined;
-    const stored = auth.hashPin(salt, "123456", &hash) orelse return error.NoHash;
+    const stored = auth.hashPin(salt, 1, "123456", &hash) orelse return error.NoHash;
 
     try testing.expect(auth.verifyPin(salt, "123456", stored));
     try testing.expect(!auth.verifyPin(salt, "123457", stored));
@@ -465,8 +496,25 @@ test "the old hash still verifies, so a running restaurant still works" {
     try testing.expect(!auth.verifyPin(salt, "123457", stored));
     // A bcrypt string is not an old one.
     var modern: [auth.hash_length]u8 = undefined;
-    const bcrypt_hash = auth.hashPin(salt, "123456", &modern) orelse return error.NoHash;
+    const bcrypt_hash = auth.hashPin(salt, 1, "123456", &modern) orelse return error.NoHash;
     try testing.expect(!auth.isLegacy(bcrypt_hash));
+}
+
+test "two employees with the same PIN have different hashes" {
+    // The salt is the installation's AND the employee's, so a database
+    // that is cracked gives up one PIN rather than every PIN.
+    const salt = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    var first: [auth.hash_length]u8 = undefined;
+    var second: [auth.hash_length]u8 = undefined;
+
+    const a = auth.hashPin(salt, 1, "123456", &first) orelse return error.NoHash;
+    const b = auth.hashPin(salt, 2, "123456", &second) orelse return error.NoHash;
+
+    // Neither hash is the other's.
+    try testing.expect(!std.mem.eql(u8, a, b));
+    // And both still check their own PIN.
+    try testing.expect(auth.verifyPin(salt, "123456", a));
+    try testing.expect(auth.verifyPin(salt, "123456", b));
 }
 
 test "the tax is rounded half up, and an inclusive price keeps it inside" {
@@ -544,7 +592,7 @@ test "a failed salt write does not make the salt look confirmed" {
     try testing.expect(model.error_text.len > 0);
 }
 
-test "the sign-in query is scoped to the session's role" {
+test "the sign-in query is scoped to the person the picker chose" {
     // The device's mode and the employee's role are two different
     // things, and the sign-in has to agree on both.
     try testing.expectEqual(domain.EmployeeRole.admin, rbac.employee_role(nav.Role.admin));
@@ -552,11 +600,21 @@ test "the sign-in query is scoped to the session's role" {
     try testing.expectEqual(domain.EmployeeRole.kitchen, rbac.employee_role(nav.Role.kds));
     try testing.expectEqual(domain.EmployeeRole.display, rbac.employee_role(nav.Role.display));
 
-    // The query asks the database for that role, rather than taking
-    // whatever employee the PIN belongs to. The role is the third
-    // parameter: the first two are the two hashes the sign-in looks
-    // the employee up by.
-    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "role = ?3") != null);
+    // And the mapping the other way: the picker knows a PERSON, and
+    // their stored role says which mode they work in.
+    try testing.expectEqual(nav.Role.admin, rbac.role_for_employee(@intFromEnum(domain.EmployeeRole.admin)).?);
+    try testing.expectEqual(nav.Role.waiter, rbac.role_for_employee(@intFromEnum(domain.EmployeeRole.waiter)).?);
+    try testing.expectEqual(nav.Role.kds, rbac.role_for_employee(@intFromEnum(domain.EmployeeRole.kitchen)).?);
+    try testing.expectEqual(nav.Role.display, rbac.role_for_employee(@intFromEnum(domain.EmployeeRole.display)).?);
+    try testing.expectEqual(@as(?nav.Role, null), rbac.role_for_employee(99));
+
+    // The query asks the database for the EMPLOYEE the picker chose,
+    // not for whoever owns the hash: the person is already known, so
+    // the hash only has to be verified. Finding the employee by the
+    // hash is what made the salt have to be derived, and what made
+    // the sign-in hash once per candidate.
+    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "WHERE id = ?1") != null);
+    try testing.expect(std.mem.indexOf(u8, repos.login_sql, "pin_hash = ?") == null);
 }
 
 test "a second tap while the ticket is moving does not move it twice" {

@@ -226,9 +226,24 @@ pub const payments_sql =
 ///
 /// The two parameters are the PIN hash (text) and the stored role
 /// (integer) - see `rbac.employee_role`.
+/// The sign-in reads the employee the picker chose.
+///
+/// The lookup is by EMPLOYEE, not by hash. The person is already
+/// known - the picker said who - so the hash only has to be verified,
+/// and one bcrypt call does that. Finding the employee by the hash
+/// would need the hash to be findable, which is why the salt used to
+/// be derived rather than random, and why the sign-in used to hash
+/// once per candidate.
+/// The id the setup gives the first employee.
+///
+/// The setup's PIN hash is derived from this id, so it is named here
+/// once: the insert and the hash must not drift apart, or the first
+/// administrator's PIN could never be verified.
+pub const first_employee_id: i64 = 1;
+
 pub const login_sql =
     \\SELECT id, name, role, pin_hash FROM employee
-    \\WHERE (pin_hash = ?1 OR pin_hash = ?2) AND role = ?3 AND active = 1
+    \\WHERE id = ?1 AND active = 1
     \\LIMIT 1;
 ;
 
@@ -1907,7 +1922,7 @@ pub fn setupCompany(
     count += 1;
 
     var employee_params: [6]native_sdk.EffectDbValue = .{
-        .{ .integer = 1 },
+        .{ .integer = first_employee_id },
         .{ .text = admin_name },
         .{ .integer = 0 },
         .{ .text = pin_hash },

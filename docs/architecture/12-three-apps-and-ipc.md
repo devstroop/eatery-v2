@@ -142,6 +142,14 @@ app-owned memory, not the world: no clock, no allocator, no I/O happens
 in `update`. It is called out here because it is the one place the
 design bends, and because a reader should be able to find it.
 
+**The sign-in problem is solved, and it is worth saying how.** The
+employee row carries a bcrypt hash, and a bcrypt string carries its own
+salt. So a peer that holds the row can check a PIN against it with
+nothing else - no installation salt, no shared secret, nothing to
+protect on the wire. That is what the per-employee salt bought: the
+hash is the employee's, and the row is self-verifying. See
+[ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md).
+
 **It does not need a lock, and that is a finding rather than a
 preference.** `std.Thread.Mutex` is gone in Zig 0.16, and
 `std.Io.Mutex` takes the `Io` it locks against - which `update` does
@@ -410,7 +418,7 @@ impossible, and only accepted where it cannot.
 | Entity | Writer | How it reaches other devices | Merge |
 |---|---|---|---|
 | Company, settings, tax slabs, printers | `admin` | `GET /v1/reference` | The admin's row wins; a peer accepts only a newer version |
-| Employees and PINs | `admin` | `GET /v1/reference` | Same - but see [The sign-in problem](#the-sign-in-problem) before trusting this row |
+| Employees and PINs | `admin` | `GET /v1/reference` | Same. A PIN hash carries its own salt, so the row verifies a PIN by itself - **no secret travels** ([ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md)) |
 | Product categories, products, modifier groups | `admin` | `GET /v1/reference` | Same |
 | Dining tables, table categories | `admin` | `GET /v1/reference` | Same |
 | Customers | the device that created the row | ops | Last writer - on the **vector** clock and then the device id, because two devices' scalar clocks are not comparable |
@@ -501,18 +509,15 @@ the whole three-app design needs. Option A is cheaper to build and
 weakens the threat model in a way that is awkward to undo later, because
 once a secret has crossed a wire in plaintext it has crossed it.
 
-The question belongs to the product as much as to engineering, so it is
-[open question D19](../plan/open-questions.md) and it must be answered
-before the protocol is frozen - not during the implementation of it.
-
 **It is answered: the salt becomes per-employee**, by
-[#95](https://github.com/devstroop/eatery-v2/issues/95) - the sign-in
+[ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md) and
+[#95](https://github.com/devstroop/eatery-v2/issues/95). The sign-in
 identifies the employee before it hashes, so the row is self-verifying
-and no shared secret crosses the wire. That issue also plans the picker
-*in place of the role picker*, which the three-app split makes
-convenient: the `service` app signs in by picking an employee, and the
-role picker is only still needed by `kiosk`, for the choice between the
-kitchen board and the customer display.
+and no shared secret crosses the wire. The picker that makes this
+possible sits *in place of the role picker*, which the three-app split
+makes convenient: the `service` app signs in by picking an employee,
+and the role picker is only still needed by `kiosk`, for the choice
+between the kitchen board and the customer display.
 
 Whichever way it goes, one thing is settled now: **the employee row
 replicates as reference data, and the row must contain everything a

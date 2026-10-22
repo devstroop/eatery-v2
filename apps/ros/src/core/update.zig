@@ -42,6 +42,11 @@ pub fn boot(model: *Model, fx: *Effects) void {
     // installation, and the app opens on the setup screen.
     repos.loadConfig(model, fx);
     repos.loadCompany(model, fx);
+    // The people who work here, because the picker asks who is using
+    // the device. A person signs in; a device signs in by being the
+    // device. The list is read here, before anybody signs in, because
+    // the picker comes first.
+    repos.loadEmployees(model, fx);
     // The tax slabs are read with the rest of the business's settings:
     // a sale's tax is worked out from them, and a sale that is placed
     // before they arrive would be taxed at nothing.
@@ -50,6 +55,14 @@ pub fn boot(model: *Model, fx: *Effects) void {
     // from a newer app is one this version must not write to, and the
     // only way to know is to count what is there.
     repos.loadDbTableCount(model, fx);
+}
+
+/// The employee with this id, from the list the picker shows.
+fn findEmployee(model: *const Model, id: i64) ?domain.Employee {
+    for (model.employees) |employee| {
+        if (employee.id == id) return employee;
+    }
+    return null;
 }
 
 /// A new order on the board gets a sound. The kitchen hears the sale
@@ -490,10 +503,11 @@ fn submitSetup(model: *Model, fx: *Effects) void {
         return;
     }
 
-    // The PIN is hashed with the installation salt, exactly as it is
-    // at every other sign-in. The plaintext never reaches the disk.
+    // The PIN is hashed with the installation salt and the first
+    // employee's id, exactly as it is at every other sign-in. The
+    // plaintext never reaches the disk.
     var hash: [auth.hash_length]u8 = undefined;
-    const hashed = auth.hashPin(model.pin_salt(), pin, &hash) orelse {
+    const hashed = auth.hashPin(model.pin_salt(), repos.first_employee_id, pin, &hash) orelse {
         model.setup_error = "Could not hash the PIN - try again";
         return;
     };
@@ -585,16 +599,28 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .pin_edit => |event| model.pin.apply(event),
 
-        .submit_login => {
-            // The salt has to be the salt the DATABASE holds, or the
-            // hash this sign-in computes cannot match the hash the
-            // database stored. Until the database has confirmed the
-            // salt, there is nothing to hash with that could ever
-            // match - so the sign-in waits rather than guessing.
-            if (model.pin_salt().len == 0 or model.salt_state != .confirmed) {
-                model.login_error = "Still starting up - try again in a moment";
+        .pick_employee => |id| {
+            // The person the picker chose. Their role is the mode they
+            // work in, so the picker does not ask twice: the operator
+            // says who they are, not which mode they are in.
+            const employee = findEmployee(model, id) orelse {
+                model.error_text = "That employee is not on the list";
                 return;
-            }
+            };
+            const role = rbac.role_for_employee(employee.role) orelse {
+                model.error_text = "That employee has no role this app knows";
+                return;
+            };
+            resetSession(model, .login);
+            model.role = role;
+            model.role_chosen = true;
+            model.sign_in_employee_id = employee.id;
+            const name_len = @min(employee.name.len, model.sign_in_employee_name_buf.len);
+            @memcpy(model.sign_in_employee_name_buf[0..name_len], employee.name[0..name_len]);
+            model.sign_in_employee_name_len = name_len;
+        },
+
+        .submit_login => {
             // The till stops guessing. A PIN is short, and a short PIN
             // is found by trying every one of them; the till is where
             // that trying happens, so the till is where it stops.
@@ -606,29 +632,20 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.login_error = "Enter your PIN";
                 return;
             }
-            // The hash the sign-in looks up: the slow one, and the
-            // old fast one, so an employee whose PIN was hashed
-            // before bcrypt can still sign in.
-            const hashed = auth.hashPin(model.pin_salt(), model.pin.text(), &model.login_hash) orelse {
-                model.login_error = "Could not check the PIN - try again";
+            // Nobody is signing in without a person: the picker chose
+            // who, and the PIN says they are that person.
+            if (model.sign_in_employee_id == 0) {
+                model.login_error = "Choose who you are first";
                 return;
-            };
-            model.login_hash_len = hashed.len;
-            const legacy = auth.legacyHash(model.pin_salt(), model.pin.text(), &model.login_legacy_hash) orelse {
-                model.login_error = "Could not check the PIN - try again";
-                return;
-            };
+            }
             fx.dbQuery(.{
                 .key = repos.key_login,
-                // The query carries the session's role: the sign-in is
-                // for ONE operating mode, and only an employee whose
-                // stored role matches it may hold it.
+                // The employee the picker chose. The hash is not
+                // computed here: the row's own hash is verified
+                // against the PIN, and that is ONE slow hash, not one
+                // per employee on the staff list.
                 .sql = repos.login_sql,
-                .params = &.{
-                    .{ .text = hashed },
-                    .{ .text = legacy },
-                    .{ .integer = @intFromEnum(rbac.employee_role(model.role)) },
-                },
+                .params = &.{.{ .integer = model.sign_in_employee_id }},
                 .on_result = Effects.dbMsg(.login_checked),
             });
         },
@@ -648,28 +665,67 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 model.pin.set("");
                 return;
             }
-            // The row that came back has to be an employee of THIS
-            // mode. The query already asks for that; this is the check
-            // that says so, and it is what keeps the permission matrix
-            // from being decoration.
+            // The row that came back has to be the employee the
+            // picker chose, and that employee has to work in THIS
+            // mode. The query already asks for the first; this is the
+            // check that says so, and it is what keeps the permission
+            // matrix from being decoration.
+            const employee_id = reader.intOf(&values, "id", 0);
+            if (employee_id != model.sign_in_employee_id) {
+                model.login_error = "Wrong PIN";
+                model.pin.set("");
+                return;
+            }
             const stored_role = reader.intOf(&values, "role", -1);
             if (stored_role != @intFromEnum(rbac.employee_role(model.role))) {
                 model.login_error = "Wrong PIN";
                 model.pin.set("");
                 return;
             }
-            // The row's hash is the one that matched, and the PIN is
-            // what it was made from: verify it here, so a row that
-            // matched for any other reason is not a sign-in.
+            // The row's hash is the one the PIN has to match. A bcrypt
+            // hash carries its own salt, so verifying it needs nothing
+            // but the PIN - which is why a second device can check a
+            // PIN it was never given the salt for.
             const stored = reader.textOf(&values, "pin_hash");
-            if (!auth.verifyPin(model.pin_salt(), model.pin.text(), stored)) {
-                model.login_error = "Sign-in failed - try again";
+            if (stored.len == 0) {
+                // An employee with no PIN cannot sign in. Saying so is
+                // better than a wrong PIN: the PIN is not wrong, it
+                // was never set.
+                model.login_error = "That employee has no PIN yet";
                 model.pin.set("");
                 return;
             }
+            // A hash from before bcrypt is salted with the
+            // installation, so verifying it needs the installation
+            // salt - and the salt has to be the salt the DATABASE
+            // holds, or the hash cannot match. Until the database has
+            // confirmed it, there is nothing to check with, so the
+            // sign-in waits rather than guessing.
+            if (auth.isLegacy(stored) and (model.pin_salt().len == 0 or model.salt_state != .confirmed)) {
+                model.login_error = "Still starting up - try again in a moment";
+                model.pin.set("");
+                return;
+            }
+            if (!auth.verifyPin(model.pin_salt(), model.pin.text(), stored)) {
+                noteLoginFailure(model);
+                model.login_error = "Wrong PIN";
+                model.pin.set("");
+                return;
+            }
+            // The modern hash for a row that still holds an old digest.
+            // It is made BEFORE the session reset, because the reset
+            // clears the PIN the hash is made from.
+            const legacy = auth.isLegacy(stored);
+            if (legacy) {
+                const hashed = auth.hashPin(model.pin_salt(), model.sign_in_employee_id, model.pin.text(), &model.login_hash) orelse {
+                    model.login_error = "Could not check the PIN - try again";
+                    model.pin.set("");
+                    return;
+                };
+                model.login_hash_len = hashed.len;
+            }
             // The session begins now. Reset before taking the name:
             // the reset clears the operator buffer the name lives in.
-            const employee_id = reader.intOf(&values, "id", 0);
             const employee_name = reader.textOf(&values, "name");
             resetSession(model, rbac.home(model.role));
             model.employee_id = employee_id;
@@ -683,8 +739,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             repos.loadAll(model, fx);
             // A hash from before bcrypt is rewritten in the modern
             // form, so the next sign-in of this employee is a slow
-            // one and the old digest stops being worth anything.
-            if (auth.isLegacy(stored)) {
+            // one and the old digest stops being worth anything. The
+            // modern hash carries its own salt, so it needs nothing
+            // but this employee's row to be checked on another device.
+            if (legacy) {
                 repos.savePinHash(fx, repos.key_save_pin_hash, model.employee_id, model.login_hash[0..model.login_hash_len]);
             }
         },
@@ -1505,7 +1563,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             var hash: [auth.hash_length]u8 = undefined;
-            const hashed = auth.hashPin(model.pin_salt(), pin, &hash) orelse {
+            const hashed = auth.hashPin(model.pin_salt(), model.form_reset_employee_id, pin, &hash) orelse {
                 model.error_text = "Could not hash the PIN - try again";
                 return;
             };
