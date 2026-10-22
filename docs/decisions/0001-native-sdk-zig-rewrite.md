@@ -1,8 +1,8 @@
-# ADR-0001: Rewrite Eatery on the Native SDK in Zig
+# ADR-0001: Rewrite Eatery v1 on the Native SDK in Zig
 
 > **Status:** Accepted
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/01`](../architecture/01-system-overview.md),
 > [`architecture/11`](../architecture/11-capability-gaps.md)
 
@@ -24,7 +24,7 @@ capability losses that implies, or kept in Flutter.
 
 ## Decision
 
-**Rewrite the app on the Native SDK in Zig.** `eatery-v2` is a new
+**Rewrite the app on the Native SDK in Zig.** `ros` is a new
 codebase. It does not share Dart code, widgets, the Riverpod provider
 graph, the GoRouter tables or `libeaterystore`. Product behaviour, the
 data model and the permission matrix are the sources of truth to carry
@@ -76,7 +76,7 @@ The rewrite follows the showcase conventions verbatim: `Model`/`Msg`/
 
 - `../../PORT-PLAN.md` §1–§3: verified SDK shape, build constraints and
   live relational-store spike.
-- `apps/eatery/` exists as a Zig-core app with `sqlite` capability and 10
+- `apps/ros/` exists as a Zig-core app with `sqlite` capability and 10
   migrations.
 - The app builds in the showcase conventions (`main.zig`, `app.native`,
   `tests.zig`).

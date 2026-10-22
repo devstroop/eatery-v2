@@ -1,7 +1,7 @@
 //! PIN hashing.
 //!
 //! A PIN is a password, and Eatery v1 stored PINs where a curious
-//! operator could read them. v2 hashes them, and it hashes them with a
+//! operator could read them. Restaurant OS hashes them, and it hashes them with a
 //! deliberately SLOW key-derivation function: bcrypt. A stolen
 //! database is then expensive to turn back into PINs, which is the
 //! whole difference between a PIN and a name on a list.

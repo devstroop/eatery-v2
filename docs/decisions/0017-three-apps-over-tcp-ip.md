@@ -2,7 +2,7 @@
 
 > **Status:** Proposed - needs an owner and a go/no-go
 > **Date:** 2026-10-21
-> **Deciders:** Eatery maintainers, product
+> **Deciders:** Devstroop maintainers, product
 > **Related:** [`0004-four-roles-one-binary.md`](0004-four-roles-one-binary.md)
 > (superseded), [`0009-oplog-sync-with-transport-sidecar.md`](0009-oplog-sync-with-transport-sidecar.md)
 > (revised), [`architecture/12`](../architecture/12-three-apps-and-ipc.md),
@@ -164,7 +164,7 @@ raw TCP.**
   Each app has its own installation salt, so the `service` app cannot
   verify a waiter's PIN as the code stands. **Answered: the salt
   becomes per-employee**, by
-  [#95](https://github.com/devstroop/eatery-v2/issues/95) - the sign-in
+  [#95](https://github.com/devstroop/ros/issues/95) - the sign-in
   identifies the employee before it hashes, so the row is
   self-verifying and no shared secret has to cross the wire.
 - Three manifests, three apps to sign, three update paths, three
@@ -188,7 +188,7 @@ raw TCP.**
 - **Settle the PIN salt** (per-employee, or replicate the installation
   salt). It blocks the sign-in and it is a product decision as much as
   an engineering one. **Answered: per-employee**, by
-  [#95](https://github.com/devstroop/eatery-v2/issues/95).
+  [#95](https://github.com/devstroop/ros/issues/95).
 - Decide the wire framing in detail and freeze it before the first
   device ships: a protocol that three apps and two app versions must
   agree on is not something to change in flight.
@@ -220,7 +220,7 @@ raw TCP.**
 Everything below was read from the source, not from the docs. The
 paths are given so a reader can check the claim rather than trust it.
 
-**In this repository** (`apps/eatery/`):
+**In this repository** (`apps/ros/`):
 
 - `src/core/navigation.zig`: `Role.needs_sign_in()` - the split
   boundary is already in the code.

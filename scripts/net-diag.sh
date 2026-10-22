@@ -68,7 +68,7 @@ if [ -x "$APP_DIR/zig-out/bin/net-spike" ]; then
     ip=$(ipconfig getifaddr "$iface" 2>/dev/null)
     [ -z "$ip" ] && continue
     printf 'bind %-6s %-16s ' "$iface" "$ip"
-    EATERY_SPIKE_BIND="$ip" timeout 12 "$APP_DIR/zig-out/bin/net-spike" 2>&1 | grep -oE "SEAM OK|SEAM FAILED|no answer within the timeout" | head -1
+    ROS_SPIKE_BIND="$ip" timeout 12 "$APP_DIR/zig-out/bin/net-spike" 2>&1 | grep -oE "SEAM OK|SEAM FAILED|no answer within the timeout" | head -1
   done
   printf 'bind loopback  '
   timeout 12 "$APP_DIR/zig-out/bin/net-spike" 2>&1 | grep -oE "SEAM OK|SEAM FAILED|no answer within the timeout" | head -1

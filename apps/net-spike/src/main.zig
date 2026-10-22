@@ -584,7 +584,7 @@ pub fn main(init: std.process.Init) !void {
     // so the LAN path can be exercised without a rebuild: a loopback
     // bind proves the seam, and a LAN bind proves the seam over the
     // network the three apps will actually use.
-    const bind_host = init.environ_map.get("EATERY_SPIKE_BIND") orelse "127.0.0.1";
+    const bind_host = init.environ_map.get("ROS_SPIKE_BIND") orelse "127.0.0.1";
     const thread = try std.Thread.spawn(.{}, netThread, .{ init.io, bind_host });
     defer {
         // Stop the net thread before joining it. The thread has no

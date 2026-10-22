@@ -1,7 +1,7 @@
 # ADR-0003: The platform's relational store, not a vendored SQLite FFI
 
 **Status:** Accepted (2026-10)
-**Applies to:** `apps/eatery/src/schema/**`, `apps/eatery/src/data/**`
+**Applies to:** `apps/ros/src/schema/**`, `apps/ros/src/data/**`
 **Related:** [`architecture/data-model.md`](../../architecture/data-model.md),
 [`architecture/04-data-layer.md`](../../architecture/04-data-layer.md)
 
@@ -26,19 +26,19 @@ tables in `assets/db/schema.sql` with SQLite's loose affinity and no
 `STRICT` keyword, money columns typed `REAL`, and `employee.pin TEXT`
 holding the PIN in the clear.
 
-The Native SDK owns the relational store. `apps/eatery/app.json` declares
+The Native SDK owns the relational store. `apps/ros/app.json` declares
 the `sqlite` capability; the SDK generates a migrations module from
-`apps/eatery/src/schema/` and wires it into the runner, so the database is
+`apps/ros/src/schema/` and wires it into the runner, so the database is
 opened already migrated at boot. The app never opens a connection, never
 issues a `PRAGMA`, and never runs migration code.
 
 ## Decision
 
 **Use the engine-owned relational store and write SQL against it from
-`apps/eatery/src/data/repos.zig`.** No SQLite library is vendored, built or
+`apps/ros/src/data/repos.zig`.** No SQLite library is vendored, built or
 bound.
 
-The schema is ten numbered migrations in `apps/eatery/src/schema/`,
+The schema is ten numbered migrations in `apps/ros/src/schema/`,
 0001..0010, 43 tables, every one `STRICT`, with the lock file
 `migrations.lock.json` recording the version, a SHA-256 per file and a
 whole-set hash. `native check` prepares the schema against real SQLite at
@@ -52,7 +52,7 @@ query, one decoder per dataset and one writer per mutation. Writes are one
 `fx.dbExec` carrying all the statements for the transaction, and the engine
 runs them atomically — `repos.saveOrder` sends the order plus one statement
 per line in a single call, so v1's DB5 cannot recur. Reads copy out of the
-engine's row format, which `apps/eatery/src/data/page.zig` reads with a
+engine's row format, which `apps/ros/src/data/page.zig` reads with a
 streaming reader that addresses columns by name so a column reorder in SQL
 cannot silently swap two fields in a decoder.
 
@@ -132,7 +132,7 @@ Before a data-layer change is treated as done:
 - [ ] Every new table is `STRICT`, with `CHECK` constraints on enums and
       booleans, integer minor-unit money and epoch-millisecond time.
 - [ ] Every new migration is a new numbered file; no shipped file is edited.
-- [ ] `apps/eatery/src/schema/migrations.lock.json` is regenerated and the
+- [ ] `apps/ros/src/schema/migrations.lock.json` is regenerated and the
       version advanced.
 - [ ] `native check` passes and reports no `NS1405` diagnostic.
 - [ ] Every new query has a named constant, a loader and a decoder in

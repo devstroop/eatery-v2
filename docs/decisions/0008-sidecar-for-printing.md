@@ -2,7 +2,7 @@
 
 > **Status:** Proposed — needs an owner and a go/no-go
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers, product
+> **Deciders:** Devstroop maintainers, product
 > **Related:** [`architecture/09`](../architecture/09-printing-and-hardware.md)
 
 ## Context

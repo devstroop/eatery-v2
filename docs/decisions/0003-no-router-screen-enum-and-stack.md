@@ -2,7 +2,7 @@
 
 > **Status:** Accepted
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/03`](../architecture/03-navigation-and-rbac.md)
 
 ## Context

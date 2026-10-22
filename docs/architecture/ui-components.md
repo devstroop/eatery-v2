@@ -619,14 +619,14 @@ const CompiledView = canvas.CompiledMarkupView(Model, Msg, @embedFile("app.nativ
 // .markup = if (dev) .{ .source = ..., .watch_path = "src/app.native", .io = init.io } else null,
 ```
 
-Eatery runs the runtime engine today, in every build mode.
+Restaurant OS runs the runtime engine today, in every build mode.
 
 ## The component library
 
 `src/components/` exists and is empty. The nine templates repeat their
 patterns inline: the empty state appears in four screens, the screen
 header in five, the row-with-badge in three. The table below is the
-plan - each row names a component v2 needs and the platform element it
+plan - each row names a component Restaurant OS needs and the platform element it
 maps to.
 
 | Component | Platform element | Needed for |
@@ -701,7 +701,7 @@ trigger and no per-element work.
 
 ```zig
 // src/core/theme.zig
-/// Eatery's brand palette.
+/// The Restaurant OS brand palette.
 const brand = struct {
     // The light semantic fills are the darkest step of the v1 hues that
     // clears WCAG AA with white text, and as text on the light

@@ -141,7 +141,7 @@ pub const PaymentMode = enum(i64) {
     }
 };
 
-/// The company the device belongs to. One company per database in v2 -
+/// The company the device belongs to. One company per database in Restaurant OS -
 /// the multi-company story from v1 was never used and cost real time.
 pub const Company = struct {
     id: i64,

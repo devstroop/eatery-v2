@@ -116,7 +116,7 @@ date before that phase starts.
 | D4 | How are deletes represented? | Convergence correctness | Design | Eng | Open |
 | D5 | How long are ops retained, and when is compaction safe? | Database growth and restore | Design + load test | Eng | Open |
 | D6 | Does a single-device install run the sidecar? | Simplicity vs one code path | Design | Eng | Open |
-| D7 | Must v2 interoperate with the Flutter app during rollout? | Protocol compatibility | Product rollout plan | Product | Open |
+| D7 | Must Restaurant OS interoperate with the Flutter app during rollout? | Protocol compatibility | Product rollout plan | Product | Open |
 | D8 | Is a cloud relay ever required? | Architecture | Product strategy | Product | Open |
 | D9 | Who is the host, and what happens when it leaves? | Availability | Design + test | Eng | Open |
 | D10 | What happens after a restore from backup with an old clock? | Correctness | Design + test | Eng | Open |
@@ -128,7 +128,7 @@ date before that phase starts.
 | D16 | What happens to the ops of a device that is removed from the restaurant? | The history of a sale outlives the till that took it | Product decision | Product | Open |
 | D17 | What is the acceptable convergence latency, and is a poll enough? | The kitchen board must show a ticket when it is placed, not on the next tick | Measurement | Product | Open |
 | D18 | Is the admin app the preferred bootstrap peer and the reference-data seed? | A peer design does not need a seed, but a restaurant with one always-on machine should not pay for a slower join | Design | Eng | Open |
-| D19 | Does the PIN salt become per-employee, or does the installation salt replicate as reference data? | The PIN hash is computed from the **installation** salt and the sign-in matches it for equality, and each app has its own installation salt - so a second device cannot let a waiter in. **Answered: per-employee**, by [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md) and [#95](https://github.com/devstroop/eatery-v2/issues/95) - the picker identifies the employee before it hashes, so the row is self-verifying and no shared secret crosses the wire. | Product decision + a migration | Product/Eng | Answered - ADR-0018, [#95](https://github.com/devstroop/eatery-v2/issues/95) |
+| D19 | Does the PIN salt become per-employee, or does the installation salt replicate as reference data? | The PIN hash is computed from the **installation** salt and the sign-in matches it for equality, and each app has its own installation salt - so a second device cannot let a waiter in. **Answered: per-employee**, by [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md) and [#95](https://github.com/devstroop/ros/issues/95) - the picker identifies the employee before it hashes, so the row is self-verifying and no shared secret crosses the wire. | Product decision + a migration | Product/Eng | Answered - ADR-0018, [#95](https://github.com/devstroop/ros/issues/95) |
 
 ## E. Printing and hardware
 
@@ -211,17 +211,17 @@ listed so the team treats them as discovery work, not as solved.
 
 | Area | Why we are blind | First move |
 |---|---|---|
-| **The rush** | No one has watched a real service at peak with v2. Timing, interruptions and workarounds are invisible in code. | Shadow a lunch and dinner service; time each step. |
+| **The rush** | No one has watched a real service at peak with Restaurant OS. Timing, interruptions and workarounds are invisible in code. | Shadow a lunch and dinner service; time each step. |
 | **Hardware reality** | No target printer, drawer, scanner or card terminal has been tested. | Buy the three most common devices; run a hardware day. |
 | **Legacy data reality** | We have not inspected real customer databases. | Collect anonymised copies; profile every column. |
 | **Tax and legal** | Rules vary by jurisdiction and change; v1 may be wrong. | Accountant and legal review; a per-market checklist. |
-| **Multi-device behaviour** | Sync has never run in v2; human behaviour around conflicts is unknown. | Prototype fake-transport convergence, then a two-device pilot. |
+| **Multi-device behaviour** | Sync has never run in Restaurant OS; human behaviour around conflicts is unknown. | Prototype fake-transport convergence, then a two-device pilot. |
 | **Failure behaviour** | No one knows how staff react to a printer/DB/network failure mid-service. | Failure injection in a pilot; observe recovery. |
 | **Accessibility** | No audit has been done; the SDK's a11y surface is not fully known. | Screen-reader and keyboard pass; contrast audit. |
 | **Localisation** | The product may need languages and code pages we have not tested. | Market review; print a receipt in each language. |
 | **Performance at scale** | Capacities are guesses; no fixture has 500 products or 10k orders. | Build large fixtures; measure nodes, memory, query time. |
-| **Operator setup** | No real operator has installed v2 from scratch. | Usability test the setup flow on a clean machine. |
-| **Support** | We do not know what a support call sounds like for v2 failure modes. | Interview support; design diagnostics from tickets. |
+| **Operator setup** | No real operator has installed Restaurant OS from scratch. | Usability test the setup flow on a clean machine. |
+| **Support** | We do not know what a support call sounds like for Restaurant OS failure modes. | Interview support; design diagnostics from tickets. |
 | **Security adversary** | The threat model is assumed, not observed. | Security review with a realistic device-access scenario. |
 | **Data retention** | No one has asked customers how long they keep history. | Customer interviews + legal. |
 | **The upgrade moment** | Cutover from v1 has never been rehearsed. | Dry-run on a real database and a real device. |

@@ -4,7 +4,7 @@
 > Planned edges (sync, printing, full admin surface).
 > **Last verified:** 2026-10-20, by source review.
 
-## What Eatery v2 is
+## What Restaurant OS is
 
 A restaurant operating system in one native binary:
 

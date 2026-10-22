@@ -1,11 +1,11 @@
 # Data model and storage
 
-> **Scope:** the database schema in `apps/eatery/src/schema/`, the
-> repository layer in `apps/eatery/src/data/`, and the rules that connect
+> **Scope:** the database schema in `apps/ros/src/schema/`, the
+> repository layer in `apps/ros/src/data/`, and the rules that connect
 > the two.
-> **Source:** `apps/eatery/src/schema/0001..0010_*.sql`,
-> `apps/eatery/src/schema/migrations.lock.json`, `apps/eatery/src/data/*.zig`,
-> `apps/eatery/src/core/update.zig`.
+> **Source:** `apps/ros/src/schema/0001..0010_*.sql`,
+> `apps/ros/src/schema/migrations.lock.json`, `apps/ros/src/data/*.zig`,
+> `apps/ros/src/core/update.zig`.
 > **Method:** read from source. The Native SDK CLI (`native`) is not on the
 > PATH in this workspace, so no migration run backs the claims here.
 
@@ -13,7 +13,7 @@
 
 ## 1. The three schema rules
 
-Every table in `apps/eatery/src/schema/` obeys three rules. They are
+Every table in `apps/ros/src/schema/` obeys three rules. They are
 stated at the top of the first migration and repeated nowhere else,
 because they are the only three that matter:
 
@@ -154,7 +154,7 @@ as epochs.
 
 ### The files
 
-`apps/eatery/src/schema/` holds numbered migrations, applied in order by
+`apps/ros/src/schema/` holds numbered migrations, applied in order by
 the platform when the database opens:
 
 ```
@@ -168,7 +168,7 @@ the platform when the database opens:
 ### Creating one
 
 ```sh
-cd apps/eatery
+cd apps/ros
 native db new-migration add_promotions   # appends src/schema/000N_add_promotions.sql
 ```
 
@@ -177,7 +177,7 @@ The CLI generates the file, generates the migrations module from
 
 ### The lock file
 
-`apps/eatery/src/schema/migrations.lock.json` is the append-only
+`apps/ros/src/schema/migrations.lock.json` is the append-only
 authority on what has shipped:
 
 ```json
@@ -226,17 +226,17 @@ recorded in `docs/decisions/0005-engine-owned-sqlite-strict-schema.md`.
 
 ### Changing the schema
 
-1. Read `apps/eatery/src/schema/` and `apps/eatery/src/data/repos.zig`.
+1. Read `apps/ros/src/schema/` and `apps/ros/src/data/repos.zig`.
 2. Add `src/schema/NNNN_name.sql`. Never edit an earlier file.
 3. Keep `STRICT`, the `CHECK` constraints, integer minor-unit money and
    epoch-millisecond time.
 4. Run `native db new-migration` (or regenerate the lock through the SDK
    tooling) so `migrations.lock.json` moves to the new version.
 5. Add or update the SQL constant and its decoder in
-   `apps/eatery/src/data/repos.zig`.
+   `apps/ros/src/data/repos.zig`.
 6. `native check`, then `native test`.
 
-There is no installed v2 base yet, so a correction to an existing
+There is no installed Restaurant OS base yet, so a correction to an existing
 migration can still be folded into a new migration without a data
 migration. Once a release ships, that stops.
 
@@ -337,7 +337,7 @@ The shift, the hours, the money that is not a sale.
 
 ### 0008 — `compliance.sql` (3 tables)
 
-The records a tax authority can ask for. These tables are the reason v2
+The records a tax authority can ask for. These tables are the reason Restaurant OS
 keeps money in integer minor units and every void with a reason: an X/Z
 report has to be reconstructible from the database alone, months later.
 
@@ -360,7 +360,7 @@ print job and a sidecar process owns the device.
 ### 0010 — `sync.sql` (3 tables)
 
 The operation log. v1 spoke WebSocket to a sync host from inside the
-app. v2 does not: the app writes its changes here and watches this
+app. Restaurant OS does not: the app writes its changes here and watches this
 table; a sidecar process owns the socket and the mDNS announcement.
 
 | Table | Holds | Key columns |
@@ -396,7 +396,7 @@ reservations by `status`, and `op_log` by `created_at` for pruning.
 
 ## 4. The repository layer
 
-`apps/eatery/src/data/` holds three files with three distinct jobs.
+`apps/ros/src/data/` holds three files with three distinct jobs.
 
 | File | Job |
 |---|---|
@@ -672,7 +672,7 @@ ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = ?3;
 `FutureProvider` invalidation: the store decides when the view's data is
 stale, and the app does not have to guess.
 
-### Where v2 will use each
+### Where Restaurant OS will use each
 
 **`dbQuery` — one-shot reads.** Anything the app fetches once and holds:
 
@@ -915,9 +915,9 @@ test "a PIN is hashed, never stored" {
 ## 7. What v1 got wrong that this schema fixes
 
 Grounded in the v1 schema at `eatery/assets/db/schema.sql` and in the
-comments the v2 code carries about its predecessor.
+comments the Restaurant OS code carries about its predecessor.
 
-| v1 | v2 | Why it matters |
+| v1 | Restaurant OS | Why it matters |
 |---|---|---|
 | Money in `REAL` columns — `grandTotal REAL`, `mrpPrice REAL`, `discountRate REAL` | Money in `INTEGER` minor units; rates in basis points | Binary floats lose cents. A day's total cannot be reconstructed exactly from them. |
 | `employee.pin TEXT` — the PIN in the clear | `employee.pin_hash TEXT` — a salted SHA-256 digest | A curious operator with a database file could read any PIN, and a stolen file leaked every PIN at once. |
@@ -938,13 +938,13 @@ comments the v2 code carries about its predecessor.
 
 ## 8. Checklist: changing the schema
 
-1. Read `apps/eatery/src/schema/` and `apps/eatery/src/data/repos.zig`.
-2. Add `apps/eatery/src/schema/NNNN_name.sql`. Never edit an earlier file.
+1. Read `apps/ros/src/schema/` and `apps/ros/src/data/repos.zig`.
+2. Add `apps/ros/src/schema/NNNN_name.sql`. Never edit an earlier file.
 3. Keep `STRICT`, the `CHECK` constraints, integer minor-unit money and
    epoch-millisecond time.
 4. Add the SQL constant, the loader and the decoder in
-   `apps/eatery/src/data/repos.zig`. Give the effect its own `key_*`.
-5. Regenerate `apps/eatery/src/schema/migrations.lock.json` through the
+   `apps/ros/src/data/repos.zig`. Give the effect its own `key_*`.
+5. Regenerate `apps/ros/src/schema/migrations.lock.json` through the
    SDK tooling, or run `native db new-migration`.
 6. Run `native check` — it prepares the schema with real SQLite and
    reports `file:line:col`.
@@ -962,7 +962,7 @@ comments the v2 code carries about its predecessor.
    fx.bindRelationalStore(db.binding());
    ```
 
-8. Update `apps/eatery/src/domain/models.zig` if a new entity or enum
+8. Update `apps/ros/src/domain/models.zig` if a new entity or enum
    appears, and `docs/architecture/05-schema.md`.
 
 ### Gotchas

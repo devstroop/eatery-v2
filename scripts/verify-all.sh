@@ -11,7 +11,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 if ! command -v native >/dev/null 2>&1; then
-  printf 'eatery: the native CLI is not on PATH - run scripts/setup.sh\n' >&2
+  printf 'ros: the native CLI is not on PATH - run scripts/setup.sh\n' >&2
   exit 1
 fi
 

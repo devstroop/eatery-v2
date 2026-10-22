@@ -1,4 +1,4 @@
-# Eatery v2 — the app
+# Restaurant OS — the app
 
 A restaurant operating system in one native binary: **point of sale,
 kitchen display, customer display and back office**, written in Zig on the
@@ -42,7 +42,7 @@ the commands below assume the toolchain is already installed and on PATH.
 Run them from the app directory.
 
 ```sh
-cd apps/eatery
+cd apps/ros
 
 native dev            # debug build, run, markup hot reload on src/app.native
 native test           # the headless test suite
@@ -84,7 +84,7 @@ native automate snapshot   # in another
 
 ## The source map
 
-Every file under `apps/eatery/`, and what it owns.
+Every file under `apps/ros/`, and what it owns.
 
 ### The app root
 
@@ -146,7 +146,7 @@ Every file under `apps/eatery/`, and what it owns.
 | `native dev` | debug build, run the app, reload the markup when `src/app.native` changes |
 | `native test` | the headless suite: build the view, dispatch messages the way the runtime does, assert on the model |
 | `native check` | validate `src/*.native` markup and `app.json` |
-| `native build` | ReleaseFast build into `zig-out/bin/eatery` |
+| `native build` | ReleaseFast build into `zig-out/bin/ros` |
 | `native db new-migration <name>` | append the next numbered migration |
 | `native db status` | source schema version against the installed one |
 | `native db reset --yes` | delete the development database |
@@ -254,9 +254,9 @@ channel:
 
 ```json
 {
-    "id": "dev.eatery.v2",
-    "name": "eatery",
-    "display_name": "Eatery",
+    "id": "com.devstroop.ros",
+    "name": "ros",
+    "display_name": "Restaurant OS",
     "version": "0.1.0",
     "platforms": ["macos", "linux", "windows"]
 }
@@ -301,7 +301,7 @@ One window, one view:
 
 | Field | Value |
 |---|---|
-| label / title | `main` / `Eatery` |
+| label / title | `main` / `Restaurant OS` |
 | size | 1280 × 800, minimum 960 × 600 |
 | restore policy | `center_on_primary` |
 | view | `main-canvas`, kind `gpu_surface`, fill `true` |

@@ -12,7 +12,7 @@ The app opens one window with one GPU surface.
 | Property | Value | Where |
 |---|---|---|
 | Window label | `main` | `main.zig`, `app.json` |
-| Title | Eatery | both |
+| Title | Restaurant OS | both |
 | Size | 1280 × 800 | both |
 | Minimum size | 960 × 600 | `app.json` only |
 | Restore policy | `center_on_primary` | `app.json` only |
@@ -130,8 +130,8 @@ re-run while writing these docs. See the appendix in
 
 The showcase convention is a per-app job:
 
-1. `native check apps/eatery`
-2. `native test apps/eatery --yes`
+1. `native check apps/ros`
+2. `native test apps/ros --yes`
 3. `native build -Dautomation=true`
 4. run under a virtual display
 5. assert `gpu_nonblank=true`

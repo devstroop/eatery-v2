@@ -1,9 +1,9 @@
 # Architecture overview
 
-> **Scope:** how the Eatery v2 app is put together — the app model, the
+> **Scope:** how the Restaurant OS app is put together — the app model, the
 > runtime lifecycle, the module map, the data flow, and the mechanics of
 > adding a screen.
-> **Source:** `apps/eatery/src/**`, `apps/eatery/app.json`, and the Native
+> **Source:** `apps/ros/src/**`, `apps/ros/app.json`, and the Native
 > SDK authoring guides in `native-zig-showcase/docs/sdk/`.
 > **Method:** read from source. The Native SDK CLI (`native`) is not on the
 > PATH in this workspace, so no build or test run backs the claims here.
@@ -12,7 +12,7 @@
 
 ## 1. The app model
 
-The Native SDK's app model has four moving parts, and Eatery v2 uses
+The Native SDK's app model has four moving parts, and Restaurant OS uses
 all four:
 
 | Part | Where it lives | What it owns |
@@ -158,8 +158,8 @@ main(init)
 `main.zig` builds the app:
 
 ```zig
-const app_state = try EateryApp.create(std.heap.page_allocator, .{
-    .name = "eatery",
+const app_state = try RosApp.create(std.heap.page_allocator, .{
+    .name = "ros",
     .scene = shell_scene,
     .canvas_label = canvas_label,
     .update_fx = update_mod.update,
@@ -276,7 +276,7 @@ to be copied — into the model's bump buffers. That rule is the reason
 
 ## 3. Module map
 
-`apps/eatery/src/`, one line per module:
+`apps/ros/src/`, one line per module:
 
 | Path | Owns |
 |---|---|
@@ -298,7 +298,7 @@ to be copied — into the model's bump buffers. That rule is the reason
 | `schema/migrations.lock.json` | The migration authority: version 11, eleven per-file hashes, and a `schema_hash`. |
 | `screens/*.native` | Nine screen templates: setup, role picker, login, dashboard, POS, orders, confirmation, tables, kitchen. |
 | `tests.zig` | The rules the app must not break. Twelve tests, written as rules. |
-| `app.json` (in `apps/eatery/`) | The manifest: identity, permissions, capabilities (`sqlite` among them), the shell window and its GPU surface, and the navigation policy. |
+| `app.json` (in `apps/ros/`) | The manifest: identity, permissions, capabilities (`sqlite` among them), the shell window and its GPU surface, and the navigation policy. |
 
 `src/components/` exists and is empty. It is the place for shared
 component templates once the screen count grows.
@@ -523,13 +523,13 @@ builds and contains its landmark.
 
 ```zig
 const tree = try buildTree(arena, &model);
-_ = try expectByText(tree.root, .text, "Eatery");
+_ = try expectByText(tree.root, .text, "Restaurant OS");
 ```
 
 **12. Validate.**
 
 ```sh
-cd apps/eatery
+cd apps/ros
 native check        # manifest, markup and schema validation
 native test         # headless update-logic and repository tests
 ```
@@ -576,7 +576,7 @@ const role_cards = [_]RoleCard{ ... };
 ### The four verbs
 
 ```sh
-cd apps/eatery
+cd apps/ros
 native dev          # debug build + markup hot reload
 native test         # headless update-logic and repository tests
 native check        # manifest, markup and schema validation

@@ -1,8 +1,8 @@
 # ADR-0005: One binary, four roles, scoped by a pure permission matrix
 
 **Status:** Accepted (2026-10)
-**Applies to:** `apps/eatery/src/core/navigation.zig`,
-`apps/eatery/src/core/rbac.zig`, `apps/eatery/src/core/update.zig`
+**Applies to:** `apps/ros/src/core/navigation.zig`,
+`apps/ros/src/core/rbac.zig`, `apps/ros/src/core/update.zig`
 **Related:** [`architecture/navigation-and-roles.md`](../../architecture/navigation-and-roles.md)
 
 ## Context
@@ -19,11 +19,11 @@ the router entirely. v1's own audit lists the consequence as defect **A8**
 logging in"). The kiosk roles were exempted inside that callback, by
 comparing role strings.
 
-v2 keeps the one-binary model and replaces the mechanism. `Role` in
-`apps/eatery/src/core/navigation.zig` is `admin | waiter | kds | display`.
-`rbac.allows(role, screen)` in `apps/eatery/src/core/rbac.zig` is the whole
+Restaurant OS keeps the one-binary model and replaces the mechanism. `Role` in
+`apps/ros/src/core/navigation.zig` is `admin | waiter | kds | display`.
+`rbac.allows(role, screen)` in `apps/ros/src/core/rbac.zig` is the whole
 access-control surface: a pure function with an answer for every pair, and
-`apps/eatery/src/tests.zig` walks all of them.
+`apps/ros/src/tests.zig` walks all of them.
 
 The sizes are fixed by the matrix. Admin may open all 43 screens. Waiter may
 open 12: the role picker, sign-in, the landing page, the four waiter

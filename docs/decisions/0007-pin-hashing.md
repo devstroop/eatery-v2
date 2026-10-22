@@ -2,7 +2,7 @@
 
 > **Status:** Superseded by [ADR-0016](0016-what-a-pin-is.md)
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/04`](../architecture/04-data-layer.md),
 > [`plan/open-questions.md`](../plan/open-questions.md)
 >

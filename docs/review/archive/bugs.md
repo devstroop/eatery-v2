@@ -573,7 +573,7 @@ comment. Consider using it in the decoders instead of the duplicate
 
 - `company_loaded` sets `model.db_ready = true` even when the page has no
   row (`decodeCompany` returns early).
-- `company_label` falls back to “Eatery”, so an unconfigured database
+- `company_label` falls back to “Restaurant OS”, so an unconfigured database
   looks like a configured one.
 - There is no `has_company` / setup-required state.
 

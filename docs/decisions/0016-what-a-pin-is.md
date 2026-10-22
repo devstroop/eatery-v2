@@ -3,7 +3,7 @@
 > **Status:** Superseded by [ADR-0018](0018-the-pin-hash-is-the-employees.md)
 > - decision 3 only. Decisions 1, 2, 4, 5 and 6 stand.
 > **Date:** 2026-10-21
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [ADR-0007](0007-pin-hashing.md) (superseded),
 > [`architecture/04`](../architecture/04-data-layer.md),
 > [`plan/status.md`](../plan/status.md),

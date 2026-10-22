@@ -2,7 +2,7 @@
 
 > **Status:** Superseded by [ADR-0014](0014-order-identity.md)
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/04`](../architecture/04-data-layer.md),
 > [`plan/status.md`](../plan/status.md)
 >

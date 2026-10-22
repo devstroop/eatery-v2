@@ -1,8 +1,8 @@
-# Eatery v2 documentation
+# Restaurant OS documentation
 
-Eatery v2 is the native rewrite of the Eatery restaurant operating system:
-point of sale, kitchen display, customer display and back office in one
-Zig binary built on the [Native SDK](https://native-sdk.dev).
+Restaurant OS is the native rewrite of Eatery v1, the restaurant operating
+system: point of sale, kitchen display, customer display and back office in
+one Zig binary built on the [Native SDK](https://native-sdk.dev).
 
 This directory is the maintained documentation set. It describes the
 **target system**, and labels every subsystem with what actually exists
@@ -10,7 +10,7 @@ in the source tree today. It is not a changelog and not a promise: a page
 marked `Planned` is a design, not code.
 
 > **Last full source review:** 2026-10-20
-> **Source of truth:** `apps/eatery/` for behaviour, `docs/` for intent.
+> **Source of truth:** `apps/ros/` for behaviour, `docs/` for intent.
 > **Upstream analysis:** [`../../PORT-PLAN.md`](../../PORT-PLAN.md) — the
 > original Flutter-to-Native gap analysis. This documentation supersedes
 > it where the two disagree; the plan document is historical input.
@@ -18,7 +18,7 @@ marked `Planned` is a design, not code.
 > Statuses below were established by reading the source. The Native SDK
 > CLI (`native`) is not on this shell's PATH, so the test suite was not
 > re-run for this review. A built binary exists at
-> `apps/eatery/zig-out/bin/eatery`; it backs "it compiles", not "the tests
+> `apps/ros/zig-out/bin/ros`; it backs "it compiles", not "the tests
 > pass". When a status changes, update the page that owns the claim, not a
 > status table in three places.
 
@@ -95,7 +95,7 @@ into one subsystem and include more code excerpts.
 | [data-model](architecture/data-model.md) | Schema rules, migration workflow, page dialect, repositories, salt lifecycle | [04](architecture/04-data-layer.md), [05](architecture/05-schema.md) |
 | [ui-components](architecture/ui-components.md) | Markup grammar in practice, templates, tokens, component library plan | [06](architecture/06-ui-markup-and-theming.md) |
 | [roadmap](plan/roadmap.md) | Product-ordered delivery plan, mapped to the engineering phase pages | [plan/README](plan/README.md) |
-| [gaps-from-v1](plan/gaps-from-v1.md) | What v2 drops, fixes and still owes the Flutter app | [11](architecture/11-capability-gaps.md) |
+| [gaps-from-v1](plan/gaps-from-v1.md) | What Restaurant OS drops, fixes and still owes the Flutter app | [11](architecture/11-capability-gaps.md) |
 
 Where an extended page and a numbered page disagree, the numbered page
 wins until both are corrected. Status claims belong to
@@ -142,7 +142,7 @@ until the three-app one is accepted.
 ### Review
 
 The findings of the 2026-10-20 audit are
-[issues](https://github.com/devstroop/eatery-v2/issues) now, labelled
+[issues](https://github.com/devstroop/ros/issues) now, labelled
 by the track that owns the fix. The audit itself is a dated snapshot
 in the archive, and it stays as the record of how the project found out
 what it did not know.
@@ -166,7 +166,7 @@ what it did not know.
    (`path:line`) or a wired screen. "Planned" requires no code.
 3. **Design and reality are separate paragraphs.** Do not describe a
    target as if it ships today. Use the status block.
-4. **Source anchors are relative to `apps/eatery/`.** For example
+4. **Source anchors are relative to `apps/ros/`.** For example
    `src/core/update.zig:67`. Line numbers drift; the symbol name is the
    stable part.
 5. **An ADR is immutable once accepted** except for a status change and a

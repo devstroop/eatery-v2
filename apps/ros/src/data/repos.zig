@@ -384,7 +384,7 @@ pub const discounts_sql =
     \\SELECT id, name, percent_bps, amount_minor, active FROM discount ORDER BY name;
 ;
 
-/// The company row. A v2 database holds exactly one company.
+/// The company row. A Restaurant OS database holds exactly one company.
 pub const company_sql =
     \\SELECT id, name, currency_code, currency_symbol, tax_inclusive,
     \\       address, phone, tax_number, currency_decimals

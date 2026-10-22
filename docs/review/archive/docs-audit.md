@@ -39,7 +39,7 @@ a `verify` and a `smoke` job. **Fixed** in this pass.
 
 `docs/architecture/10-testing-and-quality.md` (“There is no CI”),
 `docs/plan/phase-8-packaging-cutover.md` (“No packaging, no CI”) and
-`apps/eatery/README.md` (“There is no CI”). **Fixed** in this pass; the
+`apps/ros/README.md` (“There is no CI”). **Fixed** in this pass; the
 phase-8 line now distinguishes CI from packaging.
 
 ---
@@ -63,7 +63,7 @@ Status says “empty sidecar dir”. `tools/print-sidecar/README.md` and
 
 ## D-005 — The order flow is described as working
 
-`plan/status` and `apps/eatery/README.md` said “place order → row written
+`plan/status` and `apps/ros/README.md` said “place order → row written
 to `orders` + `order_line`”. At committed `HEAD` the insert omitted
 `orders.updated_at` (B-001), so the write failed; the working tree fixes
 it. **Fixed**: the pages now distinguish the working tree from committed
@@ -140,7 +140,7 @@ separate the three.
 
 ## D-013 — `native check` is described as not opening the database
 
-`apps/eatery/README.md` says check “does not open the database. The schema
+`apps/ros/README.md` says check “does not open the database. The schema
 is exercised when the app opens it.” `native check` does validate the
 schema: a temporary non-STRICT table in a copy of the app makes it fail
 with `NS1405`. It does not open the app's live database, which may be

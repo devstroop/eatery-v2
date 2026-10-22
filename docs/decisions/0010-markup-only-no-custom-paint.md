@@ -3,7 +3,7 @@
 > **Status:** Accepted (consequences accepted; floor plan reimplementation
 > is still Planned)
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers, product/design
+> **Deciders:** Devstroop maintainers, product/design
 > **Related:** [`architecture/06`](../architecture/06-ui-markup-and-theming.md),
 > [`architecture/11`](../architecture/11-capability-gaps.md)
 
