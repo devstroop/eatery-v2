@@ -139,4 +139,6 @@ pub fn main(init: std.process.Init) !void {
 test {
     _ = @import("tests.zig");
     _ = @import("tests_data.zig");
+    // The shared package's own tests - the wire codecs live there.
+    _ = @import("ros_core");
 }
