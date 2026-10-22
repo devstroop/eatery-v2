@@ -1,7 +1,11 @@
 # Phase 6 — Sync sidecar
 
-> **Status:** Scaffolded — tables exist, no app writes, no sidecar
-> **Estimate:** 10 engineer-days
+> **Status:** Superseded — [Phase 9](phase-9-three-apps-and-ipc.md)
+> replaces this phase. The op log and the transport are the same work,
+> and the sidecar is not being built: the apps cannot share one SQLite
+> file, so the peers move the rows between themselves. Nothing below is
+> scheduled; the page is kept for the reasoning it holds.
+> **Estimate:** 10 engineer-days (superseded)
 > **Depends on:** Phase 5, ADR-0009 accepted
 > **Exit criterion:** two machines converge, and the Flutter app and the
 > native app agree on the final state.

@@ -31,6 +31,7 @@ marked `Planned` is a design, not code.
 | **Implemented** | Code exists, is wired into the running app, and is exercised by at least one test or is directly rendered. |
 | **Partial** | Code exists but is unreachable, incomplete, or only covers part of the described behaviour. |
 | **Scaffolded** | A type, schema, directory or enum entry exists; no behaviour is wired. |
+| **Superseded** | A later decision or phase replaces it. The page is kept for its reasoning; it is not scheduled. |
 | **Planned** | Target design only. No code. |
 | **Unknown** | We do not yet know the answer, including whether the question is the right one. |
 | **Accepted / Proposed / Provisional / Superseded** | ADR decision states (see `decisions/`). |
@@ -79,6 +80,7 @@ If you are changing the database, read
 | [09-printing-and-hardware](architecture/09-printing-and-hardware.md) | ESC/POS, sidecar, printer routing | Scaffolded |
 | [10-testing-and-quality](architecture/10-testing-and-quality.md) | Test layers, current coverage, CI target | Partial |
 | [11-capability-gaps](architecture/11-capability-gaps.md) | What the SDK does not provide and the chosen workaround | Reference |
+| [12-three-apps-and-ipc](architecture/12-three-apps-and-ipc.md) | The three-app split, the TCP/IP protocol, and who owns what | Planned |
 
 ### Extended walkthroughs
 
@@ -109,7 +111,11 @@ template. The short version:
   only.
 - Provisional: PIN hashing, clock-based order IDs.
 - Proposed (need an owner): printing sidecar, sync sidecar, desktop-first,
-  CSV-first interchange.
+  CSV-first interchange, three apps over TCP/IP.
+
+The last one proposes to supersede "one binary four roles". A proposal
+to supersede is not a supersession: the one-binary decision stands
+until the three-app one is accepted.
 
 ### Plan
 
@@ -128,6 +134,7 @@ template. The short version:
 | [plan/phase-6-sync-sidecar](plan/phase-6-sync-sidecar.md) | LAN sync |
 | [plan/phase-7-printing-hardware](plan/phase-7-printing-hardware.md) | Printing and devices |
 | [plan/phase-8-packaging-cutover](plan/phase-8-packaging-cutover.md) | Packaging, migration, release |
+| [plan/phase-9-three-apps-and-ipc](plan/phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP; supersedes phase 6 |
 | [plan/risks](plan/risks.md) | Risk register |
 | [plan/open-questions](plan/open-questions.md) | Known unknowns and unknown unknowns |
 
@@ -176,6 +183,6 @@ When a change lands, update:
 | New table or column | `architecture/05`, `plan/status` |
 | New effect or message | `architecture/02`, `architecture/04` |
 | Role or permission change | `architecture/03`, add/extend the RBAC test |
-| New external process or protocol | `architecture/08` or `09`, ADR if the decision is new |
+| New external process or protocol | `architecture/08` or `09`, `architecture/12` for the app-to-app protocol, ADR if the decision is new |
 | A phase is finished | Its phase page, `plan/README`, `plan/status` |
 | A question is answered | `plan/open-questions`, possibly a new ADR |

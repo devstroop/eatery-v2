@@ -1,9 +1,25 @@
 # ADR-0009: Op-log sync with the transport in a sidecar
 
-> **Status:** Proposed — needs an owner and a go/no-go
+> **Status:** Proposed
 > **Date:** 2026-10-20
 > **Deciders:** Eatery maintainers, product
-> **Related:** [`architecture/08`](../architecture/08-sync.md)
+> **Related:** [`architecture/08`](../architecture/08-sync.md),
+> [`architecture/12`](../architecture/12-three-apps-and-ipc.md)
+
+**Proposed revision.**
+[ADR-0017](0017-three-apps-over-tcp-ip.md) proposes replacing the
+sidecar with the apps themselves, and replacing the blanket
+last-writer-wins rule with a per-entity-class ownership rule. Both
+records are **Proposed**, so this one has not been agreed in either
+version.
+
+**What ADR-0017 changes.** The op log stays, and it becomes the wire
+format rather than a table a sidecar polls. The sidecar, the WebSocket
+transport and the mDNS announcement are dropped: the apps cannot share
+one SQLite file - the database is engine-owned and pathless - so the
+peers move the rows between themselves over HTTP/1.1 on TCP. The blanket
+last-writer-wins rule is replaced by a per-entity-class ownership rule.
+See [`architecture/12`](../architecture/12-three-apps-and-ipc.md).
 
 ## Context
 
