@@ -1,3 +1,10 @@
+<!-- The the overview: what the day looks like.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
 <!-- The dashboard: what the restaurant looks like right now. Four
      numbers, the open orders, and the shortcuts an owner reaches for.
      Every number is a derived binding - the dashboard stores nothing. -->
@@ -72,6 +79,68 @@
           </row>
         </for>
       </column>
+    </if>
+  </column>
+</template>
+
+<!-- The report: what the day came to. The owner opens this at the end
+     of the shift and wants one number - the day's takings - and the
+     way the money came in underneath it. The day is the calendar day;
+     an order has no accounting date of its own yet, and that is the
+     trading-day policy, which is not this screen's to decide. -->
+
+<template name="screen-reports">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Today</text>
+      <button size="sm" variant="ghost" on-press="open_dashboard">Back</button>
+    </row>
+
+    <row gap="12">
+      <card padding="16" grow="1">
+        <column gap="4">
+          <text size="sm" foreground="text_muted">TAKINGS</text>
+          <text size="display">{currency_symbol}{fixed(report_net_minor / currency_divisor, currency_decimal_count)}</text>
+        </column>
+      </card>
+      <card padding="16" grow="1">
+        <column gap="4">
+          <text size="sm" foreground="text_muted">ORDERS</text>
+          <text size="display">{report_order_count}</text>
+        </column>
+      </card>
+      <card padding="16" grow="1">
+        <column gap="4">
+          <text size="sm" foreground="text_muted">TAX</text>
+          <text size="display">{currency_symbol}{fixed(report_tax_minor / currency_divisor, currency_decimal_count)}</text>
+        </column>
+      </card>
+      <card padding="16" grow="1">
+        <column gap="4">
+          <text size="sm" foreground="text_muted">DISCOUNTS</text>
+          <text size="display">{currency_symbol}{fixed(report_discount_minor / currency_divisor, currency_decimal_count)}</text>
+        </column>
+      </card>
+    </row>
+
+    <text size="lg">How it was paid</text>
+    <if test="{report_modes_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing has been paid for today.</text>
+      </column>
+    </if>
+    <if test="{report_modes_count > 0}">
+      <card padding="16" width="480">
+        <column gap="6">
+          <for each="report_modes" key="mode" as="row">
+            <row cross="center">
+              <text grow="1">{row.mode_label}</text>
+              <text foreground="text_muted">{row.count}</text>
+              <text>{currency_symbol}{fixed(row.amount_minor / currency_divisor, currency_decimal_count)}</text>
+            </row>
+          </for>
+        </column>
+      </card>
     </if>
   </column>
 </template>

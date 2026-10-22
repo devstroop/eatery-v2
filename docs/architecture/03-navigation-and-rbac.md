@@ -38,59 +38,66 @@ and no operator identity for them. This is intentional for a wall-mounted
 board, but it means a kiosk cannot attribute an action to a person. That
 is an open question in [`plan/open-questions.md`](../plan/open-questions.md).
 
-## The 45 screens
+## The 53 screens
 
 `Screen` is the product's destination vocabulary. It is **append-only**:
 markup compares `screen_index` against fixed ordinals, so reordering the
 enum silently breaks the shell.
 
 | # | Screen | Section | In shell today |
-|---|---|---|---|
 | 0 | `role_picker` | — | Yes (top-level gate) |
 | 1 | `login` | — | Yes (top-level gate) |
-| 2 | `landing` | — | No |
+| 2 | `landing` | — | Yes (top-level gate) |
 | 3 | `setup` | — | Yes (top-level gate) |
-| 4 | `wizard` | — | No |
-| 5 | `create_company` | — | No |
-| 6 | `reset_pin` | — | No |
-| 7 | `upgrade` | — | No |
-| 8 | `admin_dashboard` | overview | Yes |
-| 9 | `control_center` | overview | No |
-| 10 | `pos` | sell | Yes |
-| 11 | `pos_cart` | sell | No |
-| 12 | `order_confirmation` | sell | Yes |
-| 13 | `orders` | orders | Yes |
-| 14 | `order_detail` | orders | Yes |
-| 15 | `payments` | orders | No |
-| 16 | `customers` | floor | Yes |
-| 17 | `dining_tables` | floor | Yes |
-| 18 | `table_categories` | floor | No |
-| 19 | `floor_plan` | floor | No |
-| 20 | `reservations` | floor | Yes |
-| 21 | `kitchen_dishes` | catalog | No |
-| 22 | `inventory_items` | catalog | No |
-| 23 | `product_categories` | catalog | Yes |
-| 24 | `suppliers` | catalog | Yes |
-| 25 | `purchase_orders` | catalog | Yes |
-| 26 | `employees` | people | Yes |
-| 27 | `reports` | overview | No |
-| 28 | `settings` | — | Yes |
-| 29 | `settings_company` | — | Yes |
-| 30 | `settings_printers` | — | Yes |
-| 31 | `settings_tax` | — | Yes |
-| 32 | `settings_currency` | — | Yes |
-| 33 | `settings_modifiers` | — | Yes |
-| 34 | `settings_discounts` | — | Yes |
-| 35 | `data_management` | — | Yes |
-| 36 | `db_inspector` | system | No |
-| 37 | `waiter_tables` | service | Yes |
-| 38 | `waiter_menu` | service | Yes |
-| 39 | `waiter_cart` | service | Yes |
-| 40 | `waiter_orders` | service | Yes |
-| 41 | `kds_board` | kitchen | Yes |
-| 42 | `display_board` | display | Yes |
-| 43 | `product_form` | — | Yes |
-| 44 | `employee_form` | — | Yes |
+| 4 | `wizard` | — | Yes (top-level gate) |
+| 5 | `create_company` | — | Yes (top-level gate) |
+| 6 | `reset_pin` | — | Yes (ordinal gate) |
+| 7 | `upgrade` | — | Yes (top-level gate) |
+| 8 | `admin_dashboard` | overview | Yes (ordinal gate) |
+| 9 | `control_center` | — | Yes (ordinal gate) |
+| 10 | `pos` | sell | Yes (ordinal gate) |
+| 11 | `pos_cart` | — | Yes (ordinal gate) |
+| 12 | `order_confirmation` | — | Yes (ordinal gate) |
+| 13 | `orders` | orders | Yes (ordinal gate) |
+| 14 | `order_detail` | — | Yes (ordinal gate) |
+| 15 | `payments` | — | Yes (ordinal gate) |
+| 16 | `customers` | floor | Yes (ordinal gate) |
+| 17 | `dining_tables` | — | Yes (ordinal gate) |
+| 18 | `table_categories` | — | Yes (ordinal gate) |
+| 19 | `floor_plan` | — | Yes (ordinal gate) |
+| 20 | `reservations` | — | Yes (ordinal gate) |
+| 21 | `kitchen_dishes` | catalog | Yes (ordinal gate) |
+| 22 | `inventory_items` | — | Yes (ordinal gate) |
+| 23 | `product_categories` | — | Yes (ordinal gate) |
+| 24 | `suppliers` | — | Yes (ordinal gate) |
+| 25 | `purchase_orders` | — | Yes (ordinal gate) |
+| 26 | `employees` | people | Yes (ordinal gate) |
+| 27 | `reports` | — | Yes (ordinal gate) |
+| 28 | `settings` | system | Yes (ordinal gate) |
+| 29 | `settings_company` | system | Yes (ordinal gate) |
+| 30 | `settings_printers` | system | Yes (ordinal gate) |
+| 31 | `settings_tax` | system | Yes (ordinal gate) |
+| 32 | `settings_currency` | system | Yes (ordinal gate) |
+| 33 | `settings_modifiers` | system | Yes (ordinal gate) |
+| 34 | `settings_discounts` | system | Yes (ordinal gate) |
+| 35 | `data_management` | system | Yes (ordinal gate) |
+| 36 | `db_inspector` | system | Yes (ordinal gate) |
+| 37 | `waiter_tables` | service | Yes (ordinal gate) |
+| 38 | `waiter_menu` | — | Yes (ordinal gate) |
+| 39 | `waiter_cart` | — | Yes (ordinal gate) |
+| 40 | `waiter_orders` | — | Yes (ordinal gate) |
+| 41 | `kds_board` | kitchen | Yes (ordinal gate) |
+| 42 | `display_board` | display | Yes (ordinal gate) |
+| 43 | `product_form` | — | Yes (ordinal gate) |
+| 44 | `employee_form` | — | Yes (ordinal gate) |
+| 45 | `tax_slab_form` | — | Yes (ordinal gate) |
+| 46 | `discount_form` | — | Yes (ordinal gate) |
+| 47 | `category_form` | — | Yes (ordinal gate) |
+| 48 | `categories` | — | Yes (ordinal gate) |
+| 49 | `stock_count` | — | Yes (ordinal gate) |
+| 50 | `modifier_group_form` | — | Yes (ordinal gate) |
+| 51 | `customer_form` | — | Yes (ordinal gate) |
+| 52 | `table_category_form` | — | Yes (ordinal gate) |
 
 "In shell" means `app.native` has an `<if test="{screen_index == N}">`
 gate that mounts a template. Thirty-one screens render at all: the
@@ -220,13 +227,18 @@ sign-in screen, the stack freezing at 32 entries, and session state
 surviving sign-out - are fixed. See
 [ADR-0015](../decisions/0015-session-scoped-navigation.md).
 
-1. **Thirty-one templates, 45 screens.** The other fourteen screens are
-   a blank content pane.
+1. ~~**Thirty-one templates, 45 screens.** The other fourteen screens
+   are a blank content pane.~~ FIXED: every screen in the enum is
+   mounted, every one of them renders, and every one of them has a
+   landmark of its own.
 2. **The waiter's rail leads to a working floor, but the waiter cannot
    pay for a table.** The floor, the menu, the cart and the order list
-   render; the money does not.
-3. **`pos_cart` is unused.** The POS uses an inline cart pane, not the
-   `pos_cart` screen.
+   render; the money does not. The waiter takes the order and the
+   payment is taken at the till.
+3. ~~**`pos_cart` is unused.** The POS uses an inline cart pane, not the
+   `pos_cart` screen.~~ FIXED: the cart is ONE template, used both as
+   the pane beside the menu and as the `pos_cart` screen, so the two
+   cannot drift from each other.
 4. **No responsive layout mode.** The target calls for a model-computed
    layout mode; the shell is a fixed split with a 200 px rail. The split
    fraction is resizable but the structure does not adapt.
@@ -234,7 +246,9 @@ surviving sign-out - are fixed. See
    affordance dispatches it. A kiosk cannot go back today.
 6. **The error banner is implemented, but it is the only feedback path.**
    Denials and failures are visible now; there is no toast, inline field
-   error or per-panel state.
+   error or per-panel state. The shell now also says "Loading..." while
+   a read is on its way, and a failed read replaces the screen with the
+   reason and a way to try again.
 
 ## Target state
 

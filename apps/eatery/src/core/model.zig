@@ -247,6 +247,12 @@ pub const Model = struct {
     /// The forms the settings and the catalogue edit.
     form_currency_code_buf: canvas.TextBuffer(8) = .{},
     form_currency_symbol_buf: canvas.TextBuffer(8) = .{},
+    form_reset_pin_buf: canvas.TextBuffer(8) = .{},
+    form_reset_pin2_buf: canvas.TextBuffer(8) = .{},
+    form_reset_employee_id: i64 = 0,
+    form_reset_employee_name: []const u8 = "",
+    form_category_name_buf: canvas.TextBuffer(64) = .{},
+    form_category_id: i64 = 0,
     form_discount_name_buf: canvas.TextBuffer(64) = .{},
     form_discount_percent_buf: canvas.TextBuffer(16) = .{},
     form_discount_amount_buf: canvas.TextBuffer(16) = .{},
@@ -276,18 +282,34 @@ pub const Model = struct {
     printers_list: []const domain.Printer = &.{},
     tax_slabs_list: []const domain.TaxSlab = &.{},
     modifier_groups_list: []const domain.ModifierGroup = &.{},
+    modifiers_list: []const domain.Modifier = &.{},
+    table_categories_list: []const domain.TableCategory = &.{},
     discounts_list: []const domain.Discount = &.{},
     reservations_list: []const domain.Reservation = &.{},
     suppliers_list: []const domain.Supplier = &.{},
+    payments_list: []const domain.Payment = &.{},
+    report_modes_list: []const domain.ReportMode = &.{},
+    stock_items_list: []const domain.StockItem = &.{},
+    table_counts_list: []const domain.TableCount = &.{},
+    devices_list: []const domain.Device = &.{},
+    sync_state_list: []const domain.SyncState = &.{},
     purchase_orders_list: []const domain.PurchaseOrder = &.{},
 
     /// Storage for the settings rows the screens show.
     printers_buf: bump.Bump(8192) = .{},
     tax_slabs_buf: bump.Bump(4096) = .{},
     modifier_groups_buf: bump.Bump(4096) = .{},
+    modifiers_buf: bump.Bump(4096) = .{},
+    table_categories_buf: bump.Bump(2048) = .{},
     discounts_buf: bump.Bump(4096) = .{},
     reservations_buf: bump.Bump(8192) = .{},
     suppliers_buf: bump.Bump(8192) = .{},
+    payments_buf: bump.Bump(16384) = .{},
+    report_modes_buf: bump.Bump(2048) = .{},
+    stock_buf: bump.Bump(8192) = .{},
+    table_counts_buf: bump.Bump(4096) = .{},
+    devices_buf: bump.Bump(4096) = .{},
+    sync_state_buf: bump.Bump(4096) = .{},
     purchase_orders_buf: bump.Bump(8192) = .{},
 
     // ------------------------------------------------- the company form
@@ -325,6 +347,50 @@ pub const Model = struct {
 
     // ------------------------------------------------------- the sale
 
+    /// The dish the owner is assigning a station to.
+    selected_dish_id: i64 = 0,
+    /// The thing whose stock is being counted.
+    form_stock_product_id: i64 = 0,
+    /// Its name, for the form's heading.
+    form_stock_name_field: []const u8 = "",
+    /// The count the owner is typing.
+    form_stock_count_buf: canvas.TextBuffer(16) = .{},
+    /// Why the count changed.
+    form_stock_reason_buf: canvas.TextBuffer(64) = .{},
+    /// How many tables the database really has.
+    db_table_count_field: i64 = 0,
+    /// The category being edited, zero for a new one.
+    form_table_category_id: i64 = 0,
+    /// Its name.
+    form_table_category_name_buf: canvas.TextBuffer(64) = .{},
+    /// The customer being edited, zero for a new one.
+    form_customer_id: i64 = 0,
+    /// The customer's name.
+    form_customer_name_buf: canvas.TextBuffer(64) = .{},
+    /// The customer's phone.
+    form_customer_phone_buf: canvas.TextBuffer(32) = .{},
+    /// The customer's email.
+    form_customer_email_buf: canvas.TextBuffer(64) = .{},
+    /// The customer's address.
+    form_customer_address_buf: canvas.TextBuffer(128) = .{},
+    /// The group being edited, zero for a new one.
+    form_modifier_group_id: i64 = 0,
+    /// The group's name.
+    form_modifier_group_name_buf: canvas.TextBuffer(64) = .{},
+    /// How many choices the group allows.
+    form_modifier_max_buf: canvas.TextBuffer(8) = .{},
+    /// Whether the order cannot be prepared without a choice.
+    form_modifier_required_field: bool = false,
+    /// The day's order count, from the report query.
+    report_orders_field: i64 = 0,
+    /// The day's gross, in minor units.
+    report_gross_field: i64 = 0,
+    /// The day's tax, in minor units.
+    report_tax_field: i64 = 0,
+    /// The day's discounts, in minor units.
+    report_discount_field: i64 = 0,
+    /// The day's net, in minor units.
+    report_net_field: i64 = 0,
     /// True while a payment is on its way to the database. The view
     /// binds it: the button that takes the money is disabled while it
     /// holds, so a second tap cannot take the money twice.
@@ -367,6 +433,12 @@ pub const Model = struct {
     setup_admin_name: canvas.TextBuffer(64) = .{},
     setup_pin: canvas.TextBuffer(8) = .{},
     setup_pin2: canvas.TextBuffer(8) = .{},
+    /// The company's record, the parts the quick setup does not ask
+    /// for: where the restaurant is, how to reach it, and its tax
+    /// number.
+    wizard_address_buf: canvas.TextBuffer(128) = .{},
+    wizard_phone_buf: canvas.TextBuffer(32) = .{},
+    wizard_tax_buf: canvas.TextBuffer(32) = .{},
     setup_currency_code: canvas.TextBuffer(8) = .{},
     setup_currency_symbol: canvas.TextBuffer(8) = .{},
     /// Why the setup failed, or empty.
@@ -434,6 +506,17 @@ pub const Model = struct {
     db_ready: bool = false,
     /// True while a write is in flight.
     busy: bool = false,
+    /// True while a read is on its way. The shell says so, so a screen
+    /// that shows nothing yet is a screen that is working.
+    reading: bool = false,
+    /// When the read started, in epoch milliseconds.
+    read_started_at: i64 = 0,
+    /// True when the last read failed.
+    read_failed: bool = false,
+    /// The screen the failed read was for. A failure belongs to the
+    /// screen that asked for the data, not to whatever is on the pane
+    /// now.
+    failed_screen: nav.Screen = .admin_dashboard,
     /// The last error worth showing the operator, or empty.
     error_text: []const u8 = "",
     /// Dark palette instead of the house light one.
@@ -442,6 +525,36 @@ pub const Model = struct {
     // ---------------------------------------------------- derived values
     //
     // Everything below is a METHOD: computed on rebuild, never stored.
+
+    /// The devices that have been in this restaurant.
+    pub fn devices(model: *const Model) []const domain.Device {
+        return model.devices_list;
+    }
+
+    /// How many pieces of sync state there are.
+    pub fn sync_state_count(model: *const Model) usize {
+        return model.sync_state_list.len;
+    }
+
+    /// How many devices have been in this restaurant.
+    pub fn device_count(model: *const Model) usize {
+        return model.devices_list.len;
+    }
+
+    /// What the sync sidecar has left behind.
+    pub fn sync_state(model: *const Model) []const domain.SyncState {
+        return model.sync_state_list;
+    }
+
+    /// The tables in the database, and how many rows each holds.
+    pub fn table_counts(model: *const Model) []const domain.TableCount {
+        return model.table_counts_list;
+    }
+
+    /// How many tables the database has.
+    pub fn db_table_count(model: *const Model) usize {
+        return model.table_counts_list.len;
+    }
 
     /// The screen the app is showing.
     pub fn screen(model: *const Model) Screen {
@@ -466,6 +579,28 @@ pub const Model = struct {
     /// True when there is an error worth showing the operator.
     pub fn has_error(model: *const Model) bool {
         return model.error_text.len > 0;
+    }
+
+    /// True while the app is waiting for the database.
+    ///
+    /// The clock is the guard. A read whose answer never comes - the
+    /// slot was taken, the result was discarded - would otherwise leave
+    /// the app saying "loading" for ever, which is worse than saying
+    /// nothing.
+    pub fn is_loading(model: *const Model) bool {
+        if (!model.reading) return false;
+        if (model.now_ms <= 0) return true;
+        return model.now_ms - model.read_started_at < 10_000;
+    }
+
+    /// True when the screen on the pane is the one whose read failed.
+    pub fn read_failed_here(model: *const Model) bool {
+        return model.read_failed and model.failed_screen == model.screen();
+    }
+
+    /// True when there is something to try again.
+    pub fn can_retry(model: *const Model) bool {
+        return model.read_failed;
     }
 
     /// The error the operator needs to see.
@@ -723,6 +858,32 @@ pub const Model = struct {
     }
 
     /// The product name in the product form.
+    /// The PIN being typed for the reset.
+    pub fn form_reset_pin(model: *const Model) []const u8 {
+        return model.form_reset_pin_buf.text();
+    }
+
+    /// The PIN being confirmed for the reset.
+    pub fn form_reset_pin2(model: *const Model) []const u8 {
+        return model.form_reset_pin2_buf.text();
+    }
+
+    /// Whose PIN is being reset.
+    pub fn form_reset_employee(model: *const Model) []const u8 {
+        return model.form_reset_employee_name;
+    }
+
+    /// The name of the category being edited.
+    pub fn form_category_name(model: *const Model) []const u8 {
+        return model.form_category_name_buf.text();
+    }
+
+    /// The heading of the category form.
+    pub fn category_form_title(model: *const Model) []const u8 {
+        if (model.form_category_id == 0) return "New category";
+        return "Edit category";
+    }
+
     /// The name of the discount being edited.
     pub fn form_discount_name(model: *const Model) []const u8 {
         return model.form_discount_name_buf.text();
@@ -911,6 +1072,153 @@ pub const Model = struct {
         return model.reservations_list.len;
     }
 
+    /// The dish the owner is assigning a station to.
+    pub fn selected_dish(model: *const Model) i64 {
+        return model.selected_dish_id;
+    }
+
+    /// The name of the station that cooks a dish, or "No station" when
+    /// no station does.
+    ///
+    /// The name is resolved here rather than in the markup: a row
+    /// carries plain fields, and the markup cannot call a method on a
+    /// loop row.
+    pub fn station_name_for(model: *const Model, product_id: i64) []const u8 {
+        const station_id = model.station_of_product(product_id);
+        for (model.stations_list) |station| {
+            if (station.id == station_id) return station.name;
+        }
+        return "No station";
+    }
+
+    /// The name of the station with this id.
+    pub fn station_name(model: *const Model, station_id: i64) []const u8 {
+        for (model.stations_list) |station| {
+            if (station.id == station_id) return station.name;
+        }
+        return "No station";
+    }
+
+    /// The dishes on the menu, each with the station that cooks it.
+    ///
+    /// Allocated in the view's arena, never freed (see
+    /// `visible_products` for why).
+    pub fn kitchen_dishes(model: *const Model, arena: std.mem.Allocator) []const KitchenDish {
+        const out = arena.alloc(KitchenDish, model.products.len) catch return &.{};
+        var index: usize = 0;
+        for (model.products) |product| {
+            out[index] = .{
+                .id = product.id,
+                .name = product.name,
+                .station_name = model.station_name_for(product.id),
+            };
+            index += 1;
+        }
+        return out[0..index];
+    }
+
+    /// How many dishes are on the menu.
+    pub fn kitchen_dish_count(model: *const Model) usize {
+        return model.products.len;
+    }
+
+    /// What the restaurant has on the shelf.
+    pub fn stock_items(model: *const Model) []const domain.StockItem {
+        return model.stock_items_list;
+    }
+
+    /// How many things the restaurant counts.
+    pub fn stock_item_count(model: *const Model) usize {
+        return model.stock_items_list.len;
+    }
+
+    /// The thing whose stock is being counted.
+    pub fn form_stock_name(model: *const Model) []const u8 {
+        return model.form_stock_name_field;
+    }
+
+    /// The count the shelf says now, before the owner changes it.
+    pub fn form_stock_current(model: *const Model) i64 {
+        for (model.stock_items_list) |item| {
+            if (item.id == model.form_stock_product_id) return item.stock_qty;
+        }
+        return 0;
+    }
+
+    /// The count the owner is typing.
+    pub fn form_stock_count(model: *const Model) []const u8 {
+        return model.form_stock_count_buf.text();
+    }
+
+    /// Why the count changed.
+    pub fn form_stock_reason(model: *const Model) []const u8 {
+        return model.form_stock_reason_buf.text();
+    }
+
+    /// The orders taken today.
+    pub fn report_order_count(model: *const Model) i64 {
+        return model.report_orders_field;
+    }
+
+    /// The money the orders came to, before tax and discounts.
+    pub fn report_gross_minor(model: *const Model) i64 {
+        return model.report_gross_field;
+    }
+
+    /// The tax the day's orders carried.
+    pub fn report_tax_minor(model: *const Model) i64 {
+        return model.report_tax_field;
+    }
+
+    /// The discount the day's orders carried.
+    pub fn report_discount_minor(model: *const Model) i64 {
+        return model.report_discount_field;
+    }
+
+    /// What the day's orders came to, tax and discounts taken off.
+    pub fn report_net_minor(model: *const Model) i64 {
+        return model.report_net_field;
+    }
+
+    /// How the money came in, one row per mode.
+    pub fn report_modes(model: *const Model) []const domain.ReportMode {
+        return model.report_modes_list;
+    }
+
+    /// How many ways the money came in.
+    pub fn report_modes_count(model: *const Model) usize {
+        return model.report_modes_list.len;
+    }
+
+    /// The first millisecond of the day the report covers.
+    ///
+    /// The day is the UTC day. An order has no accounting date of its
+    /// own yet - that is the trading-day policy, and it is not this
+    /// screen's to decide - so the day here is plainly the calendar
+    /// day, and it says so on the screen.
+    pub fn report_day_start_ms(model: *const Model) i64 {
+        if (model.now_ms <= 0) return 0;
+        const day = @divFloor(model.now_ms, 86_400_000);
+        return day * 86_400_000;
+    }
+
+    /// The payments the restaurant has taken.
+    pub fn payments(model: *const Model) []const domain.Payment {
+        return model.payments_list;
+    }
+
+    /// How many payments the restaurant has taken.
+    pub fn payment_count(model: *const Model) usize {
+        return model.payments_list.len;
+    }
+
+    /// The money the restaurant has taken, in minor units.
+    pub fn payments_total_minor(model: *const Model) i64 {
+        var total: i64 = 0;
+        for (model.payments_list) |payment| total += payment.amount_minor;
+        return total;
+    }
+
     /// The suppliers.
     pub fn suppliers(model: *const Model) []const domain.Supplier {
         return model.suppliers_list;
@@ -939,6 +1247,113 @@ pub const Model = struct {
     /// The tax slabs the menu prices against.
     pub fn tax_slabs(model: *const Model) []const domain.TaxSlab {
         return model.tax_slabs_list;
+    }
+
+    /// Whether the employee with this id is the last admin.
+    ///
+    /// A restaurant with no admin cannot open the back office, and
+    /// the owner would have no way back in. So the last admin cannot
+    /// be deactivated until someone else is one.
+    pub fn is_last_admin(model: *const Model, id: i64) bool {
+        var admins: usize = 0;
+        var is_admin = false;
+        for (model.employees) |employee| {
+            if (employee.role != @intFromEnum(domain.EmployeeRole.admin)) continue;
+            admins += 1;
+            if (employee.id == id) is_admin = true;
+        }
+        return is_admin and admins <= 1;
+    }
+
+    /// The customer being edited, by name.
+    pub fn form_customer_name(model: *const Model) []const u8 {
+        return model.form_customer_name_buf.text();
+    }
+
+    /// The customer's phone.
+    pub fn form_customer_phone(model: *const Model) []const u8 {
+        return model.form_customer_phone_buf.text();
+    }
+
+    /// The customer's email.
+    pub fn form_customer_email(model: *const Model) []const u8 {
+        return model.form_customer_email_buf.text();
+    }
+
+    /// The customer's address.
+    pub fn form_customer_address(model: *const Model) []const u8 {
+        return model.form_customer_address_buf.text();
+    }
+
+    /// True when the app is showing the upgrade notice.
+    pub fn show_upgrade(model: *const Model) bool {
+        return model.screen() == .upgrade;
+    }
+
+    /// True when the app is showing the landing.
+    pub fn show_landing(model: *const Model) bool {
+        return model.screen() == .landing;
+    }
+
+    /// How many tables the database really has, as the database counts
+    /// them - which is not the same as how many this app knows.
+    pub fn database_table_count(model: *const Model) i64 {
+        return model.db_table_count_field;
+    }
+
+    /// How many tables this app's schema creates.
+    pub fn expected_table_count(_: *const Model) i64 {
+        return known_table_count;
+    }
+
+    /// True when the database is newer than this app.
+    ///
+    /// The app knows how many tables its own schema creates. A
+    /// database with more is one this version does not understand, and
+    /// this version must not write to it.
+    pub fn db_is_newer(model: *const Model) bool {
+        if (model.db_table_count_field == 0) return false;
+        return model.db_table_count_field > known_table_count;
+    }
+
+    /// The categories the tables are grouped into.
+    pub fn table_categories(model: *const Model) []const domain.TableCategory {
+        return model.table_categories_list;
+    }
+
+    /// How many categories there are.
+    pub fn table_category_count(model: *const Model) usize {
+        return model.table_categories_list.len;
+    }
+
+    /// The category being edited, by name.
+    pub fn form_table_category_name(model: *const Model) []const u8 {
+        return model.form_table_category_name_buf.text();
+    }
+
+    /// The choices in the group being edited.
+    pub fn modifiers(model: *const Model) []const domain.Modifier {
+        return model.modifiers_list;
+    }
+
+    /// How many choices the group being edited has.
+    pub fn modifier_count(model: *const Model) usize {
+        return model.modifiers_list.len;
+    }
+
+    /// The group being edited, by name.
+    pub fn form_modifier_group_name(model: *const Model) []const u8 {
+        return model.form_modifier_group_name_buf.text();
+    }
+
+    /// How many choices the group allows.
+    pub fn form_modifier_max_select(model: *const Model) []const u8 {
+        return model.form_modifier_max_buf.text();
+    }
+
+    /// Whether the group must be chosen.
+    pub fn form_modifier_required(model: *const Model) bool {
+        return model.form_modifier_required_field;
     }
 
     /// The modifier groups on the menu.
@@ -1015,9 +1430,44 @@ pub const Model = struct {
         return &payment_mode_options;
     }
 
-    /// True when the app is waiting for a first-run setup.
+    /// True when the app is showing the walk-through's first step.
+    ///
+    /// The walk-through is a session screen: it is shown before
+    /// anybody is signed in, so it is mounted beside the setup rather
+    /// than in the shell's content pane.
+    pub fn show_create_company(model: *const Model) bool {
+        return model.screen() == .create_company;
+    }
+
+    /// True when the app is showing the walk-through's second step.
+    pub fn show_wizard(model: *const Model) bool {
+        return model.screen() == .wizard;
+    }
+
+    /// True when the app is showing the quick setup.
+    ///
+    /// The screen, not the state: the setup is one way into a fresh
+    /// install, and the walk-through is the other. A fresh install
+    /// needs a setup, and the screen says WHICH one - the shell draws
+    /// the setup only when the setup is the screen being shown, so the
+    /// walk-through and the quick setup are never both on the pane.
     pub fn show_setup(model: *const Model) bool {
-        return model.needs_setup;
+        return model.screen() == .setup;
+    }
+
+    /// The company's address.
+    pub fn wizard_address(model: *const Model) []const u8 {
+        return model.wizard_address_buf.text();
+    }
+
+    /// The company's phone number.
+    pub fn wizard_phone(model: *const Model) []const u8 {
+        return model.wizard_phone_buf.text();
+    }
+
+    /// The company's tax number.
+    pub fn wizard_tax_number(model: *const Model) []const u8 {
+        return model.wizard_tax_buf.text();
     }
 
     /// The setup form's company name.
@@ -1231,6 +1681,21 @@ pub const Model = struct {
         return model.pin.text();
     }
 
+    /// True when the cart is the screen being shown, rather than the
+    /// pane beside the menu.
+    pub fn show_pos_cart_screen(model: *const Model) bool {
+        return model.screen() == .pos_cart;
+    }
+
+    /// True when the cart is a pane, so the way into it on its own is
+    /// worth offering.
+    ///
+    /// The negation is here and not in the markup: the markup has no
+    /// "not", and a model method may say what it means.
+    pub fn show_cart_on_its_own(model: *const Model) bool {
+        return model.screen() != .pos_cart;
+    }
+
     /// The order type of the open cart.
     pub fn cart_type_label(model: *const Model) []const u8 {
         return model.cart_order_type.label();
@@ -1376,6 +1841,23 @@ pub const CartRow = struct {
     total_minor: i64,
 };
 
+/// One dish on the menu, and the station that cooks it.
+pub const KitchenDish = struct {
+    id: i64,
+    name: []const u8,
+    /// The station that cooks this dish, by name. The markup binds
+    /// fields, so the name is resolved here.
+    station_name: []const u8,
+};
+
+/// How many tables this app's schema creates.
+///
+/// A database with more tables than this was made by a newer version
+/// of the app, and this version must not write to it. A test counts
+/// the tables in the migrations and says when the two disagree, so a
+/// new migration that adds a table cannot slip past.
+pub const known_table_count: i64 = 44;
+
 /// One food marking, as the product form offers it.
 pub const FoodTypeOption = struct {
     id: usize,
@@ -1411,6 +1893,8 @@ pub const LinkItem = struct {
 };
 
 const dashboard_links = [_]LinkItem{
+    .{ .id = @intFromEnum(Screen.reports), .title = "Today", .detail = "What the day came to" },
+    .{ .id = @intFromEnum(Screen.payments), .title = "Payments", .detail = "The money that came in" },
     .{ .id = @intFromEnum(Screen.customers), .title = "Customers", .detail = "Who came back" },
     .{ .id = @intFromEnum(Screen.reservations), .title = "Reservations", .detail = "Who is coming" },
     .{ .id = @intFromEnum(Screen.suppliers), .title = "Suppliers", .detail = "Who you buy from" },
@@ -1435,6 +1919,8 @@ const settings_menu = [_]SettingsItem{
     .{ .id = @intFromEnum(Screen.settings_modifiers), .title = "Modifier groups", .detail = "The choices on a dish" },
     .{ .id = @intFromEnum(Screen.settings_discounts), .title = "Discounts", .detail = "Percent and fixed discounts" },
     .{ .id = @intFromEnum(Screen.data_management), .title = "Data", .detail = "Import, export and backup" },
+    .{ .id = @intFromEnum(Screen.control_center), .title = "Control centre", .detail = "The devices and the sync" },
+    .{ .id = @intFromEnum(Screen.db_inspector), .title = "Database", .detail = "Every table, and what is in it" },
 };
 
 /// One card on the customer display.

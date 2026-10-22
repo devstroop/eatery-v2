@@ -11,38 +11,17 @@
      That enum is append-only: adding a screen means appending it, so
      the numbers here stay true. -->
 
-<import src="screens/screen-setup.native"/>
-<import src="screens/screen-role-picker.native"/>
-<import src="screens/screen-login.native"/>
-<import src="screens/screen-dashboard.native"/>
-<import src="screens/screen-pos.native"/>
-<import src="screens/screen-order-detail.native"/>
+
+<import src="screens/screen-session.native"/>
+<import src="screens/screen-overview.native"/>
+<import src="screens/screen-sell.native"/>
 <import src="screens/screen-orders.native"/>
-<import src="screens/screen-customers.native"/>
-<import src="screens/screen-reservations.native"/>
-<import src="screens/screen-suppliers.native"/>
-<import src="screens/screen-purchase-orders.native"/>
-<import src="screens/screen-tables.native"/>
-<import src="screens/screen-kitchen.native"/>
-<import src="screens/screen-order-confirmation.native"/>
-<import src="screens/screen-display.native"/>
+<import src="screens/screen-floor.native"/>
+<import src="screens/screen-catalog.native"/>
+<import src="screens/screen-people.native"/>
 <import src="screens/screen-settings.native"/>
-<import src="screens/screen-settings-printers.native"/>
-<import src="screens/screen-settings-tax.native"/>
-<import src="screens/screen-setting-forms.native"/>
-<import src="screens/screen-settings-modifiers.native"/>
-<import src="screens/screen-settings-discounts.native"/>
-<import src="screens/screen-settings-currency.native"/>
-<import src="screens/screen-settings-data.native"/>
-<import src="screens/screen-catalogue-list.native"/>
-<import src="screens/screen-employees-list.native"/>
-<import src="screens/screen-product-form.native"/>
-<import src="screens/screen-employee-form.native"/>
-<import src="screens/screen-settings-company.native"/>
-<import src="screens/screen-waiter-tables.native"/>
-<import src="screens/screen-waiter-menu.native"/>
-<import src="screens/screen-waiter-cart.native"/>
-<import src="screens/screen-waiter-orders.native"/>
+<import src="screens/screen-service.native"/>
+<import src="screens/screen-kitchen.native"/>
 
 <column grow="1" background="background">
   <row padding="12" gap="8" cross="center" background="surface">
@@ -51,15 +30,40 @@
     <button size="sm" variant="ghost" on-press="toggle_theme">Theme</button>
   </row>
 
+  <if test="{is_loading}">
+    <row padding="6" gap="8" cross="center" background="surface">
+      <text size="sm" foreground="text_muted">Loading...</text>
+    </row>
+  </if>
+
   <if test="{has_error}">
     <row padding="8" gap="8" cross="center" background="destructive">
       <text foreground="destructive_text" grow="1">{error_message}</text>
+      <if test="{can_retry}">
+        <button size="sm" variant="ghost" on-press="retry_read">Try again</button>
+      </if>
       <button size="sm" variant="ghost" on-press="dismiss_error">Dismiss</button>
     </row>
   </if>
 
   <if test="{show_setup}">
     <use template="screen-setup"/>
+  </if>
+
+  <if test="{show_create_company}">
+    <use template="screen-create-company"/>
+  </if>
+
+  <if test="{show_upgrade}">
+    <use template="screen-upgrade"/>
+  </if>
+
+  <if test="{show_landing}">
+    <use template="screen-landing"/>
+  </if>
+
+  <if test="{show_wizard}">
+    <use template="screen-wizard"/>
   </if>
 
   <if test="{show_role_picker}">
@@ -81,36 +85,61 @@
         <text size="sm" foreground="text_muted">{operator_label}</text>
       </column>
       <column grow="1">
-        <if test="{screen_index == 8}"><use template="screen-dashboard"/></if>
-        <if test="{screen_index == 10}"><use template="screen-pos"/></if>
-        <if test="{screen_index == 13}"><use template="screen-orders"/></if>
-        <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
-        <if test="{screen_index == 16}"><use template="screen-customers"/></if>
-        <if test="{screen_index == 20}"><use template="screen-reservations"/></if>
-        <if test="{screen_index == 24}"><use template="screen-suppliers"/></if>
-        <if test="{screen_index == 25}"><use template="screen-purchase-orders"/></if>
-        <if test="{screen_index == 17}"><use template="screen-tables"/></if>
-        <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
-        <if test="{screen_index == 37}"><use template="screen-waiter-tables"/></if>
-        <if test="{screen_index == 38}"><use template="screen-waiter-menu"/></if>
-        <if test="{screen_index == 39}"><use template="screen-waiter-cart"/></if>
-        <if test="{screen_index == 40}"><use template="screen-waiter-orders"/></if>
-        <if test="{screen_index == 41}"><use template="screen-kitchen"/></if>
-        <if test="{screen_index == 23}"><use template="screen-catalogue-list"/></if>
-        <if test="{screen_index == 26}"><use template="screen-employees-list"/></if>
-        <if test="{screen_index == 30}"><use template="screen-settings-printers"/></if>
-        <if test="{screen_index == 31}"><use template="screen-settings-tax"/></if>
-        <if test="{screen_index == 32}"><use template="screen-settings-currency"/></if>
-        <if test="{screen_index == 33}"><use template="screen-settings-modifiers"/></if>
-        <if test="{screen_index == 34}"><use template="screen-settings-discounts"/></if>
-        <if test="{screen_index == 35}"><use template="screen-settings-data"/></if>
-        <if test="{screen_index == 43}"><use template="screen-product-form"/></if>
-        <if test="{screen_index == 44}"><use template="screen-employee-form"/></if>
-        <if test="{screen_index == 45}"><use template="screen-tax-slab-form"/></if>
-        <if test="{screen_index == 46}"><use template="screen-discount-form"/></if>
-        <if test="{screen_index == 42}"><use template="screen-display"/></if>
-        <if test="{screen_index == 28}"><use template="screen-settings"/></if>
-        <if test="{screen_index == 29}"><use template="screen-settings-company"/></if>
+        <if test="{read_failed_here}">
+          <column grow="1" gap="8" padding="16" background="background">
+            <text size="heading">Could not load this</text>
+            <text foreground="text_muted">{error_message}</text>
+            <button variant="primary" on-press="retry_read">Try again</button>
+          </column>
+        </if>
+        <else>
+          <if test="{screen_index == 8}"><use template="screen-dashboard"/></if>
+          <if test="{screen_index == 10}"><use template="screen-pos"/></if>
+        <if test="{screen_index == 11}"><use template="screen-pos-cart"/></if>
+          <if test="{screen_index == 13}"><use template="screen-orders"/></if>
+          <if test="{screen_index == 15}"><use template="screen-payments"/></if>
+          <if test="{screen_index == 27}"><use template="screen-reports"/></if>
+          <if test="{screen_index == 22}"><use template="screen-inventory-items"/></if>
+          <if test="{screen_index == 21}"><use template="screen-kitchen-dishes"/></if>
+          <if test="{screen_index == 9}"><use template="screen-control-center"/></if>
+          <if test="{screen_index == 36}"><use template="screen-db-inspector"/></if>
+          <if test="{screen_index == 50}"><use template="screen-modifier-group-form"/></if>
+          <if test="{screen_index == 51}"><use template="screen-customer-form"/></if>
+        <if test="{screen_index == 52}"><use template="screen-table-category-form"/></if>
+          <if test="{screen_index == 49}"><use template="screen-stock-count"/></if>
+          <if test="{screen_index == 14}"><use template="screen-order-detail"/></if>
+          <if test="{screen_index == 16}"><use template="screen-customers"/></if>
+          <if test="{screen_index == 20}"><use template="screen-reservations"/></if>
+          <if test="{screen_index == 24}"><use template="screen-suppliers"/></if>
+          <if test="{screen_index == 25}"><use template="screen-purchase-orders"/></if>
+          <if test="{screen_index == 17}"><use template="screen-tables"/></if>
+        <if test="{screen_index == 18}"><use template="screen-table-categories"/></if>
+        <if test="{screen_index == 19}"><use template="screen-floor-plan"/></if>
+          <if test="{screen_index == 12}"><use template="screen-order-confirmation"/></if>
+          <if test="{screen_index == 37}"><use template="screen-waiter-tables"/></if>
+          <if test="{screen_index == 38}"><use template="screen-waiter-menu"/></if>
+          <if test="{screen_index == 39}"><use template="screen-waiter-cart"/></if>
+          <if test="{screen_index == 40}"><use template="screen-waiter-orders"/></if>
+          <if test="{screen_index == 41}"><use template="screen-kitchen"/></if>
+          <if test="{screen_index == 23}"><use template="screen-catalogue-list"/></if>
+          <if test="{screen_index == 26}"><use template="screen-employees-list"/></if>
+          <if test="{screen_index == 30}"><use template="screen-settings-printers"/></if>
+          <if test="{screen_index == 31}"><use template="screen-settings-tax"/></if>
+          <if test="{screen_index == 32}"><use template="screen-settings-currency"/></if>
+          <if test="{screen_index == 33}"><use template="screen-settings-modifiers"/></if>
+          <if test="{screen_index == 34}"><use template="screen-settings-discounts"/></if>
+          <if test="{screen_index == 35}"><use template="screen-settings-data"/></if>
+          <if test="{screen_index == 43}"><use template="screen-product-form"/></if>
+          <if test="{screen_index == 44}"><use template="screen-employee-form"/></if>
+          <if test="{screen_index == 45}"><use template="screen-tax-slab-form"/></if>
+          <if test="{screen_index == 46}"><use template="screen-discount-form"/></if>
+          <if test="{screen_index == 47}"><use template="screen-category-form"/></if>
+          <if test="{screen_index == 48}"><use template="screen-categories"/></if>
+          <if test="{screen_index == 6}"><use template="screen-reset-pin"/></if>
+          <if test="{screen_index == 42}"><use template="screen-display"/></if>
+          <if test="{screen_index == 28}"><use template="screen-settings"/></if>
+          <if test="{screen_index == 29}"><use template="screen-settings-company"/></if>
+        </else>
       </column>
     </split>
   </if>

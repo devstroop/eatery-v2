@@ -114,6 +114,12 @@ pub const Screen = enum {
     employee_form,
     tax_slab_form,
     discount_form,
+    category_form,
+    categories,
+    stock_count,
+    modifier_group_form,
+    customer_form,
+    table_category_form,
 
     pub fn index(self: Screen) usize {
         return @intFromEnum(self);
@@ -168,6 +174,12 @@ pub const Screen = enum {
             .employee_form => "Employee",
             .tax_slab_form => "Tax slab",
             .discount_form => "Discount",
+            .category_form => "Category",
+            .categories => "Categories",
+            .stock_count => "Count the stock",
+            .modifier_group_form => "Modifier group",
+            .customer_form => "Customer",
+            .table_category_form => "Table category",
         };
     }
 

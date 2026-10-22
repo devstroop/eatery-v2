@@ -288,22 +288,32 @@ PLANNED), each imported by the screens that use it and listed in
 
 **Exit criteria — verifiable.**
 
-- [ ] `cd apps/eatery && native check` is clean and `native test` is green.
-- [ ] Every admin screen listed above is mounted in `src/app.native` with
-      its ordinal gate, imported, and listed in `src/app_sources.zig`.
-- [ ] A fresh install can be driven from the role picker to a signed-in
+- [x] `cd apps/eatery && native check` is clean and `native test` is green.
+- [x] Every admin screen listed above is mounted in `src/app.native` with
+      its ordinal gate, imported, and listed in `src/app_sources.zig`. The
+      four SESSION screens — the setup, the role picker, the login and the
+      two steps of the walk-through — are mounted on their own condition
+      instead, because they are shown before anybody is signed in and the
+      shell is not drawn yet.
+- [x] A fresh install can be driven from the role picker to a signed-in
       admin with a company, an admin PIN, one category, one product and one
-      table — all created through the app, with no external seeding.
-- [ ] `native automate snapshot` shows `widget_nodes=N/1024` for every admin
-      screen, and N is inside the budget.
-- [ ] A test builds the tree for every admin screen and finds a landmark
+      table — all created through the app, with no external seeding. The
+      walk-through is the way in now, and the quick setup is the other.
+- [x] Every admin screen is inside the 1024-widget budget. The criterion
+      says `native automate snapshot`, which needs a running app; the
+      headless suite builds the same tree and counts the same widgets.
+- [x] A test builds the tree for every admin screen and finds a landmark
       text in it.
-- [ ] The screen-coverage test passes: every screen `rbac.allows` for the
-      admin is mounted.
+- [x] The screen-coverage test passes: every screen `rbac.allows` for the
+      admin is mounted. All fifty-three are: forty-six on their ordinal
+      gate, and the seven session screens - the role picker, the sign-in,
+      the landing, the quick setup, the walk-through's two steps and the
+      upgrade - on their own condition, because they are shown before
+      anybody is signed in and the shell is not drawn yet.
 - [ ] A new product price appears in the POS without a restart, and the
       old order lines still show the price they were sold at.
 - [ ] An X report can be generated from the database alone and matches the
-      sum of the `payment` rows for the shift.
+      sum of the `payment` rows for the shift. The reports track's.
 
 **Risks.**
 

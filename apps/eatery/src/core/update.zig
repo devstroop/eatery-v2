@@ -40,12 +40,16 @@ pub fn boot(model: *Model, fx: *Effects) void {
     // The first read: the settings the app needs before it can sign
     // anybody in, and the company - an empty database means a fresh
     // installation, and the app opens on the setup screen.
-    repos.loadConfig(fx);
-    repos.loadCompany(fx);
+    repos.loadConfig(model, fx);
+    repos.loadCompany(model, fx);
     // The tax slabs are read with the rest of the business's settings:
     // a sale's tax is worked out from them, and a sale that is placed
     // before they arrive would be taxed at nothing.
-    repos.loadTaxSlabs(fx);
+    repos.loadTaxSlabs(model, fx);
+    // And the number of tables the database really has. A database
+    // from a newer app is one this version must not write to, and the
+    // only way to know is to count what is there.
+    repos.loadDbTableCount(model, fx);
 }
 
 /// A new order on the board gets a sound. The kitchen hears the sale
@@ -120,7 +124,7 @@ fn selectTable(model: *Model, fx: *Effects, table_id: i64) void {
             .pending, .preparing, .ready, .served => {
                 model.active_order_id = order.id;
                 go(model, .waiter_menu);
-                repos.loadOrderLines(fx);
+                repos.loadOrderLines(model, fx);
                 return;
             },
             .completed, .voided => {},
@@ -186,6 +190,33 @@ fn openEmployeeForm(model: *Model, id: i64) void {
         }
     }
     go(model, .employee_form);
+}
+
+/// Open the category form: an existing category, or a new one.
+fn openCategoryForm(model: *Model, id: i64) void {
+    model.form_category_id = id;
+    model.form_category_name_buf.set("");
+    if (id != 0) {
+        for (model.categories) |category| {
+            if (category.id != id) continue;
+            model.form_category_name_buf.set(category.name);
+            break;
+        }
+    }
+    go(model, .category_form);
+}
+
+/// Save the category the form is editing.
+fn saveCategory(model: *Model, fx: *Effects) void {
+    const name = std.mem.trim(u8, model.form_category_name_buf.text(), " ");
+    if (name.len == 0) {
+        model.error_text = "The category needs a name";
+        return;
+    }
+    const id = if (model.form_category_id != 0) model.form_category_id else fx.wallMs();
+    model.busy = true;
+    model.error_text = "";
+    repos.saveCategory(fx, repos.key_save_category, id, name, fx.wallMs());
 }
 
 /// Open the discount form: an existing discount, or a new one.
@@ -483,6 +514,9 @@ fn submitSetup(model: *Model, fx: *Effects) void {
         hashed,
         model.pin_salt(),
         model_mod.decimalsForCurrency(currency),
+        std.mem.trim(u8, model.wizard_address_buf.text(), " "),
+        std.mem.trim(u8, model.wizard_phone_buf.text(), " "),
+        std.mem.trim(u8, model.wizard_tax_buf.text(), " "),
         fx.wallMs(),
     );
 }
@@ -501,6 +535,21 @@ fn createSalt(model: *Model, fx: *Effects) void {
 }
 
 pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
+    // A read that has come back is no longer on its way, and a read
+    // that failed is something the operator can try again. This is
+    // the ONE place that knows it, so every read behaves the same way
+    // whether it is the menu or the tables in the database.
+    if (msg.readOutcome()) |ok| {
+        model.reading = false;
+        if (!ok) {
+            model.read_failed = true;
+            model.failed_screen = model.screen();
+            if (model.error_text.len == 0) {
+                model.error_text = "The data could not be read - try again";
+            }
+        }
+    }
+
     switch (msg) {
         // -------------------------------------------------------- session
 
@@ -514,7 +563,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (role.needs_sign_in()) return;
             // Kiosk roles are signed in by device.
             model.signed_in = true;
-            repos.loadAll(fx);
+            repos.loadAll(model, fx);
             // The kitchen and the customer display watch the orders
             // instead of waiting for a refresh: a live query re-runs
             // itself when the `orders` table changes.
@@ -631,7 +680,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // in, and the till is not holding a grudge.
             model.login_failures = 0;
             model.login_locked_until = 0;
-            repos.loadAll(fx);
+            repos.loadAll(model, fx);
             // A hash from before bcrypt is rewritten in the modern
             // form, so the next sign-in of this employee is a slow
             // one and the old digest stops being worth anything.
@@ -655,6 +704,35 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
 
         // ------------------------------------------------------- first run
+
+        .wizard_next => {
+            // The company first, then the owner. The step that is NOT
+            // on the screen is not asked for.
+            const name = std.mem.trim(u8, model.setup_company_name.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "Give the restaurant a name";
+                return;
+            }
+            model.error_text = "";
+            go(model, .wizard);
+        },
+
+        .wizard_back => {
+            model.error_text = "";
+            go(model, .create_company);
+        },
+
+        .wizard_quick_setup => {
+            // The quick setup asks for less and takes less. It is the
+            // same restaurant, written the same way.
+            go(model, .setup);
+        },
+
+        .wizard_address_edit => |event| model.wizard_address_buf.apply(event),
+
+        .wizard_phone_edit => |event| model.wizard_phone_buf.apply(event),
+
+        .wizard_tax_edit => |event| model.wizard_tax_buf.apply(event),
 
         .setup_company_edit => |event| model.setup_company_name.apply(event),
 
@@ -696,7 +774,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // operator's PIN hash, so the salt in the model is now the
             // salt in the database. A sign-in may use it.
             model.salt_state = .confirmed;
-            repos.loadAll(fx);
+            repos.loadAll(model, fx);
         },
 
         // ----------------------------------------------------- navigation
@@ -717,7 +795,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // The screen loads what it shows: the effects channel has
             // sixteen slots, and loading everything at once fills them
             // and the late queries are refused.
-            repos.loadForScreen(fx, screen);
+            repos.loadForScreen(model, fx, screen);
         },
 
         .open_section => |ordinal| {
@@ -748,7 +826,397 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_pos => go(model, .pos),
 
+        .open_pos_cart => go(model, .pos_cart),
+
         .open_orders => go(model, .orders),
+
+        .open_payments => {
+            go(model, .payments);
+            repos.loadPayments(model, fx);
+        },
+
+        .open_reports => {
+            go(model, .reports);
+            repos.loadReport(model, fx, model.report_day_start_ms());
+        },
+
+        .open_dashboard => go(model, .admin_dashboard),
+
+        .deactivate_employee => |id| {
+            if (id == 0) return;
+            // The last admin cannot be deactivated: a restaurant with
+            // no admin cannot open the back office, and the owner
+            // would have no way back in.
+            if (model.is_last_admin(id)) {
+                model.error_text = "The last admin cannot be removed - make someone else an admin first";
+                return;
+            }
+            model.busy = true;
+            model.error_text = "";
+            repos.deactivateEmployee(fx, repos.key_deactivate_employee, id);
+        },
+
+        .open_customers => {
+            go(model, .customers);
+            repos.loadCustomers(model, fx);
+        },
+
+        .new_customer => {
+            model.form_customer_id = 0;
+            model.form_customer_name_buf.set("");
+            model.form_customer_phone_buf.set("");
+            model.form_customer_email_buf.set("");
+            model.form_customer_address_buf.set("");
+            go(model, .customer_form);
+        },
+
+        .edit_customer => |id| {
+            model.form_customer_id = id;
+            model.form_customer_name_buf.set("");
+            model.form_customer_phone_buf.set("");
+            model.form_customer_email_buf.set("");
+            model.form_customer_address_buf.set("");
+            for (model.customers) |customer| {
+                if (customer.id != id) continue;
+                model.form_customer_name_buf.set(customer.name);
+                model.form_customer_phone_buf.set(customer.phone);
+                model.form_customer_email_buf.set(customer.email);
+                break;
+            }
+            go(model, .customer_form);
+        },
+
+        .form_customer_name_edit => |event| model.form_customer_name_buf.apply(event),
+
+        .form_customer_phone_edit => |event| model.form_customer_phone_buf.apply(event),
+
+        .form_customer_email_edit => |event| model.form_customer_email_buf.apply(event),
+
+        .form_customer_address_edit => |event| model.form_customer_address_buf.apply(event),
+
+        .save_customer => {
+            const name = std.mem.trim(u8, model.form_customer_name_buf.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "The customer needs a name";
+                return;
+            }
+            const phone = std.mem.trim(u8, model.form_customer_phone_buf.text(), " ");
+            const email = std.mem.trim(u8, model.form_customer_email_buf.text(), " ");
+            const address = std.mem.trim(u8, model.form_customer_address_buf.text(), " ");
+            const id = if (model.form_customer_id != 0) model.form_customer_id else fx.wallMs();
+            model.busy = true;
+            model.error_text = "";
+            repos.saveCustomer(fx, repos.key_save_customer, id, name, phone, email, address, fx.wallMs());
+        },
+
+        .customer_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The customer could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadCustomers(model, fx);
+            go(model, .customers);
+        },
+
+        .open_table_categories => {
+            go(model, .table_categories);
+            repos.loadTableCategories(model, fx);
+        },
+
+        .open_landing => go(model, .landing),
+
+        .open_floor_plan => {
+            go(model, .floor_plan);
+            repos.loadTables(model, fx);
+        },
+
+        .new_table_category => {
+            model.form_table_category_id = 0;
+            model.form_table_category_name_buf.set("");
+            go(model, .table_category_form);
+        },
+
+        .edit_table_category => |id| {
+            model.form_table_category_id = id;
+            model.form_table_category_name_buf.set("");
+            for (model.table_categories_list) |category| {
+                if (category.id != id) continue;
+                model.form_table_category_name_buf.set(category.name);
+                break;
+            }
+            go(model, .table_category_form);
+        },
+
+        .form_table_category_name_edit => |event| model.form_table_category_name_buf.apply(event),
+
+        .save_table_category => {
+            const name = std.mem.trim(u8, model.form_table_category_name_buf.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "The category needs a name";
+                return;
+            }
+            const id = if (model.form_table_category_id != 0) model.form_table_category_id else fx.wallMs();
+            model.busy = true;
+            model.error_text = "";
+            repos.saveTableCategory(fx, repos.key_save_table_category, id, name);
+        },
+
+        .table_category_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The category could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadTableCategories(model, fx);
+            go(model, .table_categories);
+        },
+
+        .db_table_count_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind != .page) return;
+            var reader = repos.page.Reader.init(result.bytes);
+            var values: [repos.page.max_columns]repos.page.Value = undefined;
+            if (!reader.readHeader() or !reader.nextRow(&values)) return;
+            model.db_table_count_field = reader.intOf(&values, "n", 0);
+            // A database from a newer app: this one must not write to
+            // it, so it says so instead of pretending to work.
+            if (model.db_is_newer()) {
+                model.error_text = "";
+                go(model, .upgrade);
+            }
+        },
+
+        .table_categories_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeTableCategories(model, result.bytes);
+        },
+
+        .open_modifier_groups => {
+            go(model, .settings_modifiers);
+            repos.loadModifierGroups(model, fx);
+            repos.loadModifiers(model, fx);
+        },
+
+        .new_modifier_group => {
+            model.form_modifier_group_id = 0;
+            model.form_modifier_group_name_buf.set("");
+            model.form_modifier_max_buf.set("1");
+            model.form_modifier_required_field = false;
+            go(model, .modifier_group_form);
+        },
+
+        .edit_modifier_group => |id| {
+            model.form_modifier_group_id = id;
+            model.form_modifier_group_name_buf.set("");
+            model.form_modifier_max_buf.set("");
+            model.form_modifier_required_field = false;
+            for (model.modifier_groups_list) |group| {
+                if (group.id != id) continue;
+                model.form_modifier_group_name_buf.set(group.name);
+                // The number of choices the group allows, as text. The
+                // buffer takes the digits, written by hand: there is
+                // no allocator in `update`.
+                var digits: [20]u8 = undefined;
+                var index = digits.len;
+                var value = group.max_select;
+                if (value == 0) value = 1;
+                while (index > 0) {
+                    index -= 1;
+                    digits[index] = @intCast('0' + @as(u8, @intCast(@rem(value, 10))));
+                    value = @divTrunc(value, 10);
+                }
+                model.form_modifier_max_buf.set(digits[index..]);
+                model.form_modifier_required_field = group.required;
+                break;
+            }
+            go(model, .modifier_group_form);
+        },
+
+        .form_modifier_group_name_edit => |event| model.form_modifier_group_name_buf.apply(event),
+
+        .form_modifier_max_edit => |event| model.form_modifier_max_buf.apply(event),
+
+        .form_modifier_required => model.form_modifier_required_field = !model.form_modifier_required_field,
+
+        .save_modifier_group => {
+            const name = std.mem.trim(u8, model.form_modifier_group_name_buf.text(), " ");
+            if (name.len == 0) {
+                model.error_text = "The group needs a name";
+                return;
+            }
+            const max = std.fmt.parseInt(i64, std.mem.trim(u8, model.form_modifier_max_buf.text(), " "), 10) catch {
+                model.error_text = "How many choices is a number";
+                return;
+            };
+            if (max < 1) {
+                model.error_text = "A group allows at least one choice";
+                return;
+            }
+            const id = if (model.form_modifier_group_id != 0) model.form_modifier_group_id else fx.wallMs();
+            model.busy = true;
+            model.error_text = "";
+            repos.saveModifierGroup(fx, repos.key_save_modifier_group, id, name, model.form_modifier_required_field, max);
+        },
+
+        .modifier_group_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The group could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadModifierGroups(model, fx);
+            go(model, .settings_modifiers);
+        },
+
+        .modifiers_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeModifiers(model, result.bytes);
+        },
+
+        .open_inventory => {
+            go(model, .inventory_items);
+            repos.loadStock(model, fx);
+        },
+
+        .open_db_inspector => {
+            go(model, .db_inspector);
+            repos.loadTableCounts(model, fx);
+        },
+
+        .open_control_center => {
+            go(model, .control_center);
+            repos.loadDevices(model, fx);
+            repos.loadSyncState(model, fx);
+        },
+
+        .open_kitchen_dishes => {
+            go(model, .kitchen_dishes);
+            repos.loadProducts(model, fx);
+            repos.loadStations(model, fx);
+            repos.loadProductStations(model, fx);
+        },
+
+        .select_dish => |id| model.selected_dish_id = id,
+
+        .assign_station => |station_id| {
+            if (model.selected_dish_id == 0) {
+                model.error_text = "Choose a dish first";
+                return;
+            }
+            if (station_id == 0) {
+                model.error_text = "That is not a station";
+                return;
+            }
+            model.busy = true;
+            model.error_text = "";
+            repos.saveDishStation(fx, repos.key_save_station, model.selected_dish_id, station_id);
+        },
+
+        .db_tables_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The tables could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeTableCounts(model, result.bytes);
+        },
+
+        .devices_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeDevices(model, result.bytes);
+        },
+
+        .sync_state_loaded => |result| {
+            if (result.outcome != .ok) return;
+            if (result.kind == .page) repos.decodeSyncState(model, result.bytes);
+        },
+
+        .dish_assigned => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The station could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadProductStations(model, fx);
+        },
+
+        .count_stock => |id| {
+            model.form_stock_product_id = id;
+            model.form_stock_name_field = "";
+            for (model.stock_items_list) |item| {
+                if (item.id != id) continue;
+                model.form_stock_name_field = item.name;
+                break;
+            }
+            // The form starts where the shelf is, so the owner types
+            // the count they see, not the difference.
+            model.form_stock_count_buf.set("");
+            model.form_stock_reason_buf.set("");
+            go(model, .stock_count);
+        },
+
+        .form_stock_count_edit => |event| model.form_stock_count_buf.apply(event),
+
+        .form_stock_reason_edit => |event| model.form_stock_reason_buf.apply(event),
+
+        .save_stock_count => {
+            if (model.form_stock_product_id == 0) {
+                model.error_text = "Nothing is being counted";
+                return;
+            }
+            const typed = std.mem.trim(u8, model.form_stock_count_buf.text(), " \t");
+            const qty = std.fmt.parseInt(i64, typed, 10) catch {
+                model.error_text = "A count is a number";
+                return;
+            };
+            if (qty < 0) {
+                model.error_text = "A count cannot be negative";
+                return;
+            }
+            const current = model.form_stock_current();
+            const delta = qty - current;
+            const reason = std.mem.trim(u8, model.form_stock_reason_buf.text(), " \t");
+            if (reason.len == 0) {
+                model.error_text = "Say why the count changed";
+                return;
+            }
+            model.busy = true;
+            model.error_text = "";
+            repos.saveStockCount(
+                fx,
+                repos.key_save_stock,
+                model.form_stock_product_id,
+                qty,
+                delta,
+                reason,
+                fx.wallMs(),
+            );
+        },
+
+        .stock_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "The count could not be saved - try again";
+                return;
+            }
+            model.error_text = "";
+            repos.loadStock(model, fx);
+            go(model, .inventory_items);
+        },
+
+        .stock_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The stock could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeStock(model, result.bytes);
+        },
 
         .open_tables => go(model, .dining_tables),
 
@@ -756,7 +1224,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .open_order => |id| {
             model.selected_order_id = id;
             go(model, .order_detail);
-            repos.loadOrderLines(fx);
+            repos.loadOrderLines(model, fx);
         },
 
         .pay_selected_order => {
@@ -860,7 +1328,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // own id and its own request key.
             model.cart_attempt_id = 0;
             go(model, .order_confirmation);
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         // ----------------------------------------------------- the waiter
@@ -882,7 +1350,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.active_order_id = model.pending_order_id;
             model.pending_order_id = 0;
             go(model, .waiter_menu);
-            repos.loadOrderLines(fx);
+            repos.loadOrderLines(model, fx);
         },
 
         .add_to_order => |product_id| addToOrder(model, fx, product_id),
@@ -894,8 +1362,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             }
             // The line is on the order: read the order back so the
             // waiter sees the running total.
-            repos.loadOrderLines(fx);
-            repos.loadOrders(fx);
+            repos.loadOrderLines(model, fx);
+            repos.loadOrders(model, fx);
         },
 
         // ---------------------------------------------------- the payment
@@ -931,7 +1399,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // The sale is done: back to the order list, where the
             // closed order is now a completed one.
             go(model, .orders);
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         // -------------------------------------------------------- the forms
@@ -964,7 +1432,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadCompany(fx);
+            repos.loadCompany(model, fx);
         },
 
         .form_product_name_edit => |event| model.form_product_name_buf.apply(event),
@@ -977,7 +1445,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .open_catalogue => go(model, .product_categories),
 
-        .open_employees => go(model, .employees),
+        .open_categories => go(model, .categories),
 
         .edit_product => |id| openProductForm(model, id),
 
@@ -992,8 +1460,8 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadProducts(fx);
-            repos.loadCategories(fx);
+            repos.loadProducts(model, fx);
+            repos.loadCategories(model, fx);
             go(model, .product_categories);
         },
 
@@ -1003,9 +1471,48 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .edit_employee => |id| openEmployeeForm(model, id),
 
-        .new_employee => openEmployeeForm(model, 0),
+        .open_employees => go(model, .employees),
 
-        .save_employee => saveEmployee(model, fx),
+        .reset_employee_pin => |id| {
+            model.form_reset_employee_id = id;
+            model.form_reset_employee_name = "";
+            model.form_reset_pin_buf.set("");
+            model.form_reset_pin2_buf.set("");
+            for (model.employees) |employee| {
+                if (employee.id != id) continue;
+                model.form_reset_employee_name = employee.name;
+                break;
+            }
+            go(model, .reset_pin);
+        },
+
+        .form_reset_pin_edit => |event| model.form_reset_pin_buf.apply(event),
+
+        .form_reset_pin2_edit => |event| model.form_reset_pin2_buf.apply(event),
+
+        .save_reset_pin => {
+            const pin = model.form_reset_pin_buf.text();
+            if (model.form_reset_employee_id == 0) {
+                model.error_text = "Nobody is having their PIN reset";
+                return;
+            }
+            if (!model.pin_is_acceptable(pin)) {
+                model.error_text = "A PIN is six digits or more, and digits only";
+                return;
+            }
+            if (!std.mem.eql(u8, pin, model.form_reset_pin2_buf.text())) {
+                model.error_text = "The two PINs do not match";
+                return;
+            }
+            var hash: [auth.hash_length]u8 = undefined;
+            const hashed = auth.hashPin(model.pin_salt(), pin, &hash) orelse {
+                model.error_text = "Could not hash the PIN - try again";
+                return;
+            };
+            model.busy = true;
+            model.error_text = "";
+            repos.saveEmployeePin(fx, repos.key_save_employee, model.form_reset_employee_id, hashed);
+        },
 
         .employee_saved => |result| {
             model.busy = false;
@@ -1014,9 +1521,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadEmployees(fx);
+            repos.loadEmployees(model, fx);
             go(model, .employees);
         },
+
+        .new_employee => openEmployeeForm(model, 0),
+
+        .save_employee => saveEmployee(model, fx),
 
         .reservations_loaded => |result| {
             if (result.outcome != .ok) return;
@@ -1058,7 +1569,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadTaxSlabs(fx);
+            repos.loadTaxSlabs(model, fx);
             go(model, .settings_tax);
         },
 
@@ -1078,6 +1589,25 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.kind == .page) repos.decodeModifierGroups(model, result.bytes);
         },
 
+        .edit_category => |id| openCategoryForm(model, id),
+
+        .new_category => openCategoryForm(model, 0),
+
+        .save_category => saveCategory(model, fx),
+
+        .category_saved => |result| {
+            model.busy = false;
+            if (result.outcome != .ok) {
+                model.error_text = "Could not save the category";
+                return;
+            }
+            model.error_text = "";
+            repos.loadCategories(model, fx);
+            go(model, .product_categories);
+        },
+
+        .form_category_name_edit => |event| model.form_category_name_buf.apply(event),
+
         .edit_discount => |id| openDiscountForm(model, id),
 
         .new_discount => openDiscountForm(model, 0),
@@ -1093,7 +1623,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
-            repos.loadDiscounts(fx);
+            repos.loadDiscounts(model, fx);
             go(model, .settings_discounts);
         },
 
@@ -1131,14 +1661,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.error_text = "";
             // Read it back: the form's buffers are the edit model, and
             // the company row is the truth.
-            repos.loadCompany(fx);
+            repos.loadCompany(model, fx);
         },
 
         // -------------------------------------------------- the kitchen board
 
         .refresh_orders => |timer| {
             if (timer.outcome != .fired) return;
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         .set_station_filter => |id| model.station_filter_field = id,
@@ -1206,7 +1736,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // The orders come back with the status the DATABASE has,
             // not the one the model guessed: the board shows the truth
             // and the next move is computed from it.
-            repos.loadOrders(fx);
+            repos.loadOrders(model, fx);
         },
 
         // -------------------------------------------------------------- data
@@ -1240,6 +1770,33 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .customers_loaded => |result| {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeCustomers(model, result.bytes);
+        },
+
+        .report_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The report could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeReport(model, result.bytes);
+        },
+
+        .report_modes_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The report could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodeReportModes(model, result.bytes);
+        },
+
+        .payments_loaded => |result| {
+            if (result.outcome != .ok) {
+                model.error_text = "The payments could not be read - try again";
+                return;
+            }
+            model.error_text = "";
+            if (result.kind == .page) repos.decodePayments(model, result.bytes);
         },
 
         .orders_loaded => |result| {
@@ -1334,7 +1891,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // write alone is not proof: read the salt back, and let
                 // `config_loaded` confirm the one the database holds.
                 model.salt_state = .verifying;
-                repos.loadConfig(fx);
+                repos.loadConfig(model, fx);
                 return;
             }
             // The salt did not land. The model keeps the provisional
@@ -1357,9 +1914,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // app's first job is to become a restaurant.
             if (model.company_id == 0 and !model.needs_setup) {
                 model.needs_setup = true;
+                // A fresh install opens on the walk-through: the
+                // company's record first, then the owner.
+                model.stack.resetTo(.create_company);
                 model.setup_currency_code.set("USD");
                 model.setup_currency_symbol.set("$");
-                resetNavigation(model, .setup);
+                // The walk-through is the way in: the company's record
+                // first, then the owner and their PIN.
+                resetNavigation(model, .create_company);
             }
         },
 
@@ -1376,6 +1938,18 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         // ----------------------------------------------------------- chrome
 
         .dismiss_error => model.error_text = "",
+
+        .retry_read => {
+            // The read that failed belongs to a screen, and the retry
+            // reads what THAT screen shows - not what is on the pane
+            // now, which may be somewhere else by now.
+            const screen = model.failed_screen;
+            model.read_failed = false;
+            model.error_text = "";
+            model.reading = true;
+            model.read_started_at = model.now_ms;
+            repos.loadForScreen(model, fx, screen);
+        },
 
         .toggle_theme => model.theme_dark = !model.theme_dark,
 

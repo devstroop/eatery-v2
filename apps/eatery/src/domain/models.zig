@@ -205,6 +205,12 @@ pub const DiningTable = struct {
     pos_y: i64,
 };
 
+/// A category of dining table: "Main room", "Terrace", "Bar".
+pub const TableCategory = struct {
+    id: i64,
+    name: []const u8,
+};
+
 pub const Customer = struct {
     id: i64,
     name: []const u8,
@@ -315,6 +321,17 @@ pub const ModifierGroup = struct {
     required_label: []const u8,
 };
 
+/// One choice inside a modifier group: "Extra cheese", "Well done".
+pub const Modifier = struct {
+    id: i64,
+    group_id: i64,
+    name: []const u8,
+    /// What the choice adds to the price, in minor units. Zero is a
+    /// choice that costs nothing.
+    price_delta_minor: i64,
+    active: bool,
+};
+
 /// A discount: a percentage, a fixed amount, or both.
 pub const Discount = struct {
     id: i64,
@@ -379,6 +396,62 @@ pub const Shift = struct {
     opening_cash_minor: i64,
     closing_cash_minor: i64,
     expected_cash_minor: i64,
+};
+
+/// A payment the restaurant took.
+///
+/// The money is in minor units, and the mode is an enum resolved to a
+/// label at decode time: the markup binds fields, it does not decide
+/// what cash is called.
+pub const Payment = struct {
+    id: i64,
+    order_id: i64,
+    order_no: []const u8,
+    mode: PaymentMode,
+    /// The name of the mode, for the view.
+    mode_label: []const u8,
+    amount_minor: i64,
+    reference: []const u8,
+    paid_at: i64,
+};
+
+/// How the money came in, on one mode.
+pub const ReportMode = struct {
+    mode: PaymentMode,
+    /// The name of the mode, for the view.
+    mode_label: []const u8,
+    count: i64,
+    amount_minor: i64,
+};
+
+/// Something the restaurant counts. The stock on the shelf, as of the
+/// last count.
+pub const StockItem = struct {
+    id: i64,
+    name: []const u8,
+    /// The number on the shelf. Zero is a real number, and so is a
+    /// product that is not counted at all.
+    stock_qty: i64,
+};
+
+/// A device that has been in this restaurant.
+pub const Device = struct {
+    id: []const u8,
+    name: []const u8,
+    role: []const u8,
+    last_seen_at: i64,
+};
+
+/// One piece of the sync sidecar's state.
+pub const SyncState = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
+/// One table in the database, and how many rows it holds.
+pub const TableCount = struct {
+    name: []const u8,
+    rows: i64,
 };
 
 /// One line of the POS cart. The cart is session state, not database

@@ -236,7 +236,7 @@ test "the company row loads into the model" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
 
-    repos.loadCompany(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
     harness.drain();
 
     try testing.expectEqual(@as(i64, 1), harness.model.company_id);
@@ -248,7 +248,7 @@ test "the menu loads into the model, with prices in minor units" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
 
-    repos.loadProducts(harness.fx);
+    repos.loadProducts(&harness.model, harness.fx);
     harness.drain();
 
     try testing.expectEqual(@as(usize, 2), harness.model.products.len);
@@ -267,7 +267,7 @@ test "the tables load, and their status survives the round trip" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
 
-    repos.loadTables(harness.fx);
+    repos.loadTables(&harness.model, harness.fx);
     harness.drain();
 
     try testing.expectEqual(@as(usize, 2), harness.model.tables.len);
@@ -300,7 +300,7 @@ test "an order is written, read back, and its status advances" {
     try testing.expectEqual(@as(usize, 0), harness.model.cart_len);
 
     // Read it back through the repository, the way the orders screen does.
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
 
@@ -310,7 +310,7 @@ test "an order is written, read back, and its status advances" {
     try testing.expectEqual(@as(i64, 7), order.employee_id);
 
     // The lines are there too - the kitchen needs them.
-    repos.loadOrderLines(harness.fx);
+    repos.loadOrderLines(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 2), harness.model.order_lines.len);
     try testing.expectEqualStrings("Paneer Tikka", harness.model.order_lines[0].product_name);
@@ -318,7 +318,7 @@ test "an order is written, read back, and its status advances" {
 
     // Advancing the status writes the order AND its history.
     harness.send(.{ .advance_order = order.id });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
 }
@@ -359,6 +359,64 @@ fn storedPinHash(harness: *Harness, employee_id: i64, out: []u8) ![]const u8 {
 /// The count comes back as a page, and the page bytes are drain
 /// scratch: they are read inside the loop, before the next message
 /// takes the memory.
+/// Every row a query returns, as raw values, with the text copied out
+/// of the page's scratch bytes.
+const Rows = struct {
+    allocator: std.mem.Allocator,
+    rows: []const []repos.page.Value,
+
+    fn deinit(self: Rows) void {
+        for (self.rows) |row| {
+            for (row) |value| switch (value) {
+                .text => |text| self.allocator.free(text),
+                else => {},
+            };
+            self.allocator.free(row);
+        }
+        self.allocator.free(self.rows);
+    }
+};
+
+fn rowsOf(harness: *Harness, sql: []const u8) !Rows {
+    var out: std.ArrayList([]repos.page.Value) = .empty;
+    errdefer out.deinit(harness.allocator);
+    harness.fx.dbQuery(.{
+        .key = 906,
+        .sql = sql,
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                if (!reader.readHeader()) continue;
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                while (reader.nextRow(&values)) {
+                    // The page bytes are drain scratch: the text in a
+                    // row points into them, and they die with the
+                    // message. The text is copied out; the numbers are
+                    // values and can be kept as they are.
+                    var row = harness.allocator.dupe(repos.page.Value, &values) catch return error.NoRoom;
+                    for (row[0..reader.columns.len]) |*value| {
+                        switch (value.*) {
+                            .text => |text| {
+                                const copy = harness.allocator.dupe(u8, text) catch return error.NoRoom;
+                                value.* = .{ .text = copy };
+                            },
+                            else => {},
+                        }
+                    }
+                    try out.append(harness.allocator, row);
+                }
+            },
+            else => {},
+        }
+    }
+    return .{ .allocator = harness.allocator, .rows = try out.toOwnedSlice(harness.allocator) };
+}
+
 fn countRows(harness: *Harness, sql: []const u8, params: []const native_sdk.EffectDbValue) !i64 {
     harness.fx.dbQuery(.{
         .key = 907,
@@ -391,14 +449,14 @@ test "advancing an order twice writes one history row" {
     };
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     const order = harness.model.orders[0];
     try testing.expectEqual(domain.OrderStatus.pending, order.status);
 
     // The kitchen advances the ticket.
     harness.send(.{ .advance_order = order.id });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.preparing, harness.model.orders[0].status);
 
@@ -424,7 +482,7 @@ test "a move that does not apply leaves the order where it is" {
     };
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     const order = harness.model.orders[0];
 
@@ -433,7 +491,7 @@ test "a move that does not apply leaves the order where it is" {
     repos.setOrderStatus(harness.fx, order.id, domain.OrderStatus.ready, domain.OrderStatus.served, 1_700_000_000_000);
     harness.drain();
 
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.pending, harness.model.orders[0].status);
 
@@ -462,15 +520,15 @@ test "the tax is worked out line by line, from the product's own slab" {
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
-    repos.loadProducts(harness.fx);
-    repos.loadTaxSlabs(harness.fx);
+    repos.loadProducts(&harness.model, harness.fx);
+    repos.loadTaxSlabs(&harness.model, harness.fx);
     harness.drain();
 
     harness.model.employee_id = 7;
     harness.send(.{ .add_to_cart = 1 });
     harness.send(.{ .add_to_cart = 2 });
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
 
     const order = harness.model.orders[0];
@@ -482,7 +540,7 @@ test "the tax is worked out line by line, from the product's own slab" {
 
     // The rate is a snapshot on the line: a slab that changes tomorrow
     // must not rewrite the bill of yesterday.
-    repos.loadOrderLines(harness.fx);
+    repos.loadOrderLines(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(i64, 500), harness.model.order_lines[0].tax_bps);
     try testing.expectEqual(@as(i64, 0), harness.model.order_lines[1].tax_bps);
@@ -502,9 +560,9 @@ test "an inclusive price already carries its tax" {
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
-    repos.loadCompany(harness.fx);
-    repos.loadProducts(harness.fx);
-    repos.loadTaxSlabs(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
+    repos.loadProducts(&harness.model, harness.fx);
+    repos.loadTaxSlabs(&harness.model, harness.fx);
     harness.drain();
     try testing.expect(harness.model.tax_inclusive);
 
@@ -526,14 +584,14 @@ test "an inclusive price already carries its tax" {
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
-    repos.loadProducts(harness.fx);
-    repos.loadTaxSlabs(harness.fx);
+    repos.loadProducts(&harness.model, harness.fx);
+    repos.loadTaxSlabs(&harness.model, harness.fx);
     harness.drain();
 
     harness.model.employee_id = 7;
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
 
     const order = harness.model.orders[0];
@@ -566,9 +624,9 @@ fn with_tax_and_discounts(harness: *Harness) !void {
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
-    repos.loadProducts(harness.fx);
-    repos.loadTaxSlabs(harness.fx);
-    repos.loadDiscounts(harness.fx);
+    repos.loadProducts(&harness.model, harness.fx);
+    repos.loadTaxSlabs(&harness.model, harness.fx);
+    repos.loadDiscounts(&harness.model, harness.fx);
     harness.drain();
 }
 
@@ -589,7 +647,7 @@ test "a discount comes off the bill, and the tax follows it" {
     try testing.expectEqual(@as(i64, 400), harness.model.cart_discount_share(1));
 
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
 
     const order = harness.model.orders[0];
@@ -618,7 +676,7 @@ test "a fixed discount is spread over the lines and the last one takes the rest"
     try testing.expectEqual(@as(i64, 71), harness.model.cart_discount_share(1));
 
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
 
     const order = harness.model.orders[0];
@@ -638,13 +696,13 @@ test "a payment is taken once" {
     };
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     const order = harness.model.orders[0];
 
     // The money is taken.
     harness.send(Msg{ .take_payment = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.completed, harness.model.orders[0].status);
 
@@ -777,7 +835,7 @@ test "an order does not close without the money" {
     };
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     const order = harness.model.orders[0];
     try testing.expect(!order.paid);
@@ -790,7 +848,7 @@ test "an order does not close without the money" {
         harness.drain();
         expected = status;
     }
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.served, harness.model.orders[0].status);
 
@@ -799,7 +857,7 @@ test "an order does not close without the money" {
     harness.send(.{ .advance_order = order.id });
     try testing.expect(harness.model.error_text.len > 0);
 
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.served, harness.model.orders[0].status);
 
@@ -813,12 +871,12 @@ test "an order does not close without the money" {
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expect(harness.model.orders[0].paid);
 
     harness.send(.{ .advance_order = order.id });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(domain.OrderStatus.completed, harness.model.orders[0].status);
 }
@@ -837,7 +895,7 @@ test "the order number is a sequence" {
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
 
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 2), harness.model.orders.len);
 
@@ -872,7 +930,7 @@ test "a failed sale does not consume an order number" {
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
 
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
     try testing.expectEqualStrings("000001", harness.model.orders[0].order_no);
@@ -922,12 +980,12 @@ test "a retried write is the same sale" {
 
     // One sale, one number, one set of lines - and the number the
     // retry would have taken is still there for the next sale.
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
     try testing.expectEqualStrings("000001", harness.model.orders[0].order_no);
 
-    repos.loadOrderLines(harness.fx);
+    repos.loadOrderLines(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.order_lines.len);
 
@@ -940,7 +998,7 @@ test "a retried write is the same sale" {
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
 
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 2), harness.model.orders.len);
     try testing.expectEqualStrings("000002", harness.model.orders[0].order_no);
@@ -968,13 +1026,13 @@ test "two sales in the same millisecond are two sales" {
 
     // Two orders, two numbers, two sets of lines. The clock is the
     // same for both, so the ids cannot both be the clock.
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 2), harness.model.orders.len);
     try testing.expect(harness.model.orders[0].id != harness.model.orders[1].id);
     try testing.expect(!std.mem.eql(u8, harness.model.orders[0].order_no, harness.model.orders[1].order_no));
 
-    repos.loadOrderLines(harness.fx);
+    repos.loadOrderLines(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 2), harness.model.order_lines.len);
 }
@@ -1152,7 +1210,7 @@ test "a fresh installation gets a salt, stores it, and keeps it" {
 
     // The boot flow reads the settings. A fresh database has no salt
     // yet, so the provisional one is stored.
-    repos.loadConfig(harness.fx);
+    repos.loadConfig(&harness.model, harness.fx);
     harness.drain();
     try testing.expect(harness.model.pin_salt().len > 0);
     try testing.expectEqual(core.SaltState.confirmed, harness.model.salt_state);
@@ -1189,7 +1247,7 @@ test "a fresh installation gets a salt, stores it, and keeps it" {
     // one: the model starts empty and the database fills it.
     harness.model.pin_salt_len = 0;
     harness.model.salt_state = .unknown;
-    repos.loadConfig(harness.fx);
+    repos.loadConfig(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqualStrings(made, harness.model.pin_salt());
     try testing.expectEqual(core.SaltState.confirmed, harness.model.salt_state);
@@ -1309,13 +1367,855 @@ test "a fresh database asks to be set up" {
     defer harness.deinit();
 
     // The boot flow reads the company. There is none.
-    repos.loadCompany(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
     harness.drain();
 
     try testing.expect(harness.model.needs_setup);
-    try testing.expect(harness.model.show_setup());
+    // The walk-through is the way in: the company's record first, and
+    // the owner on the step after. The quick setup is the other way,
+    // and it is not on the pane.
+    try testing.expectEqual(nav.Screen.create_company, harness.model.screen());
+    try testing.expect(harness.model.show_create_company());
+    try testing.expect(!harness.model.show_setup());
     try testing.expect(!harness.model.show_role_picker());
+}
+
+test "a category is saved, and the menu is organised by it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A new section of the menu.
+    harness.model.form_category_name_buf.set("Starters");
+    harness.send(Msg{ .save_category = {} });
+
+    repos.loadCategories(&harness.model, harness.fx);
+    harness.drain();
+    var found = false;
+    for (harness.model.categories) |category| {
+        if (!std.mem.eql(u8, category.name, "Starters")) continue;
+        found = true;
+    }
+    try testing.expect(found);
+
+    // And a category with no name is not a category.
+    harness.model.form_category_name_buf.set("");
+    harness.send(Msg{ .save_category = {} });
+    try testing.expect(harness.model.error_text_text().len > 0);
+}
+
+test "a list shows what is in use" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A category, a table and a customer the restaurant has finished
+    // with.
+    harness.fx.dbExec(.{
+        .key = 930,
+        .statements = &.{
+            .{
+                .sql = "INSERT INTO product_category (id, name, sort_order, active) VALUES (9, 'Last season', 9, 0);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO dining_table (id, category_id, name, status, seats, pos_x, pos_y, active) VALUES (9, 1, 'T9', 0, 2, 0, 0, 0);",
+                .params = &.{},
+            },
+            .{
+                .sql = "INSERT INTO customer (id, name, phone, email, loyalty_points, active, created_at) VALUES (9, 'Gone', '0', '', 0, 0, 0);",
+                .params = &.{},
+            },
+        },
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    repos.loadCategories(&harness.model, harness.fx);
+    repos.loadTables(&harness.model, harness.fx);
+    repos.loadCustomers(&harness.model, harness.fx);
+    harness.drain();
+
+    // The menu a customer reads is the menu the kitchen cooks: a
+    // category the restaurant has finished with is not on it.
+    for (harness.model.categories) |category| {
+        try testing.expect(!std.mem.eql(u8, category.name, "Last season"));
+    }
+    for (harness.model.tables) |table| {
+        try testing.expect(!std.mem.eql(u8, table.name, "T9"));
+    }
+    for (harness.model.customers) |customer| {
+        try testing.expect(!std.mem.eql(u8, customer.name, "Gone"));
+    }
+}
+
+test "a fresh install becomes a restaurant through the app alone" {
+    // A fresh database. Nothing is seeded: whatever the app needs, the
+    // app makes.
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    // The installation salt. The app makes one at boot, where it has
+    // the randomness; the harness has to name it.
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // The app opens on the walk-through, because the database has no
+    // company. The quick setup is the other way in, and it is what the
+    // test below drives.
+    repos.loadCompany(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.needs_setup);
+    try testing.expectEqual(nav.Screen.create_company, harness.model.screen());
+    try testing.expect(harness.model.show_create_company());
+    try testing.expect(!harness.model.show_setup());
+
+    // The owner takes the quick way in instead.
+    harness.send(Msg{ .wizard_quick_setup = {} });
     try testing.expectEqual(nav.Screen.setup, harness.model.screen());
+    try testing.expect(harness.model.show_setup());
+
+    // The owner fills the form in.
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
+    harness.model.setup_currency_code.set("INR");
+    harness.model.setup_currency_symbol.set("Rs");
+    harness.send(Msg{ .setup_submit = {} });
+
+    // The operator is signed in, and the app is a point of sale.
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+    try testing.expectEqualStrings("Sharma Restaurant", harness.model.company_name_field);
+
+    // The company, the operator and the salt are in the database.
+    var company = false;
+    var operator = false;
+    var salt = false;
+    harness.fx.dbQuery(.{
+        .key = 929,
+        .sql = "SELECT (SELECT COUNT(*) FROM company) AS companies, (SELECT COUNT(*) FROM employee) AS staff, (SELECT COUNT(*) FROM app_config WHERE key = 'pin_salt') AS salts;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                company = reader.intOf(&values, "companies", 0) == 1;
+                operator = reader.intOf(&values, "staff", 0) == 1;
+                salt = reader.intOf(&values, "salts", 0) == 1;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(company);
+    try testing.expect(operator);
+    try testing.expect(salt);
+
+    // And the menu and the floor are there: a category, a product and
+    // a table, made by the app.
+    repos.loadCategories(&harness.model, harness.fx);
+    repos.loadProducts(&harness.model, harness.fx);
+    repos.loadTables(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.categories.len >= 1);
+    try testing.expect(harness.model.products.len >= 1);
+    try testing.expect(harness.model.tables.len >= 1);
+
+    // The operator's PIN is the one they chose, and the database holds
+    // a hash of it and never the PIN.
+    harness.model.signed_in = false;
+    harness.model.employee_id = 0;
+    harness.model.pin.set("482155");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 1), harness.model.employee_id);
+}
+
+test "the app says it is loading while a read is on its way" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // Before the read, the app is not loading.
+    try testing.expect(!harness.model.is_loading());
+
+    // The read is issued...
+    repos.loadCustomers(&harness.model, harness.fx);
+    try testing.expect(harness.model.is_loading());
+
+    // ...and the answer ends it.
+    harness.drain();
+    try testing.expect(!harness.model.is_loading());
+    try testing.expect(!harness.model.read_failed);
+}
+
+test "a read that fails is something the operator can try again" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A customer to find.
+    harness.fx.dbExec(.{
+        .key = 997,
+        .statements = &.{.{
+            .sql = "INSERT INTO customer (id, name, phone, email, loyalty_points, active, created_at) VALUES (1, 'Asha', '99900', 'asha@example.com', 10, 1, 1700000000000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The screen asks for its data, and the answer is a refusal.
+    harness.send(Msg{ .open_customers = {} });
+    harness.fx.dbQuery(.{
+        .key = 996,
+        .sql = "SELECT name FROM no_such_table;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.customers_loaded),
+    });
+    harness.drain();
+
+    // The app knows it failed, and it knows whose screen it was.
+    try testing.expect(harness.model.read_failed);
+    try testing.expect(harness.model.can_retry());
+    try testing.expect(harness.model.read_failed_here());
+    try testing.expect(harness.model.error_text.len > 0);
+
+    // Trying again reads the data the screen shows.
+    harness.send(Msg{ .retry_read = {} });
+    try testing.expect(!harness.model.read_failed);
+    try testing.expect(harness.model.error_text.len == 0);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
+}
+
+test "a failure belongs to the screen that asked, not to the pane" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .open_customers = {} });
+    harness.fx.dbQuery(.{
+        .key = 996,
+        .sql = "SELECT name FROM no_such_table;",
+        .params = &.{},
+        .on_result = Effects.dbMsg(.customers_loaded),
+    });
+    harness.drain();
+    try testing.expect(harness.model.read_failed);
+
+    // The operator goes somewhere else. The failure is not theirs now.
+    harness.send(Msg{ .open_orders = {} });
+    try testing.expect(harness.model.read_failed);
+    try testing.expect(!harness.model.read_failed_here());
+}
+
+test "an employee who has left is not on the team and cannot sign in" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A waiter, and an admin, so the guard has something to protect.
+    harness.fx.dbExec(.{
+        .key = 948,
+        .statements = &.{.{
+            .sql = "INSERT INTO employee (id, name, role, pin_hash, active, created_at) VALUES (8, 'Ravi', 1, 'x', 1, 1700000000000), (9, 'Meera', 0, 'y', 1, 1700000000000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    repos.loadEmployees(&harness.model, harness.fx);
+    harness.drain();
+
+    // The waiter leaves.
+    harness.send(Msg{ .deactivate_employee = 8 });
+    harness.drain();
+
+    // The row is still there - the orders they took still name them -
+    // but they are not on the team any more.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM employee WHERE id = 8 AND active = 0;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+    repos.loadEmployees(&harness.model, harness.fx);
+    harness.drain();
+    var found = false;
+    for (harness.model.employees) |employee| {
+        if (employee.id == 8) found = true;
+    }
+    try testing.expect(!found);
+
+    // And they cannot sign in: the sign-in asks for an active employee.
+    const signins = try countRows(&harness, "SELECT COUNT(*) AS n FROM employee WHERE id = 8 AND active = 1;", &.{});
+    try testing.expectEqual(@as(i64, 0), signins);
+}
+
+test "the last admin cannot be removed" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    repos.loadEmployees(&harness.model, harness.fx);
+    harness.drain();
+
+    // The seeded restaurant has one admin, and that admin is 7.
+    harness.send(Msg{ .deactivate_employee = 7 });
+    harness.drain();
+
+    // The owner is told, and the admin is still there.
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM employee WHERE id = 7 AND active = 1;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "the app knows how many tables its schema creates" {
+    // The constant the upgrade check leans on. A migration that adds a
+    // table must change it, and this test is what says so.
+    var tables: i64 = 0;
+    for (migration_sql) |sql| {
+        var rest = sql;
+        while (std.mem.indexOf(u8, rest, "CREATE TABLE")) |at| {
+            tables += 1;
+            rest = rest[at + "CREATE TABLE".len ..];
+        }
+    }
+    try testing.expectEqual(core.known_table_count, tables);
+}
+
+test "a database from a newer app stops the app before it writes" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A table this app does not know: the database is newer.
+    harness.fx.dbExec(.{
+        .key = 998,
+        .statements = &.{.{
+            .sql = "CREATE TABLE table_from_the_future (id INTEGER PRIMARY KEY);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The app counts what is there, and stops.
+    harness.send(Msg{ .open_dashboard = {} });
+    repos.loadDbTableCount(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expect(harness.model.db_is_newer());
+    try testing.expectEqual(nav.Screen.upgrade, harness.model.screen());
+    try testing.expect(harness.model.show_upgrade());
+}
+
+test "a database this app knows is not a reason to stop" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    repos.loadDbTableCount(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expect(!harness.model.db_is_newer());
+}
+
+test "the owner writes a category of tables" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The owner opens the categories.
+    harness.send(Msg{ .open_table_categories = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.table_categories, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.table_category_count());
+    try testing.expectEqualStrings("Main room", harness.model.table_categories()[0].name);
+
+    // And writes one.
+    harness.send(Msg{ .new_table_category = {} });
+    try testing.expectEqual(nav.Screen.table_category_form, harness.model.screen());
+    harness.model.form_table_category_name_buf.set("Terrace");
+    harness.send(Msg{ .save_table_category = {} });
+    harness.drain();
+
+    // The category is saved, and the owner is back on the list.
+    try testing.expectEqual(nav.Screen.table_categories, harness.model.screen());
+    try testing.expectEqual(@as(usize, 2), harness.model.table_category_count());
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM dining_table_category WHERE name = 'Terrace';", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a category of tables with no name is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_table_category = {} });
+    harness.model.form_table_category_name_buf.set("  ");
+    harness.send(Msg{ .save_table_category = {} });
+
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM dining_table_category;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "the owner writes a customer" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The owner opens the customers.
+    harness.send(Msg{ .open_customers = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.customers, harness.model.screen());
+
+    // And writes one.
+    harness.send(Msg{ .new_customer = {} });
+    try testing.expectEqual(nav.Screen.customer_form, harness.model.screen());
+    harness.model.form_customer_name_buf.set("Anita Sharma");
+    harness.model.form_customer_phone_buf.set("080 4123 4567");
+    harness.model.form_customer_email_buf.set("anita@example.com");
+    harness.model.form_customer_address_buf.set("12 MG Road, Bengaluru");
+    harness.send(Msg{ .save_customer = {} });
+    harness.drain();
+
+    // The customer is saved, and the owner is back on the list.
+    try testing.expectEqual(nav.Screen.customers, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
+    try testing.expectEqualStrings("Anita Sharma", harness.model.customers[0].name);
+    try testing.expectEqualStrings("080 4123 4567", harness.model.customers[0].phone);
+
+    // And it is in the database.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM customer WHERE name = 'Anita Sharma';", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a customer with no name is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_customer = {} });
+    harness.model.form_customer_name_buf.set("  ");
+    harness.send(Msg{ .save_customer = {} });
+
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM customer;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
+test "the owner writes a modifier group" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The owner opens the groups.
+    harness.send(Msg{ .open_modifier_groups = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.settings_modifiers, harness.model.screen());
+
+    // And starts a new one: "Spice level", one choice, required.
+    harness.send(Msg{ .new_modifier_group = {} });
+    try testing.expectEqual(nav.Screen.modifier_group_form, harness.model.screen());
+    harness.model.form_modifier_group_name_buf.set("Spice level");
+    harness.model.form_modifier_max_buf.set("1");
+    harness.send(Msg{ .form_modifier_required = {} });
+    harness.send(Msg{ .save_modifier_group = {} });
+    harness.drain();
+
+    // The group is saved, and the owner is back on the list.
+    try testing.expectEqual(nav.Screen.settings_modifiers, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.modifier_groups_list.len);
+    const group = harness.model.modifier_groups_list[0];
+    try testing.expectEqualStrings("Spice level", group.name);
+    try testing.expectEqual(@as(i64, 1), group.max_select);
+    try testing.expect(group.required);
+
+    // And it is in the database.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM modifier_group WHERE name = 'Spice level';", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+}
+
+test "a modifier group with no name is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .new_modifier_group = {} });
+    harness.model.form_modifier_group_name_buf.set("   ");
+    harness.model.form_modifier_max_buf.set("1");
+    harness.send(Msg{ .save_modifier_group = {} });
+
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM modifier_group;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
+test "the inspector counts every table the schema creates" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // What SQLite really has.
+    const real = try rowsOf(&harness, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;");
+    defer real.deinit();
+
+    // What the inspector says it has.
+    harness.send(Msg{ .open_db_inspector = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.db_inspector, harness.model.screen());
+    const counted = harness.model.table_counts();
+
+    // The two agree: the inspector does not miss a table, and it does
+    // not count one twice. A table the schema adds and the inspector
+    // forgets would show the owner a database that is not there.
+    try testing.expectEqual(real.rows.len, counted.len);
+    for (real.rows) |row| {
+        const name = row[0].asText();
+        var found = false;
+        for (counted) |table| {
+            if (!std.mem.eql(u8, table.name, name)) continue;
+            found = true;
+            break;
+        }
+        try testing.expect(found);
+    }
+}
+
+test "the inspector counts the rows that are really there" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .open_db_inspector = {} });
+    harness.drain();
+
+    // One company, two products, one employee.
+    var company_rows: i64 = -1;
+    var product_rows: i64 = -1;
+    for (harness.model.table_counts()) |table| {
+        if (std.mem.eql(u8, table.name, "company")) company_rows = table.rows;
+        if (std.mem.eql(u8, table.name, "product")) product_rows = table.rows;
+    }
+    try testing.expectEqual(@as(i64, 1), company_rows);
+    try testing.expectEqual(@as(i64, 2), product_rows);
+}
+
+test "the control centre shows the devices and the sync state" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 947,
+        .statements = &.{.{
+            .sql = "INSERT INTO device (id, name, role, last_seen_at, created_at) VALUES ('dev-1', 'Till 1', 'admin', 1700000000000, 1700000000000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    harness.send(Msg{ .open_control_center = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.control_center, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.device_count());
+    try testing.expectEqualStrings("Till 1", harness.model.devices()[0].name);
+    try testing.expectEqualStrings("admin", harness.model.devices()[0].role);
+}
+
+test "the owner says which station cooks which dish" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A station, and a dish that is not sent to it.
+    harness.fx.dbExec(.{
+        .key = 946,
+        .statements = &.{.{
+            .sql = "INSERT INTO kds_station (id, name, sort_order, active) VALUES (1, 'Tandoor', 1, 1);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The owner opens the dishes.
+    harness.send(Msg{ .open_kitchen_dishes = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.kitchen_dishes, harness.model.screen());
+    try testing.expectEqual(@as(usize, 2), harness.model.kitchen_dish_count());
+
+    // The dish goes to the station.
+    harness.send(Msg{ .select_dish = 1 });
+    harness.send(Msg{ .assign_station = 1 });
+    harness.drain();
+
+    // The mapping is written, and the old one is gone: a dish is
+    // cooked at one station.
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM product_station WHERE product_id = 1;", &.{});
+    try testing.expectEqual(@as(i64, 1), rows);
+
+    // And the station says so.
+    repos.loadProductStations(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(i64, 1), harness.model.station_of_product(1));
+    try testing.expectEqualStrings("Tandoor", harness.model.station_name_for(1));
+}
+
+test "a dish with no station chosen is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.send(Msg{ .assign_station = 1 });
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM product_station;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
+test "the owner counts the stock, and the count says why it moved" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A product the restaurant counts: twenty on the shelf.
+    harness.fx.dbExec(.{
+        .key = 944,
+        .statements = &.{.{
+            .sql = "UPDATE product SET track_stock = 1, stock_qty = 20 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The owner opens the stock and sees what is there.
+    harness.send(Msg{ .open_inventory = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.inventory_items, harness.model.screen());
+    try testing.expectEqual(@as(usize, 1), harness.model.stock_item_count());
+    try testing.expectEqualStrings("Paneer Tikka", harness.model.stock_items()[0].name);
+    try testing.expectEqual(@as(i64, 20), harness.model.stock_items()[0].stock_qty);
+
+    // They count the shelf, and say why it differs.
+    harness.send(Msg{ .count_stock = 1 });
+    try testing.expectEqual(nav.Screen.stock_count, harness.model.screen());
+    try testing.expectEqual(@as(i64, 20), harness.model.form_stock_current());
+    harness.model.form_stock_count_buf.set("18");
+    harness.model.form_stock_reason_buf.set("two broke");
+    harness.send(Msg{ .save_stock_count = {} });
+
+    // The shelf says eighteen, and the ledger says how it got there.
+    harness.drain();
+    try testing.expectEqual(nav.Screen.inventory_items, harness.model.screen());
+    try testing.expectEqual(@as(i64, 18), harness.model.stock_items()[0].stock_qty);
+
+    const rows = try rowsOf(&harness,
+        "SELECT delta, reason FROM stock_adjustment WHERE product_id = 1;",
+    );
+    defer rows.deinit();
+    try testing.expectEqual(@as(usize, 1), rows.rows.len);
+    try testing.expectEqual(@as(i64, -2), rows.rows[0][0].int());
+    try testing.expectEqualStrings("two broke", rows.rows[0][1].asText());
+}
+
+test "a count without a reason is refused" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.fx.dbExec(.{
+        .key = 945,
+        .statements = &.{.{
+            .sql = "UPDATE product SET track_stock = 1, stock_qty = 20 WHERE id = 1;",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    harness.send(Msg{ .open_inventory = {} });
+    harness.drain();
+    harness.send(Msg{ .count_stock = 1 });
+    harness.model.form_stock_count_buf.set("18");
+    harness.send(Msg{ .save_stock_count = {} });
+
+    // The count is not written, and the owner is told why.
+    try testing.expect(harness.model.error_text.len > 0);
+    const rows = try countRows(&harness, "SELECT COUNT(*) AS n FROM stock_adjustment;", &.{});
+    try testing.expectEqual(@as(i64, 0), rows);
+}
+
+test "the report says what the day came to" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The clock says what day it is. The report covers the calendar
+    // day, so the orders are placed inside it.
+    const day = 1_700_000_000_000 / 86_400_000 * 86_400_000;
+    harness.model.now_ms = day + 3_600_000;
+
+    // Three orders today, one of them voided, and a payment on two of
+    // them: one in cash, one by card.
+    harness.fx.dbExec(.{
+        .key = 942,
+        .statements = &.{.{
+            .sql = "INSERT INTO orders (id, order_no, order_type, status, dining_table_id, customer_id, employee_id, subtotal_minor, tax_minor, discount_minor, total_minor, placed_at, notes, created_at, updated_at) VALUES (1, 'A-1', 0, 3, 1, NULL, 7, 10000, 1000, 0, 11000, ?1, '', ?1, ?1), (2, 'A-2', 0, 3, 2, NULL, 7, 20000, 2000, 500, 21500, ?1, '', ?1, ?1), (3, 'A-3', 0, 5, 1, NULL, 7, 30000, 3000, 0, 33000, ?1, '', ?1, ?1);",
+            .params = &.{.{ .integer = day + 60_000 }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    harness.fx.dbExec(.{
+        .key = 943,
+        .statements = &.{.{
+            .sql = "INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at) VALUES (1, 1, 0, 11000, 'CASH-1', ?1, ?1), (2, 2, 1, 21500, 'CARD-1', ?1, ?1);",
+            .params = &.{.{ .integer = day + 120_000 }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The owner opens the report.
+    harness.send(Msg{ .open_reports = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.reports, harness.model.screen());
+
+    // Two orders: the voided one is not money and is not counted.
+    try testing.expectEqual(@as(i64, 2), harness.model.report_order_count());
+    try testing.expectEqual(@as(i64, 30000), harness.model.report_gross_minor());
+    try testing.expectEqual(@as(i64, 3000), harness.model.report_tax_minor());
+    try testing.expectEqual(@as(i64, 500), harness.model.report_discount_minor());
+    try testing.expectEqual(@as(i64, 32500), harness.model.report_net_minor());
+
+    // And the way the money came in, biggest first.
+    const modes = harness.model.report_modes();
+    try testing.expectEqual(@as(usize, 2), modes.len);
+    try testing.expectEqualStrings("Card", modes[0].mode_label);
+    try testing.expectEqual(@as(i64, 21500), modes[0].amount_minor);
+    try testing.expectEqual(@as(i64, 1), modes[0].count);
+    try testing.expectEqualStrings("Cash", modes[1].mode_label);
+    try testing.expectEqual(@as(i64, 11000), modes[1].amount_minor);
+}
+
+test "the payments screen shows the money the restaurant took" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // An order, paid for twice over: the restaurant's till has money
+    // in it, and the owner is asking what came in.
+    // Two orders, paid for: one in cash and one by card. An order is
+    // paid once - the database says so - so two payments means two
+    // orders.
+    harness.fx.dbExec(.{
+        .key = 940,
+        .statements = &.{.{
+            .sql = "INSERT INTO orders (id, order_no, order_type, status, dining_table_id, customer_id, employee_id, subtotal_minor, tax_minor, discount_minor, total_minor, placed_at, notes, created_at, updated_at) VALUES (1, 'A-1', 0, 3, 1, NULL, 7, 12000, 0, 0, 12000, 1700000000000, '', 1700000000000, 1700000000000), (2, 'A-2', 0, 3, 2, NULL, 7, 8000, 0, 0, 8000, 1700000001000, '', 1700000001000, 1700000001000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+    harness.fx.dbExec(.{
+        .key = 941,
+        .statements = &.{.{
+            .sql = "INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at) VALUES (1, 1, 0, 12000, 'CASH-1', 1700000000000, 1700000000000), (2, 2, 1, 8000, 'CARD-1', 1700000001000, 1700000001000);",
+            .params = &.{},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The owner opens the payments and the money is there.
+    harness.send(Msg{ .open_payments = {} });
+    harness.drain();
+    try testing.expectEqual(nav.Screen.payments, harness.model.screen());
+    try testing.expectEqual(@as(usize, 2), harness.model.payment_count());
+    try testing.expectEqual(@as(i64, 20000), harness.model.payments_total_minor());
+
+    // Each payment says how it was paid, and the newest is first: the
+    // card was taken a second after the cash.
+    const payments = harness.model.payments();
+    try testing.expectEqualStrings("Card", payments[0].mode_label);
+    try testing.expectEqualStrings("CARD-1", payments[0].reference);
+    try testing.expectEqual(@as(i64, 8000), payments[0].amount_minor);
+    try testing.expectEqualStrings("A-2", payments[0].order_no);
+    try testing.expectEqualStrings("Cash", payments[1].mode_label);
+    try testing.expectEqual(@as(i64, 12000), payments[1].amount_minor);
+    try testing.expectEqualStrings("A-1", payments[1].order_no);
+}
+
+test "a manager can reset an employee's PIN" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // The employee signs in with the PIN they were set up with.
+    var old_hash: [auth.hash_length]u8 = undefined;
+    const old = auth.hashPin(test_salt, "482155", &old_hash) orelse return error.NoHash;
+    harness.fx.dbExec(.{
+        .key = 931,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET pin_hash = ?1 WHERE id = 7;",
+            .params = &.{.{ .text = old }},
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    // The manager opens the reset and sets a new PIN.
+    harness.send(Msg{ .reset_employee_pin = 7 });
+    try testing.expectEqual(nav.Screen.reset_pin, harness.model.screen());
+    harness.model.form_reset_pin_buf.set("918273");
+    harness.model.form_reset_pin2_buf.set("918273");
+    harness.send(Msg{ .save_reset_pin = {} });
+
+    // The old PIN stops working and the new one works.
+    repos.loadEmployees(&harness.model, harness.fx);
+    harness.drain();
+
+    harness.model.signed_in = false;
+    harness.model.employee_id = 0;
+    harness.model.pin.set("482155");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(!harness.model.signed_in);
+
+    harness.model.signed_in = false;
+    harness.model.employee_id = 0;
+    harness.model.pin.set("918273");
+    harness.send(Msg{ .submit_login = {} });
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(@as(i64, 7), harness.model.employee_id);
+}
+
+test "the walk-through takes a restaurant from nothing to a POS" {
+    var harness = try Harness.start(testing.allocator);
+    defer harness.deinit();
+
+    @memcpy(harness.model.pin_salt_buf[0..test_salt.len], test_salt);
+    harness.model.pin_salt_len = test_salt.len;
+    harness.model.salt_state = .confirmed;
+
+    // A fresh install opens on the company's record.
+    repos.loadCompany(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expectEqual(nav.Screen.create_company, harness.model.screen());
+
+    // The owner fills it in: who the restaurant is, where it is, how
+    // to reach it, and what it pays in.
+    harness.model.setup_company_name.set("Sharma Restaurant");
+    harness.model.setup_currency_code.set("INR");
+    harness.model.setup_currency_symbol.set("Rs");
+    harness.model.wizard_address_buf.set("12 MG Road, Bengaluru");
+    harness.model.wizard_phone_buf.set("080 4123 4567");
+    harness.model.wizard_tax_buf.set("29ABCDE1234F1Z5");
+    harness.send(Msg{ .wizard_next = {} });
+
+    // The second step asks who the owner is.
+    try testing.expectEqual(nav.Screen.wizard, harness.model.screen());
+
+    harness.model.setup_admin_name.set("Anita");
+    harness.model.setup_pin.set("482155");
+    harness.model.setup_pin2.set("482155");
+    harness.send(Msg{ .setup_submit = {} });
+
+    // The restaurant exists, the operator is signed in, and the
+    // company's record is the one the owner filled in.
+    try testing.expect(harness.model.signed_in);
+    try testing.expectEqual(nav.Screen.admin_dashboard, harness.model.screen());
+    try testing.expectEqualStrings("Sharma Restaurant", harness.model.company_name_field);
+    try testing.expectEqualStrings("12 MG Road, Bengaluru", harness.model.company_address_field);
+    try testing.expectEqualStrings("080 4123 4567", harness.model.company_phone_field);
+    try testing.expectEqualStrings("29ABCDE1234F1Z5", harness.model.company_tax_field);
+    // And the currency the owner chose, with the decimals that go
+    // with it.
+    try testing.expectEqualStrings("INR", harness.model.currency_code);
+    try testing.expectEqual(@as(i64, 2), harness.model.currency_decimals);
 }
 
 test "the setup writes the company, the operator and the starter menu" {
@@ -1346,10 +2246,10 @@ test "the setup writes the company, the operator and the starter menu" {
     try testing.expectEqualStrings("Sharma Restaurant", harness.model.company_name_field);
 
     // The starter menu and floor are there.
-    repos.loadProducts(harness.fx);
+    repos.loadProducts(&harness.model, harness.fx);
     harness.drain();
     try testing.expect(harness.model.products.len >= 10);
-    repos.loadTables(harness.fx);
+    repos.loadTables(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 6), harness.model.tables.len);
 
@@ -1481,7 +2381,7 @@ test "a discount is saved, and it takes what the owner said off" {
     harness.model.form_discount_percent_buf.set("10");
     harness.send(Msg{ .save_discount = {} });
 
-    repos.loadDiscounts(harness.fx);
+    repos.loadDiscounts(&harness.model, harness.fx);
     harness.drain();
 
     var found = false;
@@ -1500,7 +2400,7 @@ test "a discount is saved, and it takes what the owner said off" {
     harness.model.form_discount_amount_buf.set("50.00");
     harness.send(Msg{ .save_discount = {} });
 
-    repos.loadDiscounts(harness.fx);
+    repos.loadDiscounts(&harness.model, harness.fx);
     harness.drain();
     var amount = false;
     for (harness.model.discounts_list) |discount| {
@@ -1545,7 +2445,7 @@ test "a tax slab is saved, and the rate the owner typed is the rate stored" {
     harness.model.form_tax_slab_rate_buf.set("5");
     harness.send(Msg{ .save_tax_slab = {} });
 
-    repos.loadTaxSlabs(harness.fx);
+    repos.loadTaxSlabs(&harness.model, harness.fx);
     harness.drain();
 
     var found = false;
@@ -1564,7 +2464,7 @@ test "a tax slab is saved, and the rate the owner typed is the rate stored" {
     harness.model.form_tax_slab_inclusive = true;
     harness.send(Msg{ .save_tax_slab = {} });
 
-    repos.loadTaxSlabs(harness.fx);
+    repos.loadTaxSlabs(&harness.model, harness.fx);
     harness.drain();
     var inclusive = false;
     for (harness.model.tax_slabs_list) |slab| {
@@ -1609,7 +2509,7 @@ test "the customers load into the model" {
     // The boot load brings them in. The customers screen and the count
     // beside the dashboard tile were both empty, always: the repository
     // was there, and nothing ever called it.
-    repos.loadAll(harness.fx);
+    repos.loadAll(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.customers.len);
     try testing.expectEqual(@as(usize, 1), harness.model.customer_count());
@@ -1677,7 +2577,7 @@ test "taking the payment closes the order and records the money" {
     try testing.expectEqualStrings("", harness.model.payment_error_text());
 
     // The order is completed, and the money is on the order.
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(nav.Screen.orders, harness.model.screen());
 }
@@ -1702,7 +2602,7 @@ test "the waiter opens an order for a free table and adds to it" {
     try testing.expectEqual(nav.Screen.waiter_menu, harness.model.screen());
 
     // The order is on the table.
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
     try testing.expectEqual(@as(i64, 1), harness.model.orders[0].dining_table_id);
@@ -1710,7 +2610,7 @@ test "the waiter opens an order for a free table and adds to it" {
 
     // A dish on the order brings the order's total with it.
     harness.send(.{ .add_to_order = 1 });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(i64, 24500), harness.model.orders[0].total_minor);
     try testing.expectEqual(@as(i64, 24500), harness.model.orders[0].subtotal_minor);
@@ -1718,6 +2618,18 @@ test "the waiter opens an order for a free table and adds to it" {
     // The waiter's cart shows the line.
     try testing.expectEqual(@as(i64, 1), harness.model.active_order_item_count());
     try testing.expectEqual(@as(i64, 24500), harness.model.active_order_total());
+
+    // The table is occupied: it has a guest at it. The board shows
+    // what is true, and a table that says "Free" while somebody is
+    // sitting at it is a lie the whole floor works around.
+    repos.loadTables(&harness.model, harness.fx);
+    harness.drain();
+    var occupied = false;
+    for (harness.model.tables) |table| {
+        if (table.id != 1) continue;
+        occupied = table.status == .occupied;
+    }
+    try testing.expect(occupied);
 }
 
 test "a table that already has an order is joined, not duplicated" {
@@ -1738,7 +2650,7 @@ test "a table that already has an order is joined, not duplicated" {
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
 
@@ -1746,7 +2658,7 @@ test "a table that already has an order is joined, not duplicated" {
     try testing.expectEqual(@as(i64, 42), harness.model.active_order_id);
 
     // And no second order was opened.
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
 }
@@ -1812,7 +2724,7 @@ test "the company details are saved and read back" {
 
     // The form starts from what is stored: opening the screen seeds
     // the form from the saved company.
-    repos.loadCompany(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
     harness.drain();
     harness.send(.{ .open_screen = @intCast(nav.Screen.settings_company.index()) });
     try testing.expectEqualStrings("Test Diner", harness.model.form_company_name());
@@ -1826,7 +2738,7 @@ test "the company details are saved and read back" {
     try testing.expectEqualStrings("", harness.model.error_text_text());
 
     // And the database has the new details.
-    repos.loadCompany(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqualStrings("Sharma Restaurant and Bar", harness.model.company_name_field);
     try testing.expectEqualStrings("12 MG Road", harness.model.company_address_field);
@@ -1907,7 +2819,7 @@ test "the company carries the currency's decimals" {
         .on_result = Effects.dbMsg(.company_loaded),
     });
     harness.drain();
-    repos.loadCompany(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
     harness.drain();
 
     try testing.expectEqualStrings("JPY", harness.model.currency_code);
@@ -1924,7 +2836,7 @@ test "the currency is saved" {
     harness.send(Msg{ .save_currency = {} });
     try testing.expectEqualStrings("", harness.model.error_text_text());
 
-    repos.loadCompany(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqualStrings("EUR", harness.model.currency_code);
     try testing.expectEqualStrings("€", harness.model.currency_symbol);
@@ -1935,7 +2847,7 @@ test "the currency is saved" {
     harness.model.form_currency_code_buf.set("JPY");
     harness.model.form_currency_symbol_buf.set("Y");
     harness.send(Msg{ .save_currency = {} });
-    repos.loadCompany(harness.fx);
+    repos.loadCompany(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqualStrings("JPY", harness.model.currency_code);
     try testing.expectEqual(@as(i64, 0), harness.model.currency_decimals);
@@ -1971,10 +2883,10 @@ test "the settings data loads: printers, tax slabs, groups and discounts" {
     });
     harness.drain();
 
-    repos.loadTaxSlabs(harness.fx);
-    repos.loadPrinters(harness.fx);
-    repos.loadModifierGroups(harness.fx);
-    repos.loadDiscounts(harness.fx);
+    repos.loadTaxSlabs(&harness.model, harness.fx);
+    repos.loadPrinters(&harness.model, harness.fx);
+    repos.loadModifierGroups(&harness.model, harness.fx);
+    repos.loadDiscounts(&harness.model, harness.fx);
     harness.drain();
 
     try testing.expectEqual(@as(usize, 2), harness.model.tax_slabs_list.len);
@@ -2012,9 +2924,9 @@ test "an order can be opened, and paid from the order list" {
     };
     harness.send(.{ .add_to_cart = 1 });
     harness.send(Msg{ .place_order = {} });
-    repos.loadOrders(harness.fx);
+    repos.loadOrders(&harness.model, harness.fx);
     harness.drain();
-    repos.loadOrderLines(harness.fx);
+    repos.loadOrderLines(&harness.model, harness.fx);
     harness.drain();
 
     try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
@@ -2066,7 +2978,7 @@ test "the effects channel has sixteen slots, so the loads are lazy" {
     defer harness.deinit();
 
     var messages: usize = 0;
-    repos.loadAll(harness.fx);
+    repos.loadAll(&harness.model, harness.fx);
     while (harness.fx.takeMsg()) |_| messages += 1;
     // Every query answers with a page and a terminal, so the queries
     // are half the messages. Sixteen slots is the channel's limit, and

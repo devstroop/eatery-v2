@@ -73,7 +73,24 @@ pub const key_save_salt = 36;
 pub const key_save_currency = 37;
 pub const key_save_tax_slab = 39;
 pub const key_save_discount = 40;
+pub const key_save_category = 41;
 pub const key_save_pin_hash = 38;
+pub const key_payments = 42;
+pub const key_report = 43;
+pub const key_report_modes = 44;
+pub const key_stock = 45;
+pub const key_save_stock = 46;
+pub const key_save_station = 47;
+pub const key_db_tables = 48;
+pub const key_modifiers = 51;
+pub const key_save_modifier_group = 52;
+pub const key_table_categories = 55;
+pub const key_db_table_count = 57;
+pub const key_save_table_category = 56;
+pub const key_save_customer = 53;
+pub const key_deactivate_employee = 54;
+pub const key_devices = 49;
+pub const key_sync_state = 50;
 
 // ------------------------------------------------------------ queries
 
@@ -85,16 +102,38 @@ pub const products_sql =
     \\ORDER BY name;
 ;
 
+/// The categories on the menu. A category that is not in use is not
+/// shown: the menu a customer reads is the menu the kitchen cooks.
 pub const categories_sql =
     \\SELECT id, name, sort_order
     \\FROM product_category
+    \\WHERE active = 1
     \\ORDER BY sort_order, name;
 ;
 
+/// The tables on the floor. A table that is not in use is not shown:
+/// the board is what the floor looks like, not what it once looked like.
 pub const tables_sql =
     \\SELECT id, category_id, name, status, seats, pos_x, pos_y
     \\FROM dining_table
+    \\WHERE active = 1
     \\ORDER BY name;
+;
+
+/// How many tables the database really has.
+///
+/// The app knows how many tables its own schema creates. A database
+/// with MORE tables than that was made by a newer version of the app,
+/// and this version must not write to it: a write that a newer app
+/// would understand differently is a write that corrupts.
+pub const db_table_count_sql =
+    \\SELECT COUNT(*) AS n FROM sqlite_master
+    \\WHERE type = 'table' AND name NOT LIKE 'sqlite_%';
+;
+
+/// The categories the tables are grouped into.
+pub const table_categories_sql =
+    \\SELECT id, name FROM dining_table_category ORDER BY name;
 ;
 
 pub const employees_sql =
@@ -104,9 +143,12 @@ pub const employees_sql =
     \\ORDER BY name;
 ;
 
+/// The customers the restaurant knows. One the restaurant has
+/// forgotten is not a customer.
 pub const customers_sql =
     \\SELECT id, name, phone, email, loyalty_points
     \\FROM customer
+    \\WHERE active = 1
     \\ORDER BY name;
 ;
 
@@ -138,6 +180,40 @@ pub const order_lines_sql =
 /// One setting out of `app_config`. The PIN salt lives there.
 pub const config_sql =
     \\SELECT key, value FROM app_config WHERE key = 'pin_salt' LIMIT 1;
+;
+
+/// The day's takings, in one row.
+///
+/// The day is the calendar day the report was asked for: the caller
+/// passes the first millisecond of it, and the query counts the orders
+/// placed since. A voided order is not money and is not counted.
+pub const report_sql =
+    \\SELECT COUNT(*) AS order_count,
+    \\       COALESCE(SUM(subtotal_minor), 0) AS gross_minor,
+    \\       COALESCE(SUM(tax_minor), 0) AS tax_minor,
+    \\       COALESCE(SUM(discount_minor), 0) AS discount_minor,
+    \\       COALESCE(SUM(total_minor), 0) AS net_minor
+    \\FROM orders
+    \\WHERE placed_at >= ?1 AND status <> 5;
+;
+
+/// The day's takings, split by the way they were paid.
+pub const report_modes_sql =
+    \\SELECT mode, COUNT(*) AS n, COALESCE(SUM(amount_minor), 0) AS amount_minor
+    \\FROM payment
+    \\WHERE paid_at >= ?1
+    \\GROUP BY mode
+    \\ORDER BY amount_minor DESC;
+;
+
+/// The money the restaurant has taken, newest first.
+pub const payments_sql =
+    \\SELECT p.id, p.order_id, o.order_no, p.mode, p.amount_minor,
+    \\       p.reference, p.paid_at
+    \\FROM payment p
+    \\JOIN orders o ON o.id = p.order_id
+    \\ORDER BY p.paid_at DESC
+    \\LIMIT 200;
 ;
 
 /// The sign-in query.
@@ -172,8 +248,10 @@ pub const reservations_sql =
 ;
 
 /// The suppliers.
+/// The suppliers the restaurant buys from. One it no longer buys
+/// from is not on the list.
 pub const suppliers_sql =
-    \\SELECT id, name, phone, email, address, gstin, active FROM supplier ORDER BY name;
+    \\SELECT id, name, phone, email, address, gstin, active FROM supplier WHERE active = 1 ORDER BY name;
 ;
 
 /// The purchase orders.
@@ -186,6 +264,83 @@ pub const purchase_orders_sql =
 pub const inventory_sql =
     \\SELECT id, name, stock_qty, track_stock, active FROM product
     \\WHERE track_stock = 1 ORDER BY name;
+;
+
+/// The stock on the shelf: the things the restaurant counts.
+pub const stock_sql =
+    \\SELECT id, name, COALESCE(stock_qty, 0) AS stock_qty
+    \\FROM product
+    \\WHERE track_stock = 1 AND active = 1
+    \\ORDER BY name;
+;
+
+/// The tables in the database, and how many rows each holds.
+///
+/// The list is written out here rather than read from SQLite's own
+/// catalogue, because SQLite cannot count the rows of a table it only
+/// knows the NAME of. A test proves the two agree: every table the
+/// schema creates is counted here, and no table is counted twice.
+///
+/// The names are in single quotes, and that matters: in SQL a double
+/// quote means an IDENTIFIER, so `SELECT "company"` asks for a column
+/// called company and the statement does not even prepare. The name is
+/// text here, and single quotes say so.
+pub const table_counts_sql =
+    \\SELECT 'app_config' AS name, (SELECT COUNT(*) FROM app_config) AS n
+    \\UNION ALL SELECT 'auto_print' AS name, (SELECT COUNT(*) FROM auto_print) AS n
+    \\UNION ALL SELECT 'business_hours' AS name, (SELECT COUNT(*) FROM business_hours) AS n
+    \\UNION ALL SELECT 'company' AS name, (SELECT COUNT(*) FROM company) AS n
+    \\UNION ALL SELECT 'compliance_report' AS name, (SELECT COUNT(*) FROM compliance_report) AS n
+    \\UNION ALL SELECT 'currency' AS name, (SELECT COUNT(*) FROM currency) AS n
+    \\UNION ALL SELECT 'customer' AS name, (SELECT COUNT(*) FROM customer) AS n
+    \\UNION ALL SELECT 'customer_loyalty' AS name, (SELECT COUNT(*) FROM customer_loyalty) AS n
+    \\UNION ALL SELECT 'device' AS name, (SELECT COUNT(*) FROM device) AS n
+    \\UNION ALL SELECT 'dining_table' AS name, (SELECT COUNT(*) FROM dining_table) AS n
+    \\UNION ALL SELECT 'dining_table_category' AS name, (SELECT COUNT(*) FROM dining_table_category) AS n
+    \\UNION ALL SELECT 'discount' AS name, (SELECT COUNT(*) FROM discount) AS n
+    \\UNION ALL SELECT 'employee' AS name, (SELECT COUNT(*) FROM employee) AS n
+    \\UNION ALL SELECT 'expense' AS name, (SELECT COUNT(*) FROM expense) AS n
+    \\UNION ALL SELECT 'expense_category' AS name, (SELECT COUNT(*) FROM expense_category) AS n
+    \\UNION ALL SELECT 'holiday_hours' AS name, (SELECT COUNT(*) FROM holiday_hours) AS n
+    \\UNION ALL SELECT 'kds_station' AS name, (SELECT COUNT(*) FROM kds_station) AS n
+    \\UNION ALL SELECT 'loyalty_transaction' AS name, (SELECT COUNT(*) FROM loyalty_transaction) AS n
+    \\UNION ALL SELECT 'modifier' AS name, (SELECT COUNT(*) FROM modifier) AS n
+    \\UNION ALL SELECT 'modifier_group' AS name, (SELECT COUNT(*) FROM modifier_group) AS n
+    \\UNION ALL SELECT 'op_log' AS name, (SELECT COUNT(*) FROM op_log) AS n
+    \\UNION ALL SELECT 'order_discount' AS name, (SELECT COUNT(*) FROM order_discount) AS n
+    \\UNION ALL SELECT 'order_line' AS name, (SELECT COUNT(*) FROM order_line) AS n
+    \\UNION ALL SELECT 'order_line_modifier' AS name, (SELECT COUNT(*) FROM order_line_modifier) AS n
+    \\UNION ALL SELECT 'order_status_history' AS name, (SELECT COUNT(*) FROM order_status_history) AS n
+    \\UNION ALL SELECT 'orders' AS name, (SELECT COUNT(*) FROM orders) AS n
+    \\UNION ALL SELECT 'payment' AS name, (SELECT COUNT(*) FROM payment) AS n
+    \\UNION ALL SELECT 'printer' AS name, (SELECT COUNT(*) FROM printer) AS n
+    \\UNION ALL SELECT 'product' AS name, (SELECT COUNT(*) FROM product) AS n
+    \\UNION ALL SELECT 'product_category' AS name, (SELECT COUNT(*) FROM product_category) AS n
+    \\UNION ALL SELECT 'product_modifier' AS name, (SELECT COUNT(*) FROM product_modifier) AS n
+    \\UNION ALL SELECT 'product_station' AS name, (SELECT COUNT(*) FROM product_station) AS n
+    \\UNION ALL SELECT 'purchase_order' AS name, (SELECT COUNT(*) FROM purchase_order) AS n
+    \\UNION ALL SELECT 'purchase_order_item' AS name, (SELECT COUNT(*) FROM purchase_order_item) AS n
+    \\UNION ALL SELECT 'reservation' AS name, (SELECT COUNT(*) FROM reservation) AS n
+    \\UNION ALL SELECT 'sequence' AS name, (SELECT COUNT(*) FROM sequence) AS n
+    \\UNION ALL SELECT 'shift' AS name, (SELECT COUNT(*) FROM shift) AS n
+    \\UNION ALL SELECT 'stock_adjustment' AS name, (SELECT COUNT(*) FROM stock_adjustment) AS n
+    \\UNION ALL SELECT 'subscription' AS name, (SELECT COUNT(*) FROM subscription) AS n
+    \\UNION ALL SELECT 'supplier' AS name, (SELECT COUNT(*) FROM supplier) AS n
+    \\UNION ALL SELECT 'sync_state' AS name, (SELECT COUNT(*) FROM sync_state) AS n
+    \\UNION ALL SELECT 'tax_slab' AS name, (SELECT COUNT(*) FROM tax_slab) AS n
+    \\UNION ALL SELECT 'time_entry' AS name, (SELECT COUNT(*) FROM time_entry) AS n
+    \\UNION ALL SELECT 'void_log_entry' AS name, (SELECT COUNT(*) FROM void_log_entry) AS n
+;
+
+
+/// The devices that have been in this restaurant.
+pub const devices_sql =
+    \\SELECT id, name, role, last_seen_at FROM device ORDER BY name, id;
+;
+
+/// What the sync sidecar has left behind.
+pub const sync_state_sql =
+    \\SELECT key, value FROM sync_state ORDER BY key;
 ;
 
 /// The printers the restaurant has.
@@ -203,6 +358,12 @@ pub const modifier_groups_sql =
     \\SELECT id, name, required, max_select, active FROM modifier_group ORDER BY sort_order, name;
 ;
 
+/// The choices inside the modifier groups.
+pub const modifiers_sql =
+    \\SELECT id, group_id, name, price_delta_minor, active FROM modifier
+    \\ORDER BY group_id, sort_order, name;
+;
+
 /// The discounts the cashier can apply.
 pub const discounts_sql =
     \\SELECT id, name, percent_bps, amount_minor, active FROM discount ORDER BY name;
@@ -218,37 +379,51 @@ pub const company_sql =
 
 // -------------------------------------------------------------- reads
 
+/// Ask the database a question.
+///
+/// Every read goes through here, so this is the ONE place the app says
+/// it is loading. A screen that shows nothing while its data is on the
+/// way is a screen that looks broken; one that says "loading" is a
+/// screen that is working.
+fn query(
+    model: *Model,
+    fx: *Effects,
+    key: u64,
+    sql: []const u8,
+    params: []const native_sdk.EffectDbValue,
+    on_result: Effects.DbMsgFn,
+) void {
+    model.reading = true;
+    model.read_started_at = model.now_ms;
+    fx.dbQuery(.{
+        .key = key,
+        .sql = sql,
+        .params = params,
+        .on_result = on_result,
+    });
+}
+
 /// Ask for the menu. The result arrives as a `.products_loaded` message.
-pub fn loadProducts(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_products,
-        .sql = products_sql,
-        .on_result = Effects.dbMsg(.products_loaded),
-    });
+pub fn loadProducts(model: *Model, fx: *Effects) void {
+    query(model, fx, key_products, products_sql, &.{}, Effects.dbMsg(.products_loaded));
 }
 
-pub fn loadCategories(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_categories,
-        .sql = categories_sql,
-        .on_result = Effects.dbMsg(.categories_loaded),
-    });
+pub fn loadCategories(model: *Model, fx: *Effects) void {
+    query(model, fx, key_categories, categories_sql, &.{}, Effects.dbMsg(.categories_loaded));
 }
 
-pub fn loadTables(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_tables,
-        .sql = tables_sql,
-        .on_result = Effects.dbMsg(.tables_loaded),
-    });
+/// Load the dining tables.
+pub fn loadTables(model: *Model, fx: *Effects) void {
+    query(model, fx, key_tables, tables_sql, &.{}, Effects.dbMsg(.tables_loaded));
 }
 
-pub fn loadEmployees(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_employees,
-        .sql = employees_sql,
-        .on_result = Effects.dbMsg(.employees_loaded),
-    });
+/// Load the tables in the DATABASE, and the row count of each.
+pub fn loadTableCounts(model: *Model, fx: *Effects) void {
+    query(model, fx, key_db_tables, table_counts_sql, &.{}, Effects.dbMsg(.db_tables_loaded));
+}
+
+pub fn loadEmployees(model: *Model, fx: *Effects) void {
+    query(model, fx, key_employees, employees_sql, &.{}, Effects.dbMsg(.employees_loaded));
 }
 
 /// Watch the open orders. The kitchen board is the one screen that
@@ -263,28 +438,145 @@ pub fn watchOpenOrders(fx: *Effects) void {
     });
 }
 
-pub fn loadOrders(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_orders,
-        .sql = orders_sql,
-        .on_result = Effects.dbMsg(.orders_loaded),
+pub fn loadOrders(model: *Model, fx: *Effects) void {
+    query(model, fx, key_orders, orders_sql, &.{}, Effects.dbMsg(.orders_loaded));
+}
+
+/// Send a dish to a station.
+///
+/// A dish is cooked at one station, so the mapping is replaced rather
+/// than added: the old rows go and the new one arrives, in the same
+/// transaction. A dish at two stations would send the ticket to two
+/// kitchens.
+pub fn saveDishStation(fx: *Effects, key: u64, product_id: i64, station_id: i64) void {
+    // Each statement gets the parameters it uses: a statement that
+    // binds one parameter and is given two is refused by the engine.
+    var remove: [1]native_sdk.EffectDbValue = .{.{ .integer = product_id }};
+    var add: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = product_id },
+        .{ .integer = station_id },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{
+            .{
+                .sql = "DELETE FROM product_station WHERE product_id = ?1;",
+                .params = &remove,
+            },
+            .{
+                .sql = "INSERT INTO product_station (product_id, station_id) VALUES (?1, ?2);",
+                .params = &add,
+            },
+        },
+        .on_result = Effects.dbMsg(.dish_assigned),
     });
 }
 
-pub fn loadOrderLines(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_order_lines,
-        .sql = order_lines_sql,
-        .on_result = Effects.dbMsg(.order_lines_loaded),
+/// Load the number of tables the database really has.
+pub fn loadDbTableCount(model: *Model, fx: *Effects) void {
+    query(model, fx, key_db_table_count, db_table_count_sql, &.{}, Effects.dbMsg(.db_table_count_loaded));
+}
+
+/// Load the categories of tables.
+pub fn loadTableCategories(model: *Model, fx: *Effects) void {
+    query(model, fx, key_table_categories, table_categories_sql, &.{}, Effects.dbMsg(.table_categories_loaded));
+}
+
+/// Write a category of tables: a new one, or the one the form is editing.
+pub fn saveTableCategory(fx: *Effects, key: u64, id: i64, name: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO dining_table_category (id, name) VALUES (?1, ?2)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.table_category_saved),
     });
 }
 
-pub fn loadConfig(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_config,
-        .sql = config_sql,
-        .on_result = Effects.dbMsg(.config_loaded),
+/// Load the devices and the sync state, for the control centre.
+
+pub fn loadDevices(model: *Model, fx: *Effects) void {
+    query(model, fx, key_devices, devices_sql, &.{}, Effects.dbMsg(.devices_loaded));
+}
+
+pub fn loadSyncState(model: *Model, fx: *Effects) void {
+    query(model, fx, key_sync_state, sync_state_sql, &.{}, Effects.dbMsg(.sync_state_loaded));
+}
+
+/// Load the stock on the shelf.
+pub fn loadStock(model: *Model, fx: *Effects) void {
+    query(model, fx, key_stock, stock_sql, &.{}, Effects.dbMsg(.stock_loaded));
+}
+
+/// Write a count of the stock, and say why it changed.
+///
+/// The count and the reason are one transaction: a number that moved
+/// with no reason behind it is a number nobody can trust later. The
+/// `stock_adjustment` row is the ledger - the count is what the shelf
+/// says now, and the adjustment says how it got there.
+pub fn saveStockCount(
+    fx: *Effects,
+    key: u64,
+    product_id: i64,
+    qty: i64,
+    delta: i64,
+    reason: []const u8,
+    at: i64,
+) void {
+    // The count, the move, the reason, the product and the moment. The
+    // count is what the shelf says now; the move is how far it came.
+    var params: [5]native_sdk.EffectDbValue = .{
+        .{ .integer = qty },
+        .{ .integer = delta },
+        .{ .text = reason },
+        .{ .integer = product_id },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{
+            .{
+                .sql =
+                \\INSERT INTO stock_adjustment (id, product_id, delta, reason, reference, created_at)
+                \\VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM stock_adjustment), ?4, ?2, ?3, '', ?5);
+                ,
+                .params = &params,
+            },
+            .{
+                .sql = "UPDATE product SET stock_qty = ?1, updated_at = ?5 WHERE id = ?4;",
+                .params = &params,
+            },
+        },
+        .on_result = Effects.dbMsg(.stock_saved),
     });
+}
+
+/// Load the day's takings, and the way they were paid.
+pub fn loadReport(model: *Model, fx: *Effects, day_start_ms: i64) void {
+    var params: [1]native_sdk.EffectDbValue = .{.{ .integer = day_start_ms }};
+    query(model, fx, key_report, report_sql, &params, Effects.dbMsg(.report_loaded));
+    query(model, fx, key_report_modes, report_modes_sql, &params, Effects.dbMsg(.report_modes_loaded));
+}
+
+/// Load the payments the restaurant has taken.
+pub fn loadPayments(model: *Model, fx: *Effects) void {
+    query(model, fx, key_payments, payments_sql, &.{}, Effects.dbMsg(.payments_loaded));
+}
+
+pub fn loadOrderLines(model: *Model, fx: *Effects) void {
+    query(model, fx, key_order_lines, order_lines_sql, &.{}, Effects.dbMsg(.order_lines_loaded));
+}
+
+pub fn loadConfig(model: *Model, fx: *Effects) void {
+    query(model, fx, key_config, config_sql, &.{}, Effects.dbMsg(.config_loaded));
 }
 
 /// Store the installation salt, if the database does not have one yet.
@@ -318,69 +610,164 @@ pub fn saveSalt(fx: *Effects, key: u64, salt: []const u8, at: i64) void {
     });
 }
 
-pub fn loadProductStations(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_product_stations,
-        .sql = product_stations_sql,
-        .on_result = Effects.dbMsg(.product_stations_loaded),
-    });
+pub fn loadProductStations(model: *Model, fx: *Effects) void {
+    query(model, fx, key_product_stations, product_stations_sql, &.{}, Effects.dbMsg(.product_stations_loaded));
 }
 
-pub fn loadReservations(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_reservations,
-        .sql = reservations_sql,
-        .on_result = Effects.dbMsg(.reservations_loaded),
-    });
+pub fn loadReservations(model: *Model, fx: *Effects) void {
+    query(model, fx, key_reservations, reservations_sql, &.{}, Effects.dbMsg(.reservations_loaded));
 }
 
-pub fn loadSuppliers(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_suppliers,
-        .sql = suppliers_sql,
-        .on_result = Effects.dbMsg(.suppliers_loaded),
-    });
+pub fn loadSuppliers(model: *Model, fx: *Effects) void {
+    query(model, fx, key_suppliers, suppliers_sql, &.{}, Effects.dbMsg(.suppliers_loaded));
 }
 
-pub fn loadPurchaseOrders(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_purchase_orders,
-        .sql = purchase_orders_sql,
-        .on_result = Effects.dbMsg(.purchase_orders_loaded),
-    });
+pub fn loadPurchaseOrders(model: *Model, fx: *Effects) void {
+    query(model, fx, key_purchase_orders, purchase_orders_sql, &.{}, Effects.dbMsg(.purchase_orders_loaded));
 }
 
-pub fn loadInventory(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_inventory,
-        .sql = inventory_sql,
-        .on_result = Effects.dbMsg(.inventory_loaded),
-    });
+pub fn loadInventory(model: *Model, fx: *Effects) void {
+    query(model, fx, key_inventory, inventory_sql, &.{}, Effects.dbMsg(.inventory_loaded));
 }
 
 /// The settings and the lists, loaded when their screen is opened.
 /// The effects channel has sixteen slots: loading everything at once
 /// fills them, and the queries that arrive late are refused.
-pub fn loadForScreen(fx: *Effects, screen: nav.Screen) void {
+/// The data a screen shows.
+///
+/// This is the ONE place that knows what a screen reads, so opening a
+/// screen and trying it again after a failure read the same things.
+pub fn loadForScreen(model: *Model, fx: *Effects, screen: nav.Screen) void {
     switch (screen) {
-        .settings_printers => loadPrinters(fx),
-        .settings_tax => loadTaxSlabs(fx),
-        .settings_modifiers => loadModifierGroups(fx),
-        .settings_discounts => loadDiscounts(fx),
-        .customers => loadCustomers(fx),
-        .pos => loadDiscounts(fx),
-        .reservations => loadReservations(fx),
-        .suppliers => loadSuppliers(fx),
-        .purchase_orders => loadPurchaseOrders(fx),
+        // the admin's screens
+        .admin_dashboard => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+            loadTables(model, fx);
+            loadEmployees(model, fx);
+        },
+        .pos => {
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+            loadDiscounts(model, fx);
+        },
+        .orders => loadOrders(model, fx),
+        .order_detail => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+        },
+        .order_confirmation => loadOrders(model, fx),
+        .payments => loadPayments(model, fx),
+        .reports => loadReport(model, fx, model.report_day_start_ms()),
+        .customers => loadCustomers(model, fx),
+        .dining_tables => loadTables(model, fx),
+        .reservations => loadReservations(model, fx),
+        .suppliers => loadSuppliers(model, fx),
+        .purchase_orders => loadPurchaseOrders(model, fx),
+        .employees => loadEmployees(model, fx),
+        .product_categories => {
+            loadCategories(model, fx);
+            loadProducts(model, fx);
+        },
+        .categories => {
+            loadCategories(model, fx);
+            loadProducts(model, fx);
+        },
+        .kitchen_dishes => {
+            loadProducts(model, fx);
+            loadStations(model, fx);
+            loadProductStations(model, fx);
+        },
+        .inventory_items => loadStock(model, fx),
+        .settings => {},
+        .settings_company => loadCompany(model, fx),
+        .settings_currency => loadCompany(model, fx),
+        .settings_printers => loadPrinters(model, fx),
+        .settings_tax => loadTaxSlabs(model, fx),
+        .settings_modifiers => {
+            loadModifierGroups(model, fx);
+            loadModifiers(model, fx);
+        },
+        .settings_discounts => loadDiscounts(model, fx),
+        .data_management => {
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+            loadTables(model, fx);
+            loadOrders(model, fx);
+            loadEmployees(model, fx);
+        },
+        .db_inspector => loadTableCounts(model, fx),
+        .control_center => {
+            loadDevices(model, fx);
+            loadSyncState(model, fx);
+        },
+
+        // the kitchen and the waiter
+        .kds_board => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+            loadStations(model, fx);
+            loadProductStations(model, fx);
+        },
+        .waiter_tables => loadTables(model, fx),
+        .waiter_menu => {
+            loadProducts(model, fx);
+            loadCategories(model, fx);
+        },
+        .waiter_cart => {},
+        .waiter_orders => loadOrders(model, fx),
+        .display_board => {
+            loadOrders(model, fx);
+            loadOrderLines(model, fx);
+        },
+
         else => {},
     }
 }
 
-pub fn loadCustomers(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_customers,
-        .sql = customers_sql,
-        .on_result = Effects.dbMsg(.customers_loaded),
+pub fn loadCustomers(model: *Model, fx: *Effects) void {
+    query(model, fx, key_customers, customers_sql, &.{}, Effects.dbMsg(.customers_loaded));
+}
+
+/// Replace an employee's PIN.
+///
+/// A hash is replaced, not added: the old one stops working the moment
+/// the new one is written, which is what a reset means.
+pub fn saveEmployeePin(fx: *Effects, key: u64, employee_id: i64, hash: []const u8) void {
+    var params: [2]native_sdk.EffectDbValue = .{
+        .{ .text = hash },
+        .{ .integer = employee_id },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET pin_hash = ?1 WHERE id = ?2;",
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.employee_saved),
+    });
+}
+
+/// Write a category: a new one, or the one the form is editing.
+pub fn saveCategory(fx: *Effects, key: u64, id: i64, name: []const u8, at: i64) void {
+    var params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO product_category (id, name, sort_order, active)
+            \\VALUES (?1, ?2, 0, 1)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.category_saved),
     });
 }
 
@@ -445,67 +832,128 @@ pub fn saveTaxSlab(
     });
 }
 
-pub fn loadPrinters(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_printers,
-        .sql = printers_sql,
-        .on_result = Effects.dbMsg(.printers_loaded),
+pub fn loadPrinters(model: *Model, fx: *Effects) void {
+    query(model, fx, key_printers, printers_sql, &.{}, Effects.dbMsg(.printers_loaded));
+}
+
+pub fn loadTaxSlabs(model: *Model, fx: *Effects) void {
+    query(model, fx, key_tax_slabs, tax_slabs_sql, &.{}, Effects.dbMsg(.tax_slabs_loaded));
+}
+
+pub fn loadModifierGroups(model: *Model, fx: *Effects) void {
+    query(model, fx, key_modifier_groups, modifier_groups_sql, &.{}, Effects.dbMsg(.modifier_groups_loaded));
+}
+
+/// Load the choices in the modifier groups.
+pub fn loadModifiers(model: *Model, fx: *Effects) void {
+    query(model, fx, key_modifiers, modifiers_sql, &.{}, Effects.dbMsg(.modifiers_loaded));
+}
+
+/// The employee has left.
+///
+/// The row stays: the orders they took still name them, and a bill
+/// that cannot say who served it is a bill nobody can defend. What
+/// changes is that the employee is no longer on the team and can no
+/// longer sign in - the sign-in query asks for `active = 1`.
+pub fn deactivateEmployee(fx: *Effects, key: u64, id: i64) void {
+    var params: [1]native_sdk.EffectDbValue = .{.{ .integer = id }};
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql = "UPDATE employee SET active = 0 WHERE id = ?1;",
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.employee_saved),
     });
 }
 
-pub fn loadTaxSlabs(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_tax_slabs,
-        .sql = tax_slabs_sql,
-        .on_result = Effects.dbMsg(.tax_slabs_loaded),
+/// Write a customer: a new one, or the one the form is editing.
+pub fn saveCustomer(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    phone: []const u8,
+    email: []const u8,
+    address: []const u8,
+    at: i64,
+) void {
+    var params: [6]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .text = phone },
+        .{ .text = email },
+        .{ .text = address },
+        .{ .integer = at },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO customer (id, name, phone, email, address, loyalty_points, notes, active, created_at)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, 0, '', 1, ?6)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, phone = ?3, email = ?4, address = ?5;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.customer_saved),
     });
 }
 
-pub fn loadModifierGroups(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_modifier_groups,
-        .sql = modifier_groups_sql,
-        .on_result = Effects.dbMsg(.modifier_groups_loaded),
+/// Write a modifier group: a new one, or the one the form is editing.
+pub fn saveModifierGroup(
+    fx: *Effects,
+    key: u64,
+    id: i64,
+    name: []const u8,
+    required: bool,
+    max_select: i64,
+) void {
+    var params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = id },
+        .{ .text = name },
+        .{ .integer = if (required) 1 else 0 },
+        .{ .integer = max_select },
+    };
+    fx.dbExec(.{
+        .key = key,
+        .statements = &.{.{
+            .sql =
+            \\INSERT INTO modifier_group (id, name, required, max_select, sort_order, active)
+            \\VALUES (?1, ?2, ?3, ?4, 0, 1)
+            \\ON CONFLICT(id) DO UPDATE SET name = ?2, required = ?3, max_select = ?4;
+            ,
+            .params = &params,
+        }},
+        .on_result = Effects.dbMsg(.modifier_group_saved),
     });
 }
 
-pub fn loadDiscounts(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_discounts,
-        .sql = discounts_sql,
-        .on_result = Effects.dbMsg(.discounts_loaded),
-    });
+pub fn loadDiscounts(model: *Model, fx: *Effects) void {
+    query(model, fx, key_discounts, discounts_sql, &.{}, Effects.dbMsg(.discounts_loaded));
 }
 
-pub fn loadStations(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_stations,
-        .sql = stations_sql,
-        .on_result = Effects.dbMsg(.stations_loaded),
-    });
+pub fn loadStations(model: *Model, fx: *Effects) void {
+    query(model, fx, key_stations, stations_sql, &.{}, Effects.dbMsg(.stations_loaded));
 }
 
-pub fn loadCompany(fx: *Effects) void {
-    fx.dbQuery(.{
-        .key = key_company,
-        .sql = company_sql,
-        .on_result = Effects.dbMsg(.company_loaded),
-    });
+pub fn loadCompany(model: *Model, fx: *Effects) void {
+    query(model, fx, key_company, company_sql, &.{}, Effects.dbMsg(.company_loaded));
 }
 
 /// Load everything the shell needs on boot. One arm, one place.
-pub fn loadAll(fx: *Effects) void {
-    loadCompany(fx);
-    loadStations(fx);
-    loadProductStations(fx);
+pub fn loadAll(model: *Model, fx: *Effects) void {
+    loadCompany(model, fx);
+    loadStations(model, fx);
+    loadProductStations(model, fx);
 
-    loadCategories(fx);
-    loadProducts(fx);
-    loadTables(fx);
-    loadEmployees(fx);
-    loadCustomers(fx);
-    loadOrders(fx);
-    loadOrderLines(fx);
+    loadCategories(model, fx);
+    loadProducts(model, fx);
+    loadTables(model, fx);
+    loadEmployees(model, fx);
+    loadCustomers(model, fx);
+    loadOrders(model, fx);
+    loadOrderLines(model, fx);
 }
 
 // ------------------------------------------------------------ decoding
@@ -733,6 +1181,180 @@ pub fn decodeReservations(model: *Model, bytes: []const u8) void {
     model.reservations_list = list[0..index];
 }
 
+/// Decode the devices that have been in this restaurant.
+pub fn decodeDevices(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.devices_buf.reset();
+    const count = reader.rows_left;
+    const list = model.devices_buf.allocSlice(domain.Device, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = model.devices_buf.dupe(reader.textOf(&values, "id")) orelse "",
+            .name = model.devices_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .role = model.devices_buf.dupe(reader.textOf(&values, "role")) orelse "",
+            .last_seen_at = reader.intOf(&values, "last_seen_at", 0),
+        };
+    }
+    model.devices_list = list[0..index];
+}
+
+/// Decode what the sync sidecar has left behind.
+pub fn decodeSyncState(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.sync_state_buf.reset();
+    const count = reader.rows_left;
+    const list = model.sync_state_buf.allocSlice(domain.SyncState, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .key = model.sync_state_buf.dupe(reader.textOf(&values, "key")) orelse "",
+            .value = model.sync_state_buf.dupe(reader.textOf(&values, "value")) orelse "",
+        };
+    }
+    model.sync_state_list = list[0..index];
+}
+
+/// Decode the tables in the database.
+/// Decode the tables in the DATABASE, and the row count of each.
+pub fn decodeTableCounts(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.table_counts_buf.reset();
+    const count = reader.rows_left;
+    const list = model.table_counts_buf.allocSlice(domain.TableCount, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .name = model.table_counts_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .rows = reader.intOf(&values, "n", 0),
+        };
+    }
+    model.table_counts_list = list[0..index];
+}
+
+/// Decode the categories of tables.
+pub fn decodeTableCategories(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.table_categories_buf.reset();
+    const count = reader.rows_left;
+    const list = model.table_categories_buf.allocSlice(domain.TableCategory, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.table_categories_buf.dupe(reader.textOf(&values, "name")) orelse "",
+        };
+    }
+    model.table_categories_list = list[0..index];
+}
+
+/// Decode the choices in the modifier groups.
+pub fn decodeModifiers(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.modifiers_buf.reset();
+    const count = reader.rows_left;
+    const list = model.modifiers_buf.allocSlice(domain.Modifier, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .group_id = reader.intOf(&values, "group_id", 0),
+            .name = model.modifiers_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .price_delta_minor = reader.intOf(&values, "price_delta_minor", 0),
+            .active = reader.boolOf(&values, "active"),
+        };
+    }
+    model.modifiers_list = list[0..index];
+}
+
+/// Decode the stock on the shelf.
+pub fn decodeStock(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.stock_buf.reset();
+    const count = reader.rows_left;
+    const list = model.stock_buf.allocSlice(domain.StockItem, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .name = model.stock_buf.dupe(reader.textOf(&values, "name")) orelse "",
+            .stock_qty = reader.intOf(&values, "stock_qty", 0),
+        };
+    }
+    model.stock_items_list = list[0..index];
+}
+
+/// Decode the day's takings.
+pub fn decodeReport(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    var values: [page.max_columns]page.Value = undefined;
+    if (!reader.nextRow(&values)) return;
+    model.report_orders_field = reader.intOf(&values, "order_count", 0);
+    model.report_gross_field = reader.intOf(&values, "gross_minor", 0);
+    model.report_tax_field = reader.intOf(&values, "tax_minor", 0);
+    model.report_discount_field = reader.intOf(&values, "discount_minor", 0);
+    model.report_net_field = reader.intOf(&values, "net_minor", 0);
+}
+
+/// Decode the day's takings, split by the way they were paid.
+pub fn decodeReportModes(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.report_modes_buf.reset();
+    const count = reader.rows_left;
+    const list = model.report_modes_buf.allocSlice(domain.ReportMode, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        const mode = enumFromInt(domain.PaymentMode, reader.intOf(&values, "mode", 0));
+        list[index] = .{
+            .mode = mode,
+            .mode_label = mode.label(),
+            .count = reader.intOf(&values, "n", 0),
+            .amount_minor = reader.intOf(&values, "amount_minor", 0),
+        };
+    }
+    model.report_modes_list = list[0..index];
+}
+
+/// Decode the payments the restaurant has taken.
+pub fn decodePayments(model: *Model, bytes: []const u8) void {
+    var reader = page.Reader.init(bytes);
+    if (!reader.readHeader()) return;
+    model.payments_buf.reset();
+    const count = reader.rows_left;
+    const list = model.payments_buf.allocSlice(domain.Payment, count) orelse return;
+    var values: [page.max_columns]page.Value = undefined;
+    var index: usize = 0;
+    while (index < count and reader.nextRow(&values)) : (index += 1) {
+        const mode = enumFromInt(domain.PaymentMode, reader.intOf(&values, "mode", 0));
+        list[index] = .{
+            .id = reader.intOf(&values, "id", 0),
+            .order_id = reader.intOf(&values, "order_id", 0),
+            .order_no = model.payments_buf.dupe(reader.textOf(&values, "order_no")) orelse "",
+            .mode = mode,
+            .mode_label = mode.label(),
+            .amount_minor = reader.intOf(&values, "amount_minor", 0),
+            .reference = model.payments_buf.dupe(reader.textOf(&values, "reference")) orelse "",
+            .paid_at = reader.intOf(&values, "paid_at", 0),
+        };
+    }
+    model.payments_list = list[0..index];
+}
+
 pub fn decodeSuppliers(model: *Model, bytes: []const u8) void {
     var reader = page.Reader.init(bytes);
     if (!reader.readHeader()) return;
@@ -946,6 +1568,14 @@ pub fn openOrderForTable(
                 \\  0, 0, ?2, NULL, ?3, 0, 0, 0, 0, ?1, '', ?1, ?1);
                 ,
                 .params = &order_params,
+            },
+            .{
+                // The table is occupied now that it has an order. The
+                // board shows what is true, and a table that says
+                // "Free" while a guest is sitting at it is a lie the
+                // whole floor has to work around.
+                .sql = "UPDATE dining_table SET status = 1 WHERE id = ?1;",
+                .params = &.{.{ .integer = table_id }},
             },
         },
         .on_result = Effects.dbMsg(.order_opened),
@@ -1206,6 +1836,16 @@ pub fn takePayment(
                 .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
                 .params = &order_params,
             },
+            .{
+                // The guest has paid and gone, so the table is free
+                // again - in the same transaction as the payment, so a
+                // table is never free while the money is still owed.
+                .sql =
+                \\UPDATE dining_table SET status = 0
+                \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
+                ,
+                .params = &.{.{ .integer = order_id }},
+            },
         },
         .on_result = Effects.dbMsg(.payment_taken),
     });
@@ -1235,13 +1875,16 @@ pub fn setupCompany(
     pin_hash: []const u8,
     pin_salt: []const u8,
     currency_decimals: i64,
+    address: []const u8,
+    phone: []const u8,
+    tax_number: []const u8,
     at: i64,
 ) void {
     const statement_count = comptime 3 + starter.categories.len + starter.dishes.len + starter.stations.len + starter.dishes.len + 1 + starter.tables.len;
     var statements: [statement_count]native_sdk.EffectDbStatement = undefined;
     var count: usize = 0;
 
-    var company_params: [7]native_sdk.EffectDbValue = .{
+    var company_params: [10]native_sdk.EffectDbValue = .{
         .{ .integer = 1 },
         .{ .text = name },
         .{ .text = currency_code },
@@ -1249,12 +1892,15 @@ pub fn setupCompany(
         .{ .integer = 0 },
         .{ .integer = at },
         .{ .integer = currency_decimals },
+        .{ .text = address },
+        .{ .text = phone },
+        .{ .text = tax_number },
     };
     statements[count] = .{
         .sql =
         \\INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive,
-        \\  created_at, currency_decimals)
-        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);
+        \\  created_at, currency_decimals, address, phone, tax_number)
+        \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);
         ,
         .params = &company_params,
     };

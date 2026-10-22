@@ -1,3 +1,10 @@
+<!-- The the settings: everything the operator decides, and the forms that decide it.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
 <!-- The settings hub. Every setting the restaurant has, in one list.
      A row opens its own screen; the settings themselves are screens of
      their own. -->
@@ -18,5 +25,423 @@
         </for>
       </column>
     </scroll>
+  </column>
+</template>
+
+<!-- The company's details: the name that is on every receipt, the
+     address, the phone and the tax number. The form starts from the
+     stored company, so opening the screen shows what is saved rather
+     than an empty form. -->
+
+<template name="screen-settings-company">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Company</text>
+      <badge>{company_currency_code}</badge>
+    </row>
+
+    <card padding="16" width="520">
+      <column gap="8">
+        <text-field
+          text="{form_company_name}"
+          placeholder="The name on the receipt"
+          label="Restaurant name"
+          on-input="form_company_name_edit"
+        />
+        <text-field
+          text="{form_company_address}"
+          placeholder="Street, city"
+          label="Address"
+          on-input="form_company_address_edit"
+        />
+        <text-field
+          text="{form_company_phone}"
+          placeholder="+91 ..."
+          label="Phone"
+          on-input="form_company_phone_edit"
+        />
+        <text-field
+          text="{form_company_tax}"
+          placeholder="GSTIN, VAT number, ..."
+          label="Tax number"
+          on-input="form_company_tax_edit"
+        />
+        <row gap="8">
+          <button variant="ghost" on-press="open_settings">Back</button>
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_company">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The currency the restaurant trades in. It is on every price, so
+     it is set once here rather than per product. -->
+
+<template name="screen-settings-currency">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Currency</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <card padding="16" width="440">
+      <column gap="8">
+        <text-field
+          text="{form_currency_code}"
+          placeholder="USD"
+          label="Currency code"
+          on-input="form_currency_code_edit"
+        />
+        <text-field
+          text="{form_currency_symbol}"
+          placeholder="$"
+          label="Symbol"
+          on-input="form_currency_symbol_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_currency">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The tax slabs. A slab is a rate the menu prices against; the
+     "No tax" slab at zero is the one a product with no tax points at. -->
+
+<template name="screen-settings-tax">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Tax slabs</text>
+      <badge>{tax_slab_count} slabs</badge>
+      <button size="sm" on-press="new_tax_slab">New</button>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="tax_slabs" key="id" as="slab">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_tax_slab:{slab.id}">
+            <text grow="1">{slab.name}</text>
+            <text>{fixed(slab.rate_bps / 100, 0)}%</text>
+            <badge>{slab.tax_label}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The modifier groups: the choices on a dish - size, spice, side. -->
+
+<template name="screen-settings-modifiers">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Modifier groups</text>
+      <badge>{modifier_group_count} groups</badge>
+      <button size="sm" variant="primary" on-press="new_modifier_group">New</button>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="modifier_groups" key="id" as="group">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1" on-press="edit_modifier_group:{group.id}">{group.name}</text>
+            <text size="sm" foreground="text_muted">up to {group.max_select}</text>
+            <badge>{group.required_label}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The discounts the cashier can apply: a percentage, a fixed
+     amount, or both. -->
+
+<template name="screen-settings-discounts">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Discounts</text>
+      <badge>{discount_count} discounts</badge>
+      <button size="sm" on-press="new_discount">New</button>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <if test="{discount_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No discounts yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="discounts" key="id" as="discount">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_discount:{discount.id}">
+            <text grow="1">{discount.name}</text>
+            <text>{discount.value_label}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The printers. A receipt printer and a kitchen printer, and where
+     each of them is. The transport is what the sidecar will use to
+     reach the device: a Bluetooth address, a host:port, a file. -->
+
+<template name="screen-settings-printers">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Printers</text>
+      <badge>{printer_count} configured</badge>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <if test="{printer_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No printers yet. Add one to print receipts.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="printers" key="id" as="printer">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <column gap="2" grow="1">
+              <text>{printer.name}</text>
+              <text size="sm" foreground="text_muted">{printer.transport} - {printer.address}</text>
+            </column>
+            <badge>{printer.job}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The data: what the database holds, and where the data lives.
+     Import, export and backup come next; this screen is the honest
+     state of the data today. -->
+
+<template name="screen-settings-data">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Data</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <card padding="16" width="440">
+      <column gap="6">
+        <row cross="center"><text grow="1" foreground="text_muted">Products</text><text>{product_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Categories</text><text>{category_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Tables</text><text>{table_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Orders</text><text>{order_count}</text></row>
+        <row cross="center"><text grow="1" foreground="text_muted">Employees</text><text>{employee_count}</text></row>
+        <separator/>
+        <text size="sm" foreground="text_muted">Everything is stored in one local database. Export, import and backup are not built yet.</text>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The two forms the settings screens open: a tax slab and a
+     discount. They live in one file because the shell's import closure
+     has a ceiling - the SDK allows thirty-two imported files - and a
+     screen that cannot be imported is a screen that does not exist.
+
+     A tax slab is what a rate is called and whether the price already
+     carries it. A discount is what the cashier takes off: a share of
+     the bill, an amount, or both. -->
+
+<template name="screen-tax-slab-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{tax_slab_form_title}</text>
+      <button size="sm" variant="ghost" on-press="open_tax_slabs">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_tax_slab_name}"
+          placeholder="GST 5%"
+          label="Name"
+          on-input="form_tax_slab_name_edit"
+        />
+        <text-field
+          text="{form_tax_slab_rate}"
+          placeholder="5"
+          label="Rate (percent)"
+          on-input="form_tax_slab_rate_edit"
+        />
+        <row gap="8" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">The price already includes this tax</text>
+          <toggle-button selected="{form_tax_slab_inclusive}" on-toggle="form_tax_slab_inclusive">Inclusive</toggle-button>
+        </row>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_tax_slab">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<template name="screen-discount-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{discount_form_title}</text>
+      <button size="sm" variant="ghost" on-press="open_discounts">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_discount_name}"
+          placeholder="Staff 10%"
+          label="Name"
+          on-input="form_discount_name_edit"
+        />
+        <text-field
+          text="{form_discount_percent}"
+          placeholder="10"
+          label="Percent off the bill"
+          on-input="form_discount_percent_edit"
+        />
+        <text-field
+          text="{form_discount_amount}"
+          placeholder="50.00"
+          label="Or an amount off the bill"
+          on-input="form_discount_amount_edit"
+        />
+        <text size="sm" foreground="text_muted">A percentage wins over an amount.</text>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_discount">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The control centre: the state of the app itself, rather than of
+     the restaurant. Which devices have been here, and what the sync
+     sidecar has left behind. Both are empty for a single till, and
+     that is the truth, not a gap. -->
+
+<template name="screen-control-center">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Control centre</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <text size="lg">Devices</text>
+    <if test="{device_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No other device has been here. A second till or a kitchen display will appear here.</text>
+      </column>
+    </if>
+    <if test="{device_count > 0}">
+      <card padding="16" width="480">
+        <column gap="6">
+          <for each="devices" key="id" as="device">
+            <row cross="center">
+              <text grow="1">{device.name}</text>
+              <text foreground="text_muted">{device.role}</text>
+            </row>
+          </for>
+        </column>
+      </card>
+    </if>
+
+    <text size="lg">Sync</text>
+    <if test="{sync_state_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing to sync yet. The sync sidecar is not built.</text>
+      </column>
+    </if>
+    <if test="{sync_state_count > 0}">
+      <card padding="16" width="480">
+        <column gap="6">
+          <for each="sync_state" key="key" as="entry">
+            <row cross="center">
+              <text grow="1">{entry.key}</text>
+              <text>{entry.value}</text>
+            </row>
+          </for>
+        </column>
+      </card>
+    </if>
+  </column>
+</template>
+
+<!-- The database inspector: every table, and how many rows it holds.
+     An owner who wants to know what the app really keeps looks here,
+     and an owner who wants to know the app is honest looks here too. -->
+
+<template name="screen-db-inspector">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Database</text>
+      <text foreground="text_muted">{db_table_count} tables</text>
+      <button size="sm" variant="ghost" on-press="open_settings">Back</button>
+    </row>
+
+    <scroll grow="1">
+      <column gap="2">
+        <for each="table_counts" key="name" as="table">
+          <row background="surface" radius="md" padding="6" gap="10" cross="center">
+            <text grow="1">{table.name}</text>
+            <text foreground="text_muted">{table.rows}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- A modifier group: the choices a customer makes about a dish.
+     "Spice level", "Extra cheese" - a group is a set of choices, and
+     it may be required, in which case the order cannot be prepared
+     without one. -->
+
+<template name="screen-modifier-group-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Modifier group</text>
+      <button size="sm" variant="ghost" on-press="open_modifier_groups">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_modifier_group_name}"
+          placeholder="Spice level"
+          label="Name"
+          on-input="form_modifier_group_name_edit"
+        />
+        <text-field
+          text="{form_modifier_max_select}"
+          placeholder="1"
+          label="How many can be chosen"
+          on-input="form_modifier_max_edit"
+        />
+        <row gap="8" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">The order cannot be prepared without one</text>
+          <toggle-button selected="{form_modifier_required}" on-toggle="form_modifier_required">Required</toggle-button>
+        </row>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_modifier_group">Save</button>
+        </row>
+      </column>
+    </card>
   </column>
 </template>
