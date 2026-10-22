@@ -25,12 +25,12 @@ const native_sdk = @import("native_sdk");
 const testing = std.testing;
 
 const main = @import("main.zig");
-const core = @import("core/model.zig");
-const msg_mod = @import("core/msg.zig");
-const nav = @import("core/navigation.zig");
-const repos = @import("data/repos.zig");
-const auth = @import("data/auth.zig");
-const domain = @import("domain/models.zig");
+const core = @import("ros_core").model;
+const msg_mod = @import("ros_core").msg;
+const nav = @import("ros_core").navigation;
+const repos = @import("ros_core").repos;
+const auth = @import("ros_core").auth;
+const domain = @import("ros_core").models;
 
 const Model = core.Model;
 const Msg = msg_mod.Msg;

@@ -13,15 +13,15 @@ const std = @import("std");
 const native_sdk = @import("native_sdk");
 
 const main = @import("main.zig");
-const core = @import("core/model.zig");
-const msg_mod = @import("core/msg.zig");
-const nav = @import("core/navigation.zig");
-const rbac = @import("core/rbac.zig");
-const theme = @import("core/theme.zig");
-const repos = @import("data/repos.zig");
-const page = @import("data/page.zig");
-const auth = @import("data/auth.zig");
-const domain = @import("domain/models.zig");
+const core = @import("ros_core").model;
+const msg_mod = @import("ros_core").msg;
+const nav = @import("ros_core").navigation;
+const rbac = @import("ros_core").rbac;
+const theme = @import("ros_core").theme;
+const repos = @import("ros_core").repos;
+const page = @import("ros_core").page;
+const auth = @import("ros_core").auth;
+const domain = @import("ros_core").models;
 
 const canvas = native_sdk.canvas;
 const testing = std.testing;

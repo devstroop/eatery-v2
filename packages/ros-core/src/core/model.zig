@@ -27,7 +27,7 @@ const native_sdk = @import("native_sdk");
 const nav = @import("navigation.zig");
 const rbac = @import("rbac.zig");
 const domain = @import("../domain/models.zig");
-const bump = @import("bump.zig");
+const bump = @import("../bump.zig");
 const auth = @import("../data/auth.zig");
 
 const canvas = native_sdk.canvas;

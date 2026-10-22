@@ -65,6 +65,11 @@ jobs:
           set -euo pipefail
           cd "$HOME/native-sdk/packages/core"
           npm ci --include=dev
+      - name: Point the app builds at the SDK
+        # The apps own their build.zig (they were ejected) and name the SDK
+        # by path: ../../.native-sdk. That link is what keeps the committed
+        # build portable; scripts/env.sh creates it on a dev machine.
+        run: ln -sfn "$HOME/native-sdk" "$GITHUB_WORKSPACE/.native-sdk"
       - name: Cache the Zig compiler cache
         uses: actions/cache@v4
         with:
@@ -116,6 +121,8 @@ jobs:
           set -euo pipefail
           cd "$HOME/native-sdk/packages/core"
           npm ci --include=dev
+      - name: Point the app builds at the SDK
+        run: ln -sfn "$HOME/native-sdk" "$GITHUB_WORKSPACE/.native-sdk"
       - name: Cache the Zig compiler cache
         uses: actions/cache@v4
         with:

@@ -80,5 +80,11 @@ say "Building the native CLI"
 
 printf '\n== done\n'
 printf 'the CLI is at %s/zig-out/bin/native\n' "$sdk_dir"
+
+# The app builds name the SDK by path: apps/*/build.zig.zon points at
+# <repo>/.native-sdk. The link is what makes the committed build portable.
+ln -sfn "$sdk_dir" "$ros_root/.native-sdk"
+printf 'linked %s/.native-sdk -> %s\n' "$ros_root" "$sdk_dir"
+
 printf 'run:  source scripts/env.sh\n'
-printf 'then: scripts/verify.sh\n'
+printf 'then: scripts/verify-all.sh\n'

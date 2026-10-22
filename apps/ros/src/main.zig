@@ -21,11 +21,11 @@ pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 const canvas = native_sdk.canvas;
 const geometry = native_sdk.geometry;
 
-const core = @import("core/model.zig");
-const msg_mod = @import("core/msg.zig");
-const update_mod = @import("core/update.zig");
-const theme = @import("core/theme.zig");
-const auth = @import("data/auth.zig");
+const core = @import("ros_core").model;
+const msg_mod = @import("ros_core").msg;
+const update_mod = @import("ros_core").update;
+const theme = @import("ros_core").theme;
+const auth = @import("ros_core").auth;
 
 const Model = core.Model;
 const Msg = msg_mod.Msg;
