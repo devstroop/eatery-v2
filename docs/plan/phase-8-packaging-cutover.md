@@ -43,7 +43,7 @@ Ship it: a signed application, a supportable install, and a path from v1.
 3. **Add the automation smoke** (role picker → login → sale → KDS →
    screenshot, assert non-blank and node budget).
 4. **Decide the legacy migration**:
-   - in-place: transform a v1 database to the v2 schema; or
+   - in-place: transform a v1 database to the Restaurant OS schema; or
    - fresh install: export/import products, customers and open orders.
    Validate with a real database copy and a per-table row count.
 5. **Build the setup flow** if a fresh install is the answer. It is a
@@ -83,6 +83,6 @@ Ship it: a signed application, a supportable install, and a path from v1.
 - Which platforms ship first?
 - Is there an update server or app-store distribution?
 - What does support need to diagnose a device?
-- What is the rollback story if the v2 build is bad?
+- What is the rollback story if the Restaurant OS build is bad?
 
 See [`../open-questions.md`](open-questions.md).

@@ -2,7 +2,7 @@
 
 > **Status:** Accepted
 > **Date:** 2026-10-21
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/03`](../architecture/03-navigation-and-rbac.md),
 > [`architecture/02`](../architecture/02-app-model-and-effects.md),
 > [`plan/status.md`](../plan/status.md),
@@ -91,11 +91,11 @@ and a session gate is not a destination behind the home screen.
 
 ## Evidence
 
-- `apps/eatery/src/core/update.zig`: `resetSession`, `resetNavigation`,
+- `apps/ros/src/core/update.zig`: `resetSession`, `resetNavigation`,
   the session arms, `go`.
-- `apps/eatery/src/core/navigation.zig`: `Stack.push`, `max_depth`.
-- `apps/eatery/src/tests.zig`: a full history does not freeze; a repeated
+- `apps/ros/src/core/navigation.zig`: `Stack.push`, `max_depth`.
+- `apps/ros/src/tests.zig`: a full history does not freeze; a repeated
   destination does not grow; a role change ends the session; sign-out
   clears the cart, filters and operator.
-- `apps/eatery/src/tests_data.zig`: Back from home after a sign-in stays
+- `apps/ros/src/tests_data.zig`: Back from home after a sign-in stays
   home; signing out clears the cart and the operator.

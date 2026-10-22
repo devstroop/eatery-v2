@@ -1627,7 +1627,7 @@ pub const Model = struct {
     /// The company name, or a neutral fallback while the database is
     /// still loading.
     pub fn company_label(model: *const Model) []const u8 {
-        if (model.company_name_field.len == 0) return "Eatery";
+        if (model.company_name_field.len == 0) return "Restaurant OS";
         return model.company_name_field;
     }
 

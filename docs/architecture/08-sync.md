@@ -11,7 +11,7 @@
 A restaurant may run several devices: a counter POS, a waiter tablet, a
 kitchen board, a customer display. They must converge on one state, often
 without reliable internet. The v1 app solved this with a WebSocket server
-on port 9876, mDNS discovery (`_eatery-sync._tcp`), a last-writer-wins
+on port 9876, mDNS discovery (`_ros-sync._tcp`), a last-writer-wins
 CRDT and host election, all inside the Flutter process.
 
 The Native SDK has no WebSocket client or server and no mDNS. It does have
@@ -130,7 +130,7 @@ no build script, no protocol document beyond this design.
 | Corrupt op snapshot | Reject the op, keep local state | Not defined |
 | Sidecar crashes | App keeps working; sync pauses | No sidecar |
 | Host disappears | Re-elect | No election |
-| Database locked by sidecar | WAL + busy timeout | Not verified in v2 |
+| Database locked by sidecar | WAL + busy timeout | Not verified in Restaurant OS |
 
 ## Security and trust
 

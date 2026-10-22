@@ -2,7 +2,7 @@
 
 > **Status:** Accepted
 > **Date:** 2026-10-21
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [ADR-0007](0007-pin-hashing.md) (superseded),
 > [`architecture/04`](../architecture/04-data-layer.md),
 > [`plan/status.md`](../plan/status.md),

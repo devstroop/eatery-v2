@@ -128,7 +128,7 @@ pub const Screen = enum {
     pub fn title(self: Screen) []const u8 {
         return switch (self) {
             .role_picker => "Choose a role",
-            .landing => "Eatery",
+            .landing => "Restaurant OS",
             .setup => "Set up",
             .wizard => "Setup wizard",
             .create_company => "Create company",

@@ -13,12 +13,12 @@ The hard part is not the code; it is the pinned environment.
 
 ## What exists
 
-- `apps/eatery/app.json` — id, name, version, platforms, permissions,
+- `apps/ros/app.json` — id, name, version, platforms, permissions,
   capabilities (including `sqlite`), one window, one GPU surface, security
   origins.
-- `apps/eatery/src/main.zig` — `UiApp.create`, shell config, panic
+- `apps/ros/src/main.zig` — `UiApp.create`, shell config, panic
   capture, salt generation, runner options.
-- `apps/eatery/src/schema/` — 11 migrations and a lock file.
+- `apps/ros/src/schema/` — 11 migrations and a lock file.
 - The CLI-synthesised build directory `.native/build/` (generated, not
   owned).
 - `scripts/setup.sh`, `env.sh`, `dev.sh`, `build.sh`, `verify-all.sh`.
@@ -58,8 +58,8 @@ Environment facts (verified on this machine on 2026-10-20):
 A clean machine, following only the repo's own instructions, can run:
 
 ```
-native check apps/eatery
-native test apps/eatery --yes
+native check apps/ros
+native test apps/ros --yes
 ```
 
 green, with no global state beyond the pinned tools.

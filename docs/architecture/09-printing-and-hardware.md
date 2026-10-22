@@ -12,7 +12,7 @@ The SDK has no Bluetooth stack and no ESC/POS support. It can spawn a
 subprocess and write bytes to files/stdin; it cannot open a BLE
 characteristic or speak to a USB printer.
 
-Eatery's target market uses inexpensive Bluetooth thermal receipt
+The Restaurant OS target market uses inexpensive Bluetooth thermal receipt
 printers. Dropping BLE is a visible feature regression. The port plan
 therefore recommends a sidecar rather than an in-process port.
 

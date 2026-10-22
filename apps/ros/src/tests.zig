@@ -122,7 +122,7 @@ test "the role picker is the first screen and lists the four roles" {
     try testing.expect(!model.show_shell());
 
     const tree = try buildTree(arena, &model);
-    _ = try expectByText(tree.root, .text, "Eatery");
+    _ = try expectByText(tree.root, .text, "Restaurant OS");
     _ = try expectByText(tree.root, .text, "Admin");
     _ = try expectByText(tree.root, .text, "Kitchen");
 }
@@ -842,7 +842,7 @@ const gated_ordinals = [_]usize{
 /// an empty pane.
 const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-setup", .text = "Set up your restaurant" },
-    .{ .template = "screen-role-picker", .text = "Eatery" },
+    .{ .template = "screen-role-picker", .text = "Restaurant OS" },
     .{ .template = "screen-login", .text = "Sign in" },
     .{ .template = "screen-dashboard", .text = "Dashboard" },
     .{ .template = "screen-pos", .text = "Cart" },
@@ -891,7 +891,7 @@ const screen_landmarks = [_]struct { template: []const u8, text: []const u8 }{
     .{ .template = "screen-categories", .text = "Categories" },
     .{ .template = "screen-wizard", .text = "Who is the owner?" },
     .{ .template = "screen-create-company", .text = "Step one of two. You can change any of it later." },
-    .{ .template = "screen-upgrade", .text = "This database is newer than Eatery" },
+    .{ .template = "screen-upgrade", .text = "This database is newer than Restaurant OS" },
     .{ .template = "screen-landing", .text = "A restaurant operating system: point of sale, kitchen display, customer display and back office." },
     .{ .template = "screen-reset-pin", .text = "The old PIN stops working the moment this is written." },
 };

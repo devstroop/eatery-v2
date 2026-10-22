@@ -2,14 +2,14 @@
 
 > **Status:** Proposed — needs an owner and a go/no-go
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers, product
+> **Deciders:** Devstroop maintainers, product
 > **Related:** [`architecture/08`](../architecture/08-sync.md)
 
 ## Context
 
 Multi-device restaurants need convergence. v1 implemented it inside the
 Flutter process: a WebSocket server on port 9876, `web_socket_channel`
-clients, mDNS discovery (`_eatery-sync._tcp`), host election and a
+clients, mDNS discovery (`_ros-sync._tcp`), host election and a
 last-writer-wins CRDT over an `op_log` table.
 
 The Native SDK has no WebSocket client or server and no mDNS. `fx.fetch`

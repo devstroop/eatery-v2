@@ -1,4 +1,4 @@
-# Eatery v2
+# Restaurant OS
 
 A restaurant operating system in one native binary: **point of sale, kitchen
 display, customer display and back office**, written in Zig on the
@@ -6,11 +6,11 @@ display, customer display and back office**, written in Zig on the
 
 This is a ground-up rewrite of Eatery v1 (the Flutter app that lived in
 `../eatery`). v1 taught us a lot about what a restaurant actually needs and
-where it went wrong; v2 keeps the product and rebuilds the machinery on a
+where it went wrong; Restaurant OS keeps the product and rebuilds the machinery on a
 native GPU canvas, an engine-owned SQLite store and a typed effect channel.
 
 ```sh
-cd apps/eatery
+cd apps/ros
 native dev          # debug build + markup hot reload
 native test         # headless update-logic and repository tests
 native check        # manifest, markup and schema validation
@@ -19,14 +19,14 @@ native build        # ReleaseFast binary in zig-out/bin/
 
 ---
 
-## Why v2 exists
+## Why Restaurant OS exists
 
 v1 was a Flutter app: 400+ Dart files, a router, a reactive widget tree, a
 vendored SQLite C library behind an FFI boundary, and a WebSocket sync stack
 that lived inside the business logic. It worked, and it also taught us
 exactly where the seams hurt:
 
-| v1 problem | v2 answer |
+| v1 problem | Restaurant OS answer |
 |---|---|
 | Money in `REAL` columns, rounded by the UI | **Money is `i64` minor units, everywhere.** No float money, ever. |
 | PINs readable in the database | PINs are **salted SHA-256**; the plaintext never touches the disk |
@@ -68,7 +68,7 @@ markup ── what the operator sees    (src/app.native, src/screens/*.native)
 ### Module map
 
 ```
-apps/eatery/src/
+apps/ros/src/
 ├── main.zig              the app: shell, UiApp, runner wiring
 ├── app.native            the shell: title bar, nav rail, screen gates
 ├── app_sources.zig       the embedded import closure for the templates
@@ -78,7 +78,7 @@ apps/eatery/src/
 │   ├── update.zig        the update function: the only place state changes
 │   ├── navigation.zig    the Screen enum and the navigation stack
 │   ├── rbac.zig          the permission matrix (a pure function)
-│   ├── theme.zig         the design tokens: Eatery's own palette
+│   ├── theme.zig         the design tokens: the Restaurant OS palette
 │   └── bump.zig          fixed-capacity storage for the model's rows
 ├── domain/models.zig     the entities: Product, Order, Table, Employee...
 ├── data/
@@ -94,7 +94,7 @@ apps/eatery/src/
 
 ## The database
 
-The schema lives in `apps/eatery/src/schema/` as numbered migrations and is
+The schema lives in `apps/ros/src/schema/` as numbered migrations and is
 applied by the platform when the database opens. Three rules hold in every
 table:
 
@@ -105,7 +105,7 @@ table:
   database has the same shape.
 
 ```sh
-cd apps/eatery
+cd apps/ros
 native db new-migration add_promotions   # appends src/schema/000N_add_promotions.sql
 ```
 
@@ -141,7 +141,7 @@ scripts/verify-all.sh        # native check + native test for every app
 scripts/build.sh         # ReleaseFast build of every app
 scripts/dev.sh           # debug run of the app with markup hot reload
 
-cd apps/eatery
+cd apps/ros
 native automate wait                       # wait for the running app
 native automate assert 'gpu_nonblank=true' # assert the window drew something
 native automate snapshot                   # dump the widget tree
@@ -152,9 +152,9 @@ native automate snapshot                   # dump the widget tree
 ## Repository layout
 
 ```
-eatery-v2/
-├── apps/eatery/          the app
-├── docs/                 the architecture, the decisions, the plan
+ros/
+├── apps/ros/               the app
+├── docs/                   the architecture, the decisions, the plan
 │   ├── architecture/      how the system is put together
 │   ├── decisions/         ADRs: what we decided and why
 │   └── plan/              roadmap, backlog, the gaps from v1
@@ -187,7 +187,7 @@ The rest of the product is on the phase board in
 matrix in [`docs/plan/status.md`](docs/plan/status.md). The documentation
 index is [`docs/README.md`](docs/README.md); the dated findings are in
 [`docs/review/archive/`](docs/review/archive/), and the open findings are
-[issues](https://github.com/devstroop/eatery-v2/issues).
+[issues](https://github.com/devstroop/ros/issues).
 
 ---
 

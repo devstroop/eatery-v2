@@ -7,7 +7,7 @@
 
 ## The goal
 
-A native Eatery that a restaurant can run for a service:
+A native Restaurant OS that a restaurant can run for a service:
 
 1. an operator can set up a company and a menu;
 2. a cashier can take an order and take payment;
@@ -120,7 +120,7 @@ A phase is done when:
 
 - [`roadmap.md`](roadmap.md) — product-ordered delivery view
 - [`backlog.md`](backlog.md) — all 43 screens, one row each
-- [`gaps-from-v1.md`](gaps-from-v1.md) — what v2 drops, fixes and still owes v1
+- [`gaps-from-v1.md`](gaps-from-v1.md) — what Restaurant OS drops, fixes and still owes v1
 - [`status.md`](status.md) — as-built matrix and known defects
 - [`risks.md`](risks.md) — risk register
 - [`open-questions.md`](open-questions.md) — what we do not know

@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** Living document.
-**Scope:** how Eatery v2 gets from the current vertical slice to a product a
+**Scope:** how Restaurant OS gets from the current vertical slice to a product a
 restaurant can run a service with.
 **Method:** every deliverable below names a file that exists in the tree
 today or a file that is explicitly marked PLANNED. Nothing is invented
@@ -17,7 +17,7 @@ silently.
 
 ## The release definition
 
-A restaurant runs a service on Eatery v2 when:
+A restaurant runs a service on Restaurant OS when:
 
 1. an owner installs it, creates a company, an admin PIN, a menu and a
    floor;
@@ -102,16 +102,16 @@ rules.
 
 | Area | What exists |
 |---|---|
-| App model | `apps/eatery/src/core/model.zig`, `msg.zig`, `update.zig`, `navigation.zig`, `rbac.zig`, `theme.zig`, `bump.zig` |
-| View | `apps/eatery/src/app.native` plus nine templates in `apps/eatery/src/screens/` |
-| Data | `apps/eatery/src/data/repos.zig`, `page.zig`, `auth.zig`; ten migrations in `apps/eatery/src/schema/` (43 `STRICT` tables) |
-| Manifest | `apps/eatery/app.json`, `apps/eatery/src/main.zig` |
-| Rules | `apps/eatery/src/tests.zig` + `tests_data.zig` — 15 authored headless tests and 12 in-memory DB tests |
+| App model | `apps/ros/src/core/model.zig`, `msg.zig`, `update.zig`, `navigation.zig`, `rbac.zig`, `theme.zig`, `bump.zig` |
+| View | `apps/ros/src/app.native` plus nine templates in `apps/ros/src/screens/` |
+| Data | `apps/ros/src/data/repos.zig`, `page.zig`, `auth.zig`; ten migrations in `apps/ros/src/schema/` (43 `STRICT` tables) |
+| Manifest | `apps/ros/app.json`, `apps/ros/src/main.zig` |
+| Rules | `apps/ros/src/tests.zig` + `tests_data.zig` — 15 authored headless tests and 12 in-memory DB tests |
 
 **Exit criteria — met.**
 
-- [x] `cd apps/eatery && native check` is clean.
-- [x] `cd apps/eatery && native test` is green.
+- [x] `cd apps/ros && native check` is clean.
+- [x] `cd apps/ros && native test` is green.
 - [x] A role can be picked, a PIN accepted, a dashboard rendered.
 - [x] An order can be placed and lands in `orders` and `order_line` in one
       transaction.
@@ -142,25 +142,25 @@ changes underneath them.
 data-layer defects: **DB5** (order and lines written without a
 transaction), **R2** (`getAll*()` with no limit), **CS1** (customer list
 re-queried three times per frame), **PR2** (no pagination on product
-lists). v2 already avoids most of them by construction; the remaining work
+lists). Restaurant OS already avoids most of them by construction; the remaining work
 is to close the read paths and prove them.
 
 **Deliverables — data.**
 
 | File | Work |
 |---|---|
-| `apps/eatery/src/data/repos.zig` | Read, decode and write paths for `customer`, `tax_slab`, `modifier_group`, `modifier`, `product_modifier`, `discount`, `payment`, `shift`, `time_entry`, `expense`, `reservation`, `supplier`, `purchase_order`, `purchase_order_item`, `stock_adjustment`, `kds_station`, `product_station`, `printer`, `auto_print`, `compliance_report`, `void_log_entry`, `device`, `op_log`, `sync_state` |
-| `apps/eatery/src/core/model.zig` | One bump buffer and one row slice per dataset; derived methods for the new sets |
-| `apps/eatery/src/core/msg.zig` | One message arm per loaded dataset |
-| `apps/eatery/src/core/update.zig` | The decode arm per dataset; the tax and discount arithmetic; the `op_log` write on every mutation |
-| `apps/eatery/src/data/page.zig` | Unchanged unless a column limit is hit — the reader addresses columns by name |
+| `apps/ros/src/data/repos.zig` | Read, decode and write paths for `customer`, `tax_slab`, `modifier_group`, `modifier`, `product_modifier`, `discount`, `payment`, `shift`, `time_entry`, `expense`, `reservation`, `supplier`, `purchase_order`, `purchase_order_item`, `stock_adjustment`, `kds_station`, `product_station`, `printer`, `auto_print`, `compliance_report`, `void_log_entry`, `device`, `op_log`, `sync_state` |
+| `apps/ros/src/core/model.zig` | One bump buffer and one row slice per dataset; derived methods for the new sets |
+| `apps/ros/src/core/msg.zig` | One message arm per loaded dataset |
+| `apps/ros/src/core/update.zig` | The decode arm per dataset; the tax and discount arithmetic; the `op_log` write on every mutation |
+| `apps/ros/src/data/page.zig` | Unchanged unless a column limit is hit — the reader addresses columns by name |
 
 **Deliverables — schema.**
 
 | File | Work |
 |---|---|
-| `apps/eatery/src/schema/0011_*.sql` | Anything the repositories need that is not there yet (PLANNED) |
-| `apps/eatery/src/schema/migrations.lock.json` | Advanced to the new version |
+| `apps/ros/src/schema/0011_*.sql` | Anything the repositories need that is not there yet (PLANNED) |
+| `apps/ros/src/schema/migrations.lock.json` | Advanced to the new version |
 
 **Deliverables — live queries.**
 
@@ -192,12 +192,12 @@ because they are the long poles.
 
 **Exit criteria — verifiable.**
 
-- [ ] `cd apps/eatery && native check` is clean, including no `NS1405`
+- [ ] `cd apps/ros && native check` is clean, including no `NS1405`
       diagnostic.
-- [ ] `cd apps/eatery && native test` is green, and the suite includes an
+- [ ] `cd apps/ros && native test` is green, and the suite includes an
       in-memory database test per new repository, using
       `native_sdk.relational_store.Database.openMemoryMigrated`.
-- [ ] Every table in `apps/eatery/src/schema/` is either read or written by
+- [ ] Every table in `apps/ros/src/schema/` is either read or written by
       the app, or is listed in `docs/plan/backlog.md` with the screen that
       owes it.
 - [ ] A test asserts that an order write and its line writes land in one
@@ -277,18 +277,18 @@ forms write, but nothing takes a payment properly (see [status](status.md)).
 
 **Deliverables — shared components.**
 
-`apps/eatery/src/components/` is empty today and nine templates repeat
+`apps/ros/src/components/` is empty today and nine templates repeat
 the same patterns inline: the empty state appears in four screens, the
 screen header in five, the row-with-badge in three. This phase builds the
 component files the admin screens need — `empty-state.native`,
 `screen-header.native`, `stat-tile.native`, `form-group.native`,
 `notice-banner.native`, `settings-row.native`, `data-table.native` (all
 PLANNED), each imported by the screens that use it and listed in
-`apps/eatery/src/app_sources.zig`.
+`apps/ros/src/app_sources.zig`.
 
 **Exit criteria — verifiable.**
 
-- [x] `cd apps/eatery && native check` is clean and `native test` is green.
+- [x] `cd apps/ros && native check` is clean and `native test` is green.
 - [x] Every admin screen listed above is mounted in `src/app.native` with
       its ordinal gate, imported, and listed in `src/app_sources.zig`. The
       four SESSION screens — the setup, the role picker, the login and the
@@ -369,7 +369,7 @@ avoided, and how a shared session is scoped. The answers go into
 
 **Exit criteria — verifiable.**
 
-- [ ] `cd apps/eatery && native check` is clean and `native test` is green.
+- [ ] `cd apps/ros && native check` is clean and `native test` is green.
 - [ ] The waiter can open a table, add a product with a modifier, place the
       order, and see it on the order list.
 - [ ] The customer display shows the placed order and its status without a
@@ -408,8 +408,8 @@ cloud and no account.
 | `tools/sync-sidecar/src/discovery.zig` | mDNS announcement and browse |
 | `tools/sync-sidecar/src/election.zig` | The host election |
 | `tools/sync-sidecar/src/store.zig` | The `op_log` reader and writer against the app's database in WAL mode |
-| `apps/eatery/src/data/repos.zig` | The `op_log` write on every mutation, inside the mutation's transaction |
-| `apps/eatery/src/core/update.zig` | The apply-incoming-operation arm |
+| `apps/ros/src/data/repos.zig` | The `op_log` write on every mutation, inside the mutation's transaction |
+| `apps/ros/src/core/update.zig` | The apply-incoming-operation arm |
 
 **Exit criteria — verifiable.**
 
@@ -455,8 +455,8 @@ cloud and no account.
 | `tools/print-sidecar/src/transports/tcp.zig` | ESC/POS over TCP on port 9100 |
 | `tools/print-sidecar/src/transports/system.zig` | The OS print queue |
 | `tools/print-sidecar/src/receipt.zig` | The receipt and the KOT layouts |
-| `apps/eatery/src/schema/0011_print_jobs.sql` (PLANNED) | The print job table, if the spawn-per-job route is not enough |
-| `apps/eatery/src/screens/screen-settings-printers.native` (Phase 2) | The printer configuration screen |
+| `apps/ros/src/schema/0011_print_jobs.sql` (PLANNED) | The print job table, if the spawn-per-job route is not enough |
+| `apps/ros/src/screens/screen-settings-printers.native` (Phase 2) | The printer configuration screen |
 
 **Exit criteria — verifiable.**
 
@@ -478,7 +478,7 @@ cloud and no account.
 |---|---|
 | BLE pairing behaves differently on each desktop platform | LAN TCP on port 9100 is the fallback and is enough for a pilot; the BLE transport is a second target, not a blocker |
 | The receipt format depends on the paper width and the device's code page | One receipt renderer with a paper-width parameter, tested against a captured byte stream |
-| Printing is a side effect and can fail after the sale is committed | The order is always committed first; printing is best-effort with a visible status, which is the v2 rule |
+| Printing is a side effect and can fail after the sale is committed | The order is always committed first; printing is best-effort with a visible status, which is the Restaurant OS rule |
 | The sidecar needs the same packaging treatment as the sync sidecar | Both are packaged in Phase 6; if only one exists by then, Phase 6 packages that one |
 
 ---
@@ -509,12 +509,12 @@ runs a service without a developer in the room.
       order.
 - [ ] The CI workflow is green on a fresh clone, having installed the
       pinned toolchain itself.
-- [ ] A v1 database either migrates into v2 without loss of orders,
-      payments or employees, or the release notes say plainly that v2
+- [ ] A v1 database either migrates into Restaurant OS without loss of orders,
+      payments or employees, or the release notes say plainly that Restaurant OS
       starts empty.
 - [ ] `scripts/verify.sh` runs `native check` and `native test` for every
       app and exits non-zero on failure.
-- [ ] The v1 app and the v2 app have been run side by side through one
+- [ ] The v1 app and the Restaurant OS app have been run side by side through one
       service, and the orders agree.
 
 **Risks.**
@@ -550,8 +550,8 @@ order: the two sidecars start in Phase 1 and finish in Phases 4 and 5.
 Before the next phase starts:
 
 - [ ] The previous phase's exit criteria are demonstrated, not asserted.
-- [ ] `cd apps/eatery && native check` is clean.
-- [ ] `cd apps/eatery && native test` is green, and the new rules are in
+- [ ] `cd apps/ros && native check` is clean.
+- [ ] `cd apps/ros && native test` is green, and the new rules are in
       the suite.
 - [ ] Every new screen is mounted in `src/app.native`, imported, listed in
       `src/app_sources.zig`, and covered by a landmark test.

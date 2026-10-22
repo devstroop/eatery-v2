@@ -1,6 +1,6 @@
 # AGENTS.md — the operating manual
 
-You are working in **Eatery v2**: a restaurant POS (point of sale, kitchen
+You are working in **Restaurant OS**: a restaurant POS (point of sale, kitchen
 display, customer display, back office) written in Zig on the
 [Native SDK](https://native-sdk.dev). This file is the manual for coding
 agents and new contributors. Read it before you write a line.
@@ -31,10 +31,10 @@ not found, run `scripts/setup.sh` first.
 ## 2. The app model, and the four rules that hold it together
 
 ```
-Model   what is true          apps/eatery/src/core/model.zig
-Msg     what happened         apps/eatery/src/core/msg.zig
-update  what is true now      apps/eatery/src/core/update.zig
-markup  what the operator sees apps/eatery/src/app.native + src/screens/*.native
+Model   what is true          apps/ros/src/core/model.zig
+Msg     what happened         apps/ros/src/core/msg.zig
+update  what is true now      apps/ros/src/core/update.zig
+markup  what the operator sees apps/ros/src/app.native + src/screens/*.native
 ```
 
 **Rule 1 — the markup never changes state.** It binds values and dispatches
@@ -213,14 +213,14 @@ against real SQLite — that is the point of the check.
 
 | Question | File |
 |---|---|
-| What is the model? | `apps/eatery/src/core/model.zig` |
-| What can happen? | `apps/eatery/src/core/msg.zig` |
-| What does it mean? | `apps/eatery/src/core/update.zig` |
-| Who may do what? | `apps/eatery/src/core/rbac.zig` |
-| What is in the database? | `apps/eatery/src/schema/*.sql` |
-| What is the SQL? | `apps/eatery/src/data/repos.zig` |
-| What does the operator see? | `apps/eatery/src/app.native`, `src/screens/` |
-| What colour is the brand? | `apps/eatery/src/core/theme.zig` |
+| What is the model? | `apps/ros/src/core/model.zig` |
+| What can happen? | `apps/ros/src/core/msg.zig` |
+| What does it mean? | `apps/ros/src/core/update.zig` |
+| Who may do what? | `apps/ros/src/core/rbac.zig` |
+| What is in the database? | `apps/ros/src/schema/*.sql` |
+| What is the SQL? | `apps/ros/src/data/repos.zig` |
+| What does the operator see? | `apps/ros/src/app.native`, `src/screens/` |
+| What colour is the brand? | `apps/ros/src/core/theme.zig` |
 | How does the system fit together? | `docs/architecture/` |
 | What was decided, and why? | `docs/decisions/` |
 | What is left to build? | `docs/plan/backlog.md`, `docs/plan/roadmap.md` |

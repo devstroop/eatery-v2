@@ -1,12 +1,12 @@
 //! The design tokens.
 //!
-//! Eatery has a brand, and a brand that only exists in the app's own
+//! Restaurant OS has a brand, and a brand that only exists in the app's own
 //! stylesheet is a brand that dies with the stylesheet. The Native SDK
 //! lets the app own its whole design system - colours, type scale,
 //! spacing, radii - so the palette lives in one file that a designer
 //! can read and a developer can diff.
 //!
-//! The palette below is v2's own: the cyan-and-teal of Eatery v1,
+//! The palette below is the product's own: the cyan-and-teal of Eatery v1,
 //! re-expressed on the SDK's semantic token names. Colours are sRGB
 //! bytes; the runtime handles the rest.
 
@@ -18,7 +18,7 @@ const core = @import("model.zig");
 const canvas = native_sdk.canvas;
 const Model = core.Model;
 
-/// Eatery's brand palette.
+/// The Restaurant OS brand palette.
 const brand = struct {
     // The light semantic fills are the darkest step of the v1 hues that
     // clears WCAG AA with white text, and as text on the light

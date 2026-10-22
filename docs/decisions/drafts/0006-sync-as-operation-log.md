@@ -1,8 +1,8 @@
 # ADR-0006: Sync is an operation log in the database; a sidecar owns the socket
 
 **Status:** Accepted (2026-10)
-**Applies to:** `apps/eatery/src/schema/0010_sync.sql`,
-`apps/eatery/src/data/repos.zig`, `tools/sync-sidecar/**`
+**Applies to:** `apps/ros/src/schema/0010_sync.sql`,
+`apps/ros/src/data/repos.zig`, `tools/sync-sidecar/**`
 **Related:** [`architecture/08-sync.md`](../../architecture/08-sync.md),
 [`architecture/11-capability-gaps.md`](../../architecture/11-capability-gaps.md)
 
@@ -13,7 +13,7 @@ v1 spoke the network protocol from inside the application.
 `sync_client.dart` implement a WebSocket host and leaf, and
 `sync_message.dart` defines eight message types: `host_announce`,
 `oplog_push`, `oplog_pull`, `oplog_broadcast`, `host_vote`, `host_claim`,
-`heartbeat` and `ack`. Discovery was mDNS on `_eatery-sync._tcp:9876`,
+`heartbeat` and `ack`. Discovery was mDNS on `_ros-sync._tcp:9876`,
 and host election ran inside the app: after three missed heartbeats every
 leaf broadcast a `host_vote` carrying its device id, uptime and clock, and
 after two seconds the highest uptime won.
@@ -38,7 +38,7 @@ pure function of `(model, message)`.
 `op_log` table and watches that table; a separate process owns the socket,
 the mDNS announcement and the host election.
 
-The schema is `apps/eatery/src/schema/0010_sync.sql`: three tables.
+The schema is `apps/ros/src/schema/0010_sync.sql`: three tables.
 
 | Table | Holds |
 |---|---|
@@ -67,7 +67,7 @@ can disagree.
 
 The natural first integration point is already shaped for it:
 `repos.saveOrder` and `repos.setOrderStatus` in
-`apps/eatery/src/data/repos.zig` build multi-statement writes and hand them
+`apps/ros/src/data/repos.zig` build multi-statement writes and hand them
 to a single `fx.dbExec`, so an `op_log` insert joins the same transaction
 and cannot be separated from the mutation it describes.
 
@@ -88,12 +88,12 @@ and cannot be separated from the mutation it describes.
   write in `src/data/repos.zig`. The whole substrate is owed.
 - **Cost:** last-writer-wins is lossy. Two edits to different fields of the
   same row cannot both survive; the higher clock wins and the other edit is
-  discarded. v1 had the same rule, so v2 inherits the limitation rather
+  discarded. v1 had the same rule, so Restaurant OS inherits the limitation rather
   than fixing it.
 - **Cost:** a second program has to be built, packaged, signed and updated
   alongside the app, on three desktop platforms. It has to open the
   database concurrently with the app, which requires WAL and a busy timeout
-  — neither is configured or verified in v2 today.
+  — neither is configured or verified in Restaurant OS today.
 - **Cost:** there is no peer authentication. Any device that can reach the
   socket can connect, `device_id` is self-asserted text, and `op_log`
   accepts any snapshot it is handed. For a restaurant LAN this may be
@@ -113,7 +113,7 @@ and cannot be separated from the mutation it describes.
   in `src/data/repos.zig` is a one-shot `dbQuery`; the `op_log` watch needs
   `fx.dbSubscribe`, which is Phase 1 work.
 - **Cost:** v1's cloud replication to a VPS was a stated future direction in
-  `../eatery/docs/architecture/sync-protocol.md`. v2 does not plan for it
+  `../eatery/docs/architecture/sync-protocol.md`. Restaurant OS does not plan for it
   and the op-log shape would have to change to support it.
 
 ## Alternatives considered

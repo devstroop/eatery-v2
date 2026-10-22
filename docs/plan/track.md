@@ -4,12 +4,12 @@
 > what each one owns, and the order they run in.
 > **The as-built tree is described by [`status.md`](status.md).** The
 > findings that became this page are tracked in the
-> [issue tracker](https://github.com/devstroop/eatery-v2/issues) - one
+> [issue tracker](https://github.com/devstroop/ros/issues) - one
 > issue per finding, labelled by track and milestone.
 
 ## What this page is for
 
-A restaurant runs a service on Eatery v2 when:
+A restaurant runs a service on Restaurant OS when:
 
 1. an owner installs it, creates a company, an admin PIN, a menu and a
    floor;
@@ -91,7 +91,7 @@ review of everything the tracks landed since the last one.
 
 ## How work lands
 
-1. **A branch, cut from `develop`:** `git worktree add ../eatery-v2-worktrees/<name> -b <type>/<name> develop`.
+1. **A branch, cut from `develop`:** `git worktree add ../ros-worktrees/<name> -b <type>/<name> develop`.
 2. **A test that fails first.** Every rule this repository protects is a
    test. A fix without a test is a fix that comes back.
 3. **Conventional Commits,** one concern per commit, in the imperative:

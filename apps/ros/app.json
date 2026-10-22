@@ -1,8 +1,8 @@
 {
     "$schema": "https://schema.native-sdk.dev/app/v1.json",
-    "id": "dev.eatery.v2",
-    "name": "eatery",
-    "display_name": "Eatery",
+    "id": "com.devstroop.ros",
+    "name": "ros",
+    "display_name": "Restaurant OS",
     "description": "Restaurant operating system: point of sale, kitchen display, customer display and back office in one native binary.",
     "version": "0.1.0",
     "icons": [
@@ -40,7 +40,7 @@
         "windows": [
             {
                 "label": "main",
-                "title": "Eatery",
+                "title": "Restaurant OS",
                 "width": 1280,
                 "height": 800,
                 "min_width": 960,
@@ -51,8 +51,8 @@
                         "label": "main-canvas",
                         "kind": "gpu_surface",
                         "fill": true,
-                        "role": "Eatery canvas",
-                        "accessibility_label": "Eatery",
+                        "role": "Restaurant OS canvas",
+                        "accessibility_label": "Restaurant OS",
                         "gpu_backend": "metal",
                         "gpu_pixel_format": "bgra8_unorm",
                         "gpu_present_mode": "timer",

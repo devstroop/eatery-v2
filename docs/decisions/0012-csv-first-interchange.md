@@ -2,7 +2,7 @@
 
 > **Status:** Proposed
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers, product
+> **Deciders:** Devstroop maintainers, product
 > **Related:** [`architecture/11`](../architecture/11-capability-gaps.md)
 
 ## Context
@@ -23,7 +23,7 @@ through a sidecar if real demand appears.**
 - Import accepts CSV with a header row, validates columns, and shows a
   preview before committing.
 - Excel users can open and save CSV without extra tooling.
-- XLSX is not a v2 requirement; a sidecar can convert if needed.
+- XLSX is not a Restaurant OS requirement; a sidecar can convert if needed.
 
 ## Consequences
 

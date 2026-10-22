@@ -1,7 +1,7 @@
 # ADR-0001: Build the core on the Native SDK in Zig
 
 **Status:** Accepted (2026-10)
-**Applies to:** `apps/eatery/**`, `tools/**`
+**Applies to:** `apps/ros/**`, `tools/**`
 **Related:** [`architecture/overview.md`](../../architecture/overview.md),
 [`architecture/11-capability-gaps.md`](../../architecture/11-capability-gaps.md)
 
@@ -44,7 +44,7 @@ Flutter ecosystem and a full rewrite of the view layer.
 on the Native SDK.** There is no Dart, no JavaScript runtime and no embedded
 WebView in the shipped product.
 
-The shape is fixed by `apps/eatery/src/main.zig`: `UiApp.create` with
+The shape is fixed by `apps/ros/src/main.zig`: `UiApp.create` with
 `.update_fx = update_mod.update`, `.init_fx = update_mod.boot`,
 `.tokens_fn = theme.tokens` and a runtime markup source of `src/app.native`
 plus the embedded closure in `src/app_sources.zig`. `src/core/update.zig` is
@@ -52,7 +52,7 @@ the only function that writes model state; `src/data/repos.zig` is the only
 place SQL is written; `src/core/model.zig` is the only place the view's
 surface is declared.
 
-A TypeScript core is explicitly rejected. The SDK's guarantees that make v2
+A TypeScript core is explicitly rejected. The SDK's guarantees that make Restaurant OS
 worth building are tied to the Zig declarations: `native test` refreshes
 `zig-out/model-contract.zon` from the `Model` and `Msg` declarations, and
 `native check` verifies every binding path, iterable, `key` field, message
@@ -62,16 +62,16 @@ the business logic, and would need its own build, its own package manifest
 and its own bridge — the FFI seam that v1 already paid for once.
 
 The Flutter app in `../eatery` stays in the tree as the behavioural oracle
-until cutover. It is not a dependency and nothing in `apps/eatery` imports
+until cutover. It is not a dependency and nothing in `apps/ros` imports
 it.
 
 ## Consequences
 
-- One native binary per platform. `apps/eatery/app.json` declares macOS,
+- One native binary per platform. `apps/ros/app.json` declares macOS,
   Linux and Windows, a single `main` window and a single GPU surface
   (`main-canvas`). There is no Dart runtime, no Flutter engine and no plugin
   registry to audit or to keep patched.
-- The core is testable without a window. `apps/eatery/src/tests.zig` has 12
+- The core is testable without a window. `apps/ros/src/tests.zig` has 12
   tests that build the markup tree, dispatch messages through
   `main.update` with a fake effects channel (`fakeFx`) and assert on the
   model. The same code path the runtime uses is the code path the tests
@@ -92,7 +92,7 @@ it.
   not on the PATH in this workspace, so none of the build or test claims in
   this repository can be verified from here.
 - **Cost:** a young platform. SDK behaviour can change between minor
-  versions, so the wrapper surface in `apps/eatery/src/` is kept small.
+  versions, so the wrapper surface in `apps/ros/src/` is kept small.
 - **Cost:** mobile is not first class. `app.json` lists desktop platforms
   only, and the SDK's mobile support is experimental.
 - **Cost:** the team has to learn Zig and the SDK's closed markup grammar.
@@ -132,9 +132,9 @@ it.
 
 Before this ADR is treated as satisfied:
 
-- [ ] `apps/eatery/app.json` lists only the platforms that are actually
+- [ ] `apps/ros/app.json` lists only the platforms that are actually
       built, and the list matches the release target.
-- [ ] No file under `apps/eatery/` references Dart, Flutter, `googleapis`,
+- [ ] No file under `apps/ros/` references Dart, Flutter, `googleapis`,
       `fl_chart`, `lottie`, `xlsx` or `image_picker`.
 - [ ] `native check` and `native test` are green on the pinned toolchain
       (Zig 0.16.0, Node 24+, CLI v0.11.0).

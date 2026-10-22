@@ -79,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [eatery]
+        app: [ros]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Zig

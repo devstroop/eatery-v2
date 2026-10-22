@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time toolchain setup for Eatery v2.
+# One-time toolchain setup for Restaurant OS.
 #
 #   ./scripts/setup.sh
 #
@@ -11,7 +11,7 @@
 # Safe to re-run: every step checks before it acts.
 set -u
 
-eatery_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+ros_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 sdk_dir="${NATIVE_SDK_DIR:-$HOME/native-sdk}"
 sdk_tag="${NATIVE_SDK_TAG:-v0.11.0}"
 

@@ -222,7 +222,7 @@ WCAG AA with white text, and as text on the light background and surface
 | Radius | none 0, sm 4, md 8, lg 12, xl 16 |
 
 The v1 app had 14 type rungs, 11 menu-tile colours and an 8-step spacing
-scale. v2 keeps 6/5/5. The lost colour range is a deliberate trade-off;
+scale. Restaurant OS keeps 6/5/5. The lost colour range is a deliberate trade-off;
 see [ADR-0010](../decisions/0010-markup-only-no-custom-paint.md) and the
 open question about brand fidelity.
 
@@ -250,7 +250,7 @@ There is no responsive variant yet. The shell assumes a desktop window
 
 ## Accessibility
 
-- Shell and canvas carry accessibility labels ("Eatery").
+- Shell and canvas carry accessibility labels ("Restaurant OS").
 - Icon-only buttons must carry `label=`; the SDK rejects unnamed
   interactive controls.
 - Text is real text, so the OS can read it; there is no canvas-drawn copy.

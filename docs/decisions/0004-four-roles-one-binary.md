@@ -2,13 +2,13 @@
 
 > **Status:** Accepted (multi-window delivery is Proposed)
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/03`](../architecture/03-navigation-and-rbac.md),
 > [`architecture/07`](../architecture/07-windowing-and-desktop.md)
 
 ## Context
 
-Eatery serves four operating modes: admin, waiter, kitchen display and
+Restaurant OS serves four operating modes: admin, waiter, kitchen display and
 customer display. v1 shipped one binary with a role enum and a route
 guard; each device chose a role at launch.
 

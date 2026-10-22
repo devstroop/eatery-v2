@@ -82,7 +82,7 @@
 
 <template name="screen-role-picker">
   <column grow="1" gap="16" padding="32" main="center" cross="center" background="background">
-    <text size="display">Eatery</text>
+    <text size="display">Restaurant OS</text>
     <text foreground="text_muted">Choose how this device works today.</text>
 
     <column gap="8" width="420">
@@ -128,7 +128,7 @@
         </if>
         <button variant="primary" on-press="submit_login">Sign in</button>
         <button variant="ghost" on-press="pick_role_again">Change role</button>
-        <button variant="ghost" on-press="open_landing">About Eatery</button>
+        <button variant="ghost" on-press="open_landing">About Restaurant OS</button>
       </column>
     </card>
   </column>
@@ -237,16 +237,16 @@
   </column>
 </template>
 
-<!-- The upgrade. The database was made by a newer version of Eatery,
+<!-- The upgrade. The database was made by a newer version of Restaurant OS,
      and this version must not write to it: a write the newer app
      would understand differently is a write that spoils the data. So
      the app says so, and stops. -->
 
 <template name="screen-upgrade">
   <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
-    <text size="heading">This database is newer than Eatery</text>
+    <text size="heading">This database is newer than Restaurant OS</text>
     <text foreground="text_muted">It has {database_table_count} tables and this app knows {expected_table_count}.</text>
-    <text foreground="text_muted">Update Eatery and try again. Nothing has been written.</text>
+    <text foreground="text_muted">Update Restaurant OS and try again. Nothing has been written.</text>
   </column>
 </template>
 
@@ -256,7 +256,7 @@
 
 <template name="screen-landing">
   <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
-    <text size="heading">Eatery</text>
+    <text size="heading">Restaurant OS</text>
     <text foreground="text_muted">{company_label}</text>
     <text size="sm" foreground="text_muted">A restaurant operating system: point of sale, kitchen display, customer display and back office.</text>
   </column>

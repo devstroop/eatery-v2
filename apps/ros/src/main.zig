@@ -1,4 +1,4 @@
-//! Eatery v2 - a restaurant operating system in one native binary.
+//! Restaurant OS - a restaurant operating system in one native binary.
 //!
 //! The app is the Native SDK's app-model shape: a `Model` (what is
 //! true), a `Msg` (what happened), and `update` (what is true now).
@@ -52,8 +52,8 @@ const shell_views = [_]native_sdk.ShellView{.{
     .label = canvas_label,
     .kind = .gpu_surface,
     .fill = true,
-    .role = "Eatery canvas",
-    .accessibility_label = "Eatery",
+    .role = "Restaurant OS canvas",
+    .accessibility_label = "Restaurant OS",
     .gpu_backend = .metal,
     .gpu_pixel_format = .bgra8_unorm,
     .gpu_present_mode = .timer,
@@ -63,7 +63,7 @@ const shell_views = [_]native_sdk.ShellView{.{
 }};
 const shell_windows = [_]native_sdk.ShellWindow{.{
     .label = "main",
-    .title = "Eatery",
+    .title = "Restaurant OS",
     .width = window_width,
     .height = window_height,
     .views = &shell_views,
@@ -84,7 +84,7 @@ pub const app_sources = @import("app_sources.zig").sources;
 
 // -------------------------------------------------------------------- app
 
-const EateryApp = native_sdk.UiApp(Model, Msg);
+const RosApp = native_sdk.UiApp(Model, Msg);
 
 pub fn initialModel() Model {
     return .{};
@@ -93,8 +93,8 @@ pub fn initialModel() Model {
 pub fn main(init: std.process.Init) !void {
     // `create` heap-allocates and constructs the model in place: the
     // model carries the row buffers and is far too large for the stack.
-    const app_state = try EateryApp.create(std.heap.page_allocator, .{
-        .name = "eatery",
+    const app_state = try RosApp.create(std.heap.page_allocator, .{
+        .name = "ros",
         .scene = shell_scene,
         .canvas_label = canvas_label,
         .update_fx = update_mod.update,
@@ -123,9 +123,9 @@ pub fn main(init: std.process.Init) !void {
     app_state.model.device_token_len = app_state.model.device_token_buf.len;
 
     try runner.runWithOptions(app_state.app(), .{
-        .app_name = "eatery",
-        .window_title = "Eatery",
-        .bundle_id = "dev.eatery.v2",
+        .app_name = "ros",
+        .window_title = "Restaurant OS",
+        .bundle_id = "com.devstroop.ros",
         .icon_path = "assets/icon.png",
         .default_frame = geometry.RectF.init(0, 0, window_width, window_height),
         .js_window_api = false,
