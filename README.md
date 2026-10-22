@@ -1,8 +1,9 @@
 # Restaurant OS
 
-A restaurant operating system in one native binary: **point of sale, kitchen
-display, customer display and back office**, written in Zig on the
-[Native SDK](https://native-sdk.dev).
+A restaurant operating system, written in Zig on the
+[Native SDK](https://native-sdk.dev): **point of sale, back office,
+waiter service and the kitchen and customer boards**, in three apps over
+one shared package.
 
 This is a ground-up rewrite of Eatery v1 (the Flutter app that lived in
 `../eatery`). v1 taught us a lot about what a restaurant actually needs and
@@ -10,7 +11,7 @@ where it went wrong; Restaurant OS keeps the product and rebuilds the machinery 
 native GPU canvas, an engine-owned SQLite store and a typed effect channel.
 
 ```sh
-cd apps/ros
+cd apps/admin       # or apps/service, apps/kiosk
 native dev          # debug build + markup hot reload
 native test         # headless update-logic and repository tests
 native check        # manifest, markup and schema validation
@@ -68,33 +69,30 @@ markup ── what the operator sees    (src/app.native, src/screens/*.native)
 ### Module map
 
 ```
-apps/ros/src/
-├── main.zig              the app: shell, UiApp, runner wiring
+packages/ros-core/src/     the shared package: model, messages, update,
+                           domain, data, theme
+apps/admin/                the back office shell (role: admin)
+apps/service/              the waiter shell (role: waiter)
+apps/kiosk/                the kitchen and customer boards (role: kds/display)
+
+apps/<role>/src/
+├── main.zig              the app: window, UiApp, runner wiring
 ├── app.native            the shell: title bar, nav rail, screen gates
 ├── app_sources.zig       the embedded import closure for the templates
-├── core/
-│   ├── model.zig         the Model: every field and every derived binding
-│   ├── msg.zig           the Msg union: every message the app understands
-│   ├── update.zig        the update function: the only place state changes
-│   ├── navigation.zig    the Screen enum and the navigation stack
-│   ├── rbac.zig          the permission matrix (a pure function)
-│   ├── theme.zig         the design tokens: the Restaurant OS palette
-│   └── bump.zig          fixed-capacity storage for the model's rows
-├── domain/models.zig     the entities: Product, Order, Table, Employee...
-├── data/
-│   ├── repos.zig         the SQL: one named statement per query
-│   ├── page.zig          the reader for the engine's row format
-│   └── auth.zig          PIN hashing
 ├── schema/*.sql          the database: eleven migrations, all STRICT
-├── screens/*.native      one template per screen
+├── screens/*.native      one template per screen the role mounts
 └── tests.zig             the rules the app must not break
 ```
+
+`apps/admin` carries the superset of the screens and is the source for
+the copies the other two carry; `scripts/check-copies.sh` fails when a
+copy drifts.
 
 ---
 
 ## The database
 
-The schema lives in `apps/ros/src/schema/` as numbered migrations and is
+The schema lives in each app under `src/schema/` as numbered migrations and is
 applied by the platform when the database opens. Three rules hold in every
 table:
 
@@ -105,7 +103,7 @@ table:
   database has the same shape.
 
 ```sh
-cd apps/ros
+cd apps/admin
 native db new-migration add_promotions   # appends src/schema/000N_add_promotions.sql
 ```
 
@@ -141,7 +139,7 @@ scripts/verify-all.sh        # native check + native test for every app
 scripts/build.sh         # ReleaseFast build of every app
 scripts/dev.sh           # debug run of the app with markup hot reload
 
-cd apps/ros
+cd apps/admin
 native automate wait                       # wait for the running app
 native automate assert 'gpu_nonblank=true' # assert the window drew something
 native automate snapshot                   # dump the widget tree
@@ -153,7 +151,12 @@ native automate snapshot                   # dump the widget tree
 
 ```
 ros/
-├── apps/ros/               the app
+├── apps/
+│   ├── admin/             the back office app
+│   ├── service/           the waiter app
+│   ├── kiosk/             the kitchen and customer boards
+│   └── net-spike/         the transport spike (not shipped)
+├── packages/ros-core/     the shared model, update, data and domain
 ├── docs/                   the architecture, the decisions, the plan
 │   ├── architecture/      how the system is put together
 │   ├── decisions/         ADRs: what we decided and why

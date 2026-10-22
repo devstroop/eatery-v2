@@ -212,14 +212,21 @@ answered, one test per direction; and the salt landed on `develop` in
 
 ### 9.1 — The package split (3 days)
 
-Move the shared code into `packages/ros-core` and make the three
-apps depend on it. `native eject` each app so the build owns its
-dependency on the shared package. **No behaviour changes.** The single
-app keeps working, and its tests keep passing.
+Move the shared Zig code - the core, the data layer and the domain - into
+`packages/ros-core`, and make the app depend on it. `native eject` the app
+so the build owns its dependency on the shared package. **No behaviour
+changes.** The single app keeps working, and its tests keep passing.
 
-**Done when:** `packages/ros-core` holds the core, the data layer,
-the domain and the schema; `apps/ros` is a shell over it; the suite
-is green and unchanged.
+**The schema does not move.** The SDK resolves it from `<app>/src/schema`
+for both the check lane and the runtime migration bundle, with the lock
+file read from `<app>/src/schema/migrations.lock.json` (`build/app.zig`,
+`sqliteMigrationsStage`). There is no option to point it elsewhere. So each
+app carries its own copy, and the shells slice owes either a check that the
+copies agree or a generator that writes them from one source before the
+second app lands.
+
+**Done when:** `packages/ros-core` holds the core, the data layer and the
+domain; `apps/ros` is a shell over it; the suite is green and unchanged.
 
 ### 9.2 — The wire (5 days)
 
@@ -294,9 +301,14 @@ converges; the log is compacted and a new device still converges.
 
 ### 9.8 — The three shells (4 days)
 
-Add `apps/admin`, `apps/service` and `apps/kiosk`. Each declares its
-role as a constant. Each mounts its own screens and its own import
-closure.
+Rename `apps/ros` to `apps/admin` - it is the superset, and its screens
+are the back office - then add `apps/service` and `apps/kiosk`. Each
+declares its role as a constant. Each mounts its own screens and its own
+import closure.
+
+`apps/ros` does not survive the split. After this slice the tree holds
+`packages/ros-core` and the three role apps - `admin`, `service`,
+`kiosk` - and no fourth app.
 
 This slice is **last before the release**, and that is the point. The
 split is not what makes the three apps talk to each other - the

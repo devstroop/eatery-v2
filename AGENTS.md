@@ -31,10 +31,10 @@ not found, run `scripts/setup.sh` first.
 ## 2. The app model, and the four rules that hold it together
 
 ```
-Model   what is true          apps/ros/src/core/model.zig
-Msg     what happened         apps/ros/src/core/msg.zig
-update  what is true now      apps/ros/src/core/update.zig
-markup  what the operator sees apps/ros/src/app.native + src/screens/*.native
+Model   what is true          packages/ros-core/src/core/model.zig
+Msg     what happened         packages/ros-core/src/core/msg.zig
+update  what is true now      packages/ros-core/src/core/update.zig
+markup  what the operator sees apps/<role>/src/app.native + src/screens/*.native
 ```
 
 **Rule 1 — the markup never changes state.** It binds values and dispatches
@@ -57,6 +57,14 @@ that could be computed is a bug waiting to drift from its inputs.
 
 **Rule 4 — `view_unbound` lists what the view must not see.** If you add a
 private field, add it there. If the view may see it, leave it out.
+
+**The three apps are shells.** `apps/admin`, `apps/service` and
+`apps/kiosk` depend on `packages/ros-core` and declare which binary they
+are in `build.zig` (`app_options.addOption("app", …)`). Each mounts only
+its role's screens, and each carries copies of the screen files it
+mounts and of the whole schema - the SDK resolves both from `<app>/src`
+and has no override. `apps/admin` is the source for every copy;
+`scripts/check-copies.sh` fails when one drifts.
 
 ---
 
@@ -188,9 +196,12 @@ test "a role cannot open a screen it may not use" {
 5. Handle the messages in `core/update.zig`. Refuse anything the role may
    not open.
 6. Add the SQL to `data/repos.zig` if it needs data.
-7. Write the template in `src/screens/screen-<name>.native`: one
-   `<template>`, an HTML comment saying what it is.
-8. Register it in `src/app_sources.zig` and import it in `src/app.native`.
+7. Write the template in `apps/admin/src/screens/screen-<name>.native`:
+   one `<template>`, an HTML comment saying what it is.
+8. Register it in that app's `src/app_sources.zig` and import it in
+   `src/app.native`. If another role may open it, copy the template into
+   that app's `src/screens/` and add it to that app's closure - the copy
+   is checked by `scripts/check-copies.sh`.
 9. Gate it in the shell: `<if test="{screen_index == N}"><use template="…"/></if>`.
 10. Add a test: the screen opens, the role is refused if it should be, and
     the view renders without exceeding the widget budget.
@@ -213,14 +224,14 @@ against real SQLite — that is the point of the check.
 
 | Question | File |
 |---|---|
-| What is the model? | `apps/ros/src/core/model.zig` |
-| What can happen? | `apps/ros/src/core/msg.zig` |
-| What does it mean? | `apps/ros/src/core/update.zig` |
-| Who may do what? | `apps/ros/src/core/rbac.zig` |
-| What is in the database? | `apps/ros/src/schema/*.sql` |
-| What is the SQL? | `apps/ros/src/data/repos.zig` |
-| What does the operator see? | `apps/ros/src/app.native`, `src/screens/` |
-| What colour is the brand? | `apps/ros/src/core/theme.zig` |
+| What is the model? | `packages/ros-core/src/core/model.zig` |
+| What can happen? | `packages/ros-core/src/core/msg.zig` |
+| What does it mean? | `packages/ros-core/src/core/update.zig` |
+| Who may do what? | `packages/ros-core/src/core/rbac.zig` |
+| What is in the database? | `apps/<role>/src/schema/*.sql` |
+| What is the SQL? | `packages/ros-core/src/data/repos.zig` |
+| What does the operator see? | `apps/<role>/src/app.native`, `src/screens/` |
+| What colour is the brand? | `packages/ros-core/src/core/theme.zig` |
 | How does the system fit together? | `docs/architecture/` |
 | What was decided, and why? | `docs/decisions/` |
 | What is left to build? | `docs/plan/backlog.md`, `docs/plan/roadmap.md` |

@@ -4,6 +4,10 @@ zig-out/
 .zig-cache/
 zig-cache/
 
+# The SDK link the app builds resolve `native_sdk` through. Created by
+# scripts/env.sh (and CI); never committed, because it is a local path.
+.native-sdk
+
 # Local databases and exports
 *.db
 *.db-shm

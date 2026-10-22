@@ -10,7 +10,7 @@ in the source tree today. It is not a changelog and not a promise: a page
 marked `Planned` is a design, not code.
 
 > **Last full source review:** 2026-10-20
-> **Source of truth:** `apps/ros/` for behaviour, `docs/` for intent.
+> **Source of truth:** `apps/admin/` for behaviour, `docs/` for intent.
 > **Upstream analysis:** [`../../PORT-PLAN.md`](../../PORT-PLAN.md) — the
 > original Flutter-to-Native gap analysis. This documentation supersedes
 > it where the two disagree; the plan document is historical input.
@@ -18,7 +18,7 @@ marked `Planned` is a design, not code.
 > Statuses below were established by reading the source. The Native SDK
 > CLI (`native`) is not on this shell's PATH, so the test suite was not
 > re-run for this review. A built binary exists at
-> `apps/ros/zig-out/bin/ros`; it backs "it compiles", not "the tests
+> `apps/admin/zig-out/bin/ros`; it backs "it compiles", not "the tests
 > pass". When a status changes, update the page that owns the claim, not a
 > status table in three places.
 
@@ -166,7 +166,7 @@ what it did not know.
    (`path:line`) or a wired screen. "Planned" requires no code.
 3. **Design and reality are separate paragraphs.** Do not describe a
    target as if it ships today. Use the status block.
-4. **Source anchors are relative to `apps/ros/`.** For example
+4. **Source anchors are relative to `apps/admin/`.** For example
    `src/core/update.zig:67`. Line numbers drift; the symbol name is the
    stable part.
 5. **An ADR is immutable once accepted** except for a status change and a

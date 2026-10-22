@@ -102,16 +102,16 @@ rules.
 
 | Area | What exists |
 |---|---|
-| App model | `apps/ros/src/core/model.zig`, `msg.zig`, `update.zig`, `navigation.zig`, `rbac.zig`, `theme.zig`, `bump.zig` |
-| View | `apps/ros/src/app.native` plus nine templates in `apps/ros/src/screens/` |
-| Data | `apps/ros/src/data/repos.zig`, `page.zig`, `auth.zig`; ten migrations in `apps/ros/src/schema/` (43 `STRICT` tables) |
-| Manifest | `apps/ros/app.json`, `apps/ros/src/main.zig` |
-| Rules | `apps/ros/src/tests.zig` + `tests_data.zig` — 15 authored headless tests and 12 in-memory DB tests |
+| App model | `apps/admin/src/core/model.zig`, `msg.zig`, `update.zig`, `navigation.zig`, `rbac.zig`, `theme.zig`, `bump.zig` |
+| View | `apps/admin/src/app.native` plus nine templates in `apps/admin/src/screens/` |
+| Data | `apps/admin/src/data/repos.zig`, `page.zig`, `auth.zig`; ten migrations in `apps/admin/src/schema/` (43 `STRICT` tables) |
+| Manifest | `apps/admin/app.json`, `apps/admin/src/main.zig` |
+| Rules | `apps/admin/src/tests.zig` + `tests_data.zig` — 15 authored headless tests and 12 in-memory DB tests |
 
 **Exit criteria — met.**
 
-- [x] `cd apps/ros && native check` is clean.
-- [x] `cd apps/ros && native test` is green.
+- [x] `cd apps/admin && native check` is clean.
+- [x] `cd apps/admin && native test` is green.
 - [x] A role can be picked, a PIN accepted, a dashboard rendered.
 - [x] An order can be placed and lands in `orders` and `order_line` in one
       transaction.
@@ -149,18 +149,18 @@ is to close the read paths and prove them.
 
 | File | Work |
 |---|---|
-| `apps/ros/src/data/repos.zig` | Read, decode and write paths for `customer`, `tax_slab`, `modifier_group`, `modifier`, `product_modifier`, `discount`, `payment`, `shift`, `time_entry`, `expense`, `reservation`, `supplier`, `purchase_order`, `purchase_order_item`, `stock_adjustment`, `kds_station`, `product_station`, `printer`, `auto_print`, `compliance_report`, `void_log_entry`, `device`, `op_log`, `sync_state` |
-| `apps/ros/src/core/model.zig` | One bump buffer and one row slice per dataset; derived methods for the new sets |
-| `apps/ros/src/core/msg.zig` | One message arm per loaded dataset |
-| `apps/ros/src/core/update.zig` | The decode arm per dataset; the tax and discount arithmetic; the `op_log` write on every mutation |
-| `apps/ros/src/data/page.zig` | Unchanged unless a column limit is hit — the reader addresses columns by name |
+| `apps/admin/src/data/repos.zig` | Read, decode and write paths for `customer`, `tax_slab`, `modifier_group`, `modifier`, `product_modifier`, `discount`, `payment`, `shift`, `time_entry`, `expense`, `reservation`, `supplier`, `purchase_order`, `purchase_order_item`, `stock_adjustment`, `kds_station`, `product_station`, `printer`, `auto_print`, `compliance_report`, `void_log_entry`, `device`, `op_log`, `sync_state` |
+| `apps/admin/src/core/model.zig` | One bump buffer and one row slice per dataset; derived methods for the new sets |
+| `apps/admin/src/core/msg.zig` | One message arm per loaded dataset |
+| `apps/admin/src/core/update.zig` | The decode arm per dataset; the tax and discount arithmetic; the `op_log` write on every mutation |
+| `apps/admin/src/data/page.zig` | Unchanged unless a column limit is hit — the reader addresses columns by name |
 
 **Deliverables — schema.**
 
 | File | Work |
 |---|---|
-| `apps/ros/src/schema/0011_*.sql` | Anything the repositories need that is not there yet (PLANNED) |
-| `apps/ros/src/schema/migrations.lock.json` | Advanced to the new version |
+| `apps/admin/src/schema/0011_*.sql` | Anything the repositories need that is not there yet (PLANNED) |
+| `apps/admin/src/schema/migrations.lock.json` | Advanced to the new version |
 
 **Deliverables — live queries.**
 
@@ -192,12 +192,12 @@ because they are the long poles.
 
 **Exit criteria — verifiable.**
 
-- [ ] `cd apps/ros && native check` is clean, including no `NS1405`
+- [ ] `cd apps/admin && native check` is clean, including no `NS1405`
       diagnostic.
-- [ ] `cd apps/ros && native test` is green, and the suite includes an
+- [ ] `cd apps/admin && native test` is green, and the suite includes an
       in-memory database test per new repository, using
       `native_sdk.relational_store.Database.openMemoryMigrated`.
-- [ ] Every table in `apps/ros/src/schema/` is either read or written by
+- [ ] Every table in `apps/admin/src/schema/` is either read or written by
       the app, or is listed in `docs/plan/backlog.md` with the screen that
       owes it.
 - [ ] A test asserts that an order write and its line writes land in one
@@ -277,18 +277,18 @@ forms write, but nothing takes a payment properly (see [status](status.md)).
 
 **Deliverables — shared components.**
 
-`apps/ros/src/components/` is empty today and nine templates repeat
+`apps/admin/src/components/` is empty today and nine templates repeat
 the same patterns inline: the empty state appears in four screens, the
 screen header in five, the row-with-badge in three. This phase builds the
 component files the admin screens need — `empty-state.native`,
 `screen-header.native`, `stat-tile.native`, `form-group.native`,
 `notice-banner.native`, `settings-row.native`, `data-table.native` (all
 PLANNED), each imported by the screens that use it and listed in
-`apps/ros/src/app_sources.zig`.
+`apps/admin/src/app_sources.zig`.
 
 **Exit criteria — verifiable.**
 
-- [x] `cd apps/ros && native check` is clean and `native test` is green.
+- [x] `cd apps/admin && native check` is clean and `native test` is green.
 - [x] Every admin screen listed above is mounted in `src/app.native` with
       its ordinal gate, imported, and listed in `src/app_sources.zig`. The
       four SESSION screens — the setup, the role picker, the login and the
@@ -369,7 +369,7 @@ avoided, and how a shared session is scoped. The answers go into
 
 **Exit criteria — verifiable.**
 
-- [ ] `cd apps/ros && native check` is clean and `native test` is green.
+- [ ] `cd apps/admin && native check` is clean and `native test` is green.
 - [ ] The waiter can open a table, add a product with a modifier, place the
       order, and see it on the order list.
 - [ ] The customer display shows the placed order and its status without a
@@ -408,8 +408,8 @@ cloud and no account.
 | `tools/sync-sidecar/src/discovery.zig` | mDNS announcement and browse |
 | `tools/sync-sidecar/src/election.zig` | The host election |
 | `tools/sync-sidecar/src/store.zig` | The `op_log` reader and writer against the app's database in WAL mode |
-| `apps/ros/src/data/repos.zig` | The `op_log` write on every mutation, inside the mutation's transaction |
-| `apps/ros/src/core/update.zig` | The apply-incoming-operation arm |
+| `apps/admin/src/data/repos.zig` | The `op_log` write on every mutation, inside the mutation's transaction |
+| `apps/admin/src/core/update.zig` | The apply-incoming-operation arm |
 
 **Exit criteria — verifiable.**
 
@@ -455,8 +455,8 @@ cloud and no account.
 | `tools/print-sidecar/src/transports/tcp.zig` | ESC/POS over TCP on port 9100 |
 | `tools/print-sidecar/src/transports/system.zig` | The OS print queue |
 | `tools/print-sidecar/src/receipt.zig` | The receipt and the KOT layouts |
-| `apps/ros/src/schema/0011_print_jobs.sql` (PLANNED) | The print job table, if the spawn-per-job route is not enough |
-| `apps/ros/src/screens/screen-settings-printers.native` (Phase 2) | The printer configuration screen |
+| `apps/admin/src/schema/0011_print_jobs.sql` (PLANNED) | The print job table, if the spawn-per-job route is not enough |
+| `apps/admin/src/screens/screen-settings-printers.native` (Phase 2) | The printer configuration screen |
 
 **Exit criteria — verifiable.**
 
@@ -550,8 +550,8 @@ order: the two sidecars start in Phase 1 and finish in Phases 4 and 5.
 Before the next phase starts:
 
 - [ ] The previous phase's exit criteria are demonstrated, not asserted.
-- [ ] `cd apps/ros && native check` is clean.
-- [ ] `cd apps/ros && native test` is green, and the new rules are in
+- [ ] `cd apps/admin && native check` is clean.
+- [ ] `cd apps/admin && native test` is green, and the new rules are in
       the suite.
 - [ ] Every new screen is mounted in `src/app.native`, imported, listed in
       `src/app_sources.zig`, and covered by a landmark test.

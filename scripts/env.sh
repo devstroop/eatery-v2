@@ -28,6 +28,14 @@ if [ -x "$HOME/native-sdk/zig-out/bin/native" ]; then
   export PATH="$HOME/native-sdk/zig-out/bin:$PATH"
 fi
 
+# --- The app builds name the SDK by path. `apps/*/build.zig.zon` points at
+# `<repo>/.native-sdk`, so the same committed build works on any machine:
+# this link is what makes it find *this* checkout. Keep it current.
+sdk_home="${NATIVE_SDK_DIR:-$HOME/native-sdk}"
+if [ -d "$sdk_home" ]; then
+  ln -sfn "$sdk_home" "$ros_root/.native-sdk"
+fi
+
 missing=0
 for tool in zig node native; do
   if ! command -v "$tool" >/dev/null 2>&1; then

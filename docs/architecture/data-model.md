@@ -1,11 +1,11 @@
 # Data model and storage
 
-> **Scope:** the database schema in `apps/ros/src/schema/`, the
-> repository layer in `apps/ros/src/data/`, and the rules that connect
+> **Scope:** the database schema in `apps/admin/src/schema/`, the
+> repository layer in `apps/admin/src/data/`, and the rules that connect
 > the two.
-> **Source:** `apps/ros/src/schema/0001..0010_*.sql`,
-> `apps/ros/src/schema/migrations.lock.json`, `apps/ros/src/data/*.zig`,
-> `apps/ros/src/core/update.zig`.
+> **Source:** `apps/admin/src/schema/0001..0010_*.sql`,
+> `apps/admin/src/schema/migrations.lock.json`, `apps/admin/src/data/*.zig`,
+> `apps/admin/src/core/update.zig`.
 > **Method:** read from source. The Native SDK CLI (`native`) is not on the
 > PATH in this workspace, so no migration run backs the claims here.
 
@@ -13,7 +13,7 @@
 
 ## 1. The three schema rules
 
-Every table in `apps/ros/src/schema/` obeys three rules. They are
+Every table in `apps/admin/src/schema/` obeys three rules. They are
 stated at the top of the first migration and repeated nowhere else,
 because they are the only three that matter:
 
@@ -154,7 +154,7 @@ as epochs.
 
 ### The files
 
-`apps/ros/src/schema/` holds numbered migrations, applied in order by
+`apps/admin/src/schema/` holds numbered migrations, applied in order by
 the platform when the database opens:
 
 ```
@@ -168,7 +168,7 @@ the platform when the database opens:
 ### Creating one
 
 ```sh
-cd apps/ros
+cd apps/admin
 native db new-migration add_promotions   # appends src/schema/000N_add_promotions.sql
 ```
 
@@ -177,7 +177,7 @@ The CLI generates the file, generates the migrations module from
 
 ### The lock file
 
-`apps/ros/src/schema/migrations.lock.json` is the append-only
+`apps/admin/src/schema/migrations.lock.json` is the append-only
 authority on what has shipped:
 
 ```json
@@ -226,14 +226,14 @@ recorded in `docs/decisions/0005-engine-owned-sqlite-strict-schema.md`.
 
 ### Changing the schema
 
-1. Read `apps/ros/src/schema/` and `apps/ros/src/data/repos.zig`.
+1. Read `apps/admin/src/schema/` and `apps/admin/src/data/repos.zig`.
 2. Add `src/schema/NNNN_name.sql`. Never edit an earlier file.
 3. Keep `STRICT`, the `CHECK` constraints, integer minor-unit money and
    epoch-millisecond time.
 4. Run `native db new-migration` (or regenerate the lock through the SDK
    tooling) so `migrations.lock.json` moves to the new version.
 5. Add or update the SQL constant and its decoder in
-   `apps/ros/src/data/repos.zig`.
+   `apps/admin/src/data/repos.zig`.
 6. `native check`, then `native test`.
 
 There is no installed Restaurant OS base yet, so a correction to an existing
@@ -396,7 +396,7 @@ reservations by `status`, and `op_log` by `created_at` for pruning.
 
 ## 4. The repository layer
 
-`apps/ros/src/data/` holds three files with three distinct jobs.
+`apps/admin/src/data/` holds three files with three distinct jobs.
 
 | File | Job |
 |---|---|
@@ -938,13 +938,13 @@ comments the Restaurant OS code carries about its predecessor.
 
 ## 8. Checklist: changing the schema
 
-1. Read `apps/ros/src/schema/` and `apps/ros/src/data/repos.zig`.
-2. Add `apps/ros/src/schema/NNNN_name.sql`. Never edit an earlier file.
+1. Read `apps/admin/src/schema/` and `apps/admin/src/data/repos.zig`.
+2. Add `apps/admin/src/schema/NNNN_name.sql`. Never edit an earlier file.
 3. Keep `STRICT`, the `CHECK` constraints, integer minor-unit money and
    epoch-millisecond time.
 4. Add the SQL constant, the loader and the decoder in
-   `apps/ros/src/data/repos.zig`. Give the effect its own `key_*`.
-5. Regenerate `apps/ros/src/schema/migrations.lock.json` through the
+   `apps/admin/src/data/repos.zig`. Give the effect its own `key_*`.
+5. Regenerate `apps/admin/src/schema/migrations.lock.json` through the
    SDK tooling, or run `native db new-migration`.
 6. Run `native check` — it prepares the schema with real SQLite and
    reports `file:line:col`.
@@ -962,7 +962,7 @@ comments the Restaurant OS code carries about its predecessor.
    fx.bindRelationalStore(db.binding());
    ```
 
-8. Update `apps/ros/src/domain/models.zig` if a new entity or enum
+8. Update `apps/admin/src/domain/models.zig` if a new entity or enum
    appears, and `docs/architecture/05-schema.md`.
 
 ### Gotchas

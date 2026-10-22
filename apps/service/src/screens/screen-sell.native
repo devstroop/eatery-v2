@@ -1,0 +1,306 @@
+<!-- The selling: the point of sale, the catalogue and the menu's own forms.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
+<!-- The cart. It is a screen of its own AND the pane on the right of
+     the point of sale: the same template, so the cart cannot drift
+     from itself. On the sale screen it is a pane; on its own it is the
+     whole thing, which is what a small till wants. -->
+
+<template name="screen-pos-cart">
+  <column grow="1" gap="8" padding="16" background="surface">
+    <row gap="8" cross="center">
+      <text size="lg" grow="1">Cart</text>
+      <if test="{show_pos_cart_screen}">
+        <button size="sm" variant="ghost" on-press="open_pos">Back to the menu</button>
+      </if>
+    </row>
+      <row gap="4" cross="center">
+        <if test="{show_cart_on_its_own}">
+          <button size="sm" variant="ghost" on-press="open_pos_cart">Cart on its own</button>
+        </if>
+        <text size="sm" foreground="text_muted" grow="1">{cart_type_label}</text>
+        <for each="order_types" key="id" as="kind">
+          <toggle-button selected="{kind.id == cart_order_type}" on-toggle="set_order_type:{kind.id}">{kind.label}</toggle-button>
+        </for>
+      </row>
+      <separator/>
+
+      <if test="{cart_is_empty}">
+        <text foreground="text_muted">The cart is empty.</text>
+      </if>
+
+      <scroll grow="1">
+        <column gap="4">
+          <for each="cart_lines" key="product_id" as="line">
+            <row gap="8" cross="center">
+              <text grow="1">{line.name}</text>
+              <text>{line.qty}</text>
+              <text>{currency_symbol}{fixed(line.total_minor / currency_divisor, currency_decimal_count)}</text>
+              <button size="icon" icon="x" label="Remove one" on-press="remove_from_cart:{line.product_id}"/>
+            </row>
+          </for>
+        </column>
+      </scroll>
+
+      <separator/>
+      <row gap="4" cross="center">
+        <text size="sm" foreground="text_muted" grow="1">Discount</text>
+        <toggle-button selected="{cart_discount_id == 0}" on-toggle="clear_discount">None</toggle-button>
+        <for each="discounts" key="id" as="discount">
+          <toggle-button selected="{discount.id == cart_discount_id}" on-toggle="apply_discount:{discount.id}">{discount.name}</toggle-button>
+        </for>
+      </row>
+      <row cross="center">
+        <text grow="1">Subtotal</text>
+        <text>{currency_symbol}{fixed(cart_total_minor / currency_divisor, currency_decimal_count)}</text>
+      </row>
+      <if test="{cart_tax_minor > 0}">
+        <row cross="center">
+          <text grow="1">Tax</text>
+          <text>{currency_symbol}{fixed(cart_tax_minor / currency_divisor, currency_decimal_count)}</text>
+        </row>
+      </if>
+      <if test="{cart_discount_total > 0}">
+        <row cross="center">
+          <text grow="1">Discount</text>
+          <text>{currency_symbol}{fixed(cart_discount_total / currency_divisor, currency_decimal_count)}</text>
+        </row>
+      </if>
+      <row cross="center">
+        <text grow="1">Total</text>
+        <text size="lg">{currency_symbol}{fixed(cart_amount_due / currency_divisor, currency_decimal_count)}</text>
+      </row>
+      <row gap="8">
+        <button variant="ghost" on-press="clear_cart">Clear</button>
+        <button variant="primary" grow="1" disabled="{sale_pending}" on-press="place_order">Place order</button>
+      </row>
+  </column>
+</template>
+
+<!-- The point of sale. The menu on the left, the cart on the right.
+     The product grid is a virtualized list so a hundred-item menu does
+     not blow the widget budget, and the visible slice is a derived
+     binding: the filter (category plus search text) is applied in the
+     model, never in the markup. -->
+
+<template name="screen-pos">
+  <split grow="1" value="{menu_split}" on-resize="menu_resized">
+    <column gap="8" padding="16" grow="1">
+      <row gap="8" cross="center">
+        <search-field
+          text="{search_text}"
+          placeholder="Search the menu"
+          label="Search the menu"
+          on-input="search_edit"
+          grow="1"
+        />
+      </row>
+
+      <row gap="4" cross="center">
+        <toggle-button selected="{selected_category == 0}" on-toggle="set_category_all">All</toggle-button>
+        <for each="categories" key="id" as="category">
+          <toggle-button selected="{category.id == selected_category}" on-toggle="set_category:{category.id}">{category.name}</toggle-button>
+        </for>
+      </row>
+
+      <scroll grow="1">
+        <grid columns="4" gap="8">
+          <for each="visible_products" key="id" as="product">
+            <card padding="8" on-press="add_to_cart:{product.id}">
+              <column gap="2">
+                <text wrap="true">{product.name}</text>
+                <text size="sm" foreground="text_muted">{currency_symbol}{fixed(product.price_minor / currency_divisor, currency_decimal_count)}</text>
+              </column>
+            </card>
+          </for>
+        </grid>
+      </scroll>
+    </column>
+
+    <use template="screen-pos-cart"/>
+  </split>
+</template>
+
+<!-- The catalogue: everything on the menu. A row opens the product
+     form, so a price can be corrected without leaving the list. -->
+
+<template name="screen-catalogue-list">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Catalogue</text>
+      <text foreground="text_muted">{product_count} on the menu</text>
+      <button size="sm" on-press="open_categories">Categories</button>
+      <button size="sm" variant="primary" on-press="new_product">New</button>
+    </row>
+
+    <row gap="4" cross="center">
+      <toggle-button selected="{selected_category == 0}" on-toggle="set_category_all">All</toggle-button>
+      <for each="categories" key="id" as="category">
+        <toggle-button selected="{category.id == selected_category}" on-toggle="set_category:{category.id}">{category.name}</toggle-button>
+      </for>
+    </row>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="visible_products" key="id" as="product">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_product:{product.id}">
+            <text grow="1">{product.name}</text>
+            <badge>{product.food_label}</badge>
+            <text>{currency_symbol}{fixed(product.price_minor / currency_divisor, currency_decimal_count)}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The product form: what a dish is, what it costs, and which
+     category it sits in. It edits one product, and it edits the SAME
+     product the catalogue row opens. -->
+
+<template name="screen-product-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{product_form_title}</text>
+      <button size="sm" variant="ghost" on-press="open_catalogue">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_product_name}"
+          placeholder="Paneer Tikka"
+          label="Name"
+          on-input="form_product_name_edit"
+        />
+        <text-field
+          text="{form_product_price}"
+          placeholder="245.00"
+          label="Price"
+          on-input="form_product_price_edit"
+        />
+        <row gap="4" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">Category</text>
+          <for each="categories" key="id" as="category">
+            <toggle-button selected="{category.id == form_product_category}" on-toggle="form_product_category:{category.id}">{category.name}</toggle-button>
+          </for>
+        </row>
+        <row gap="4" cross="center">
+          <text size="sm" foreground="text_muted" grow="1">Food</text>
+          <for each="food_types" key="id" as="food">
+            <toggle-button selected="{food.id == form_product_food}" on-toggle="form_product_food:{food.id}">{food.label}</toggle-button>
+          </for>
+        </row>
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_product">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The order confirmation: what was just sold, and the money.
+     This is the end of the sale - the order is on the kitchen board, the
+     customer is waiting, and the cashier takes the payment here. -->
+
+<template name="screen-order-confirmation">
+  <column grow="1" gap="12" padding="24" main="center" cross="center" background="background">
+    <text size="heading">Order {last_order_no}</text>
+    <text foreground="text_muted">{last_order_type} - {time(last_order_time)}</text>
+
+    <card padding="16" width="380">
+      <column gap="8">
+        <row cross="center">
+          <text grow="1" foreground="text_muted">Items</text>
+          <text>{last_order_items}</text>
+        </row>
+        <separator/>
+        <row cross="center">
+          <text grow="1" size="lg">Total</text>
+          <text size="lg">{currency_symbol}{fixed(last_order_total / currency_divisor, currency_decimal_count)}</text>
+        </row>
+      </column>
+    </card>
+
+    <if test="{payment_failed}">
+      <text foreground="destructive">{payment_error}</text>
+    </if>
+
+    <column gap="8" width="380">
+      <text size="sm" foreground="text_muted">TAKE THE PAYMENT</text>
+      <row gap="8">
+        <for each="payment_modes" key="id" as="mode">
+          <toggle-button selected="{mode.id == payment_mode}" on-toggle="set_payment_mode:{mode.id}">{mode.label}</toggle-button>
+        </for>
+      </row>
+      <row gap="8">
+        <button variant="ghost" on-press="back_to_pos">Another order</button>
+        <button variant="primary" grow="1" disabled="{payment_pending}" on-press="take_payment">Take {currency_symbol}{fixed(last_order_total / currency_divisor, currency_decimal_count)}</button>
+      </row>
+    </column>
+  </column>
+</template>
+
+<!-- The category form: what a section of the menu is called. The
+     product form picks its category from the list, and a menu the
+     owner cannot organise is a menu they have to think about. -->
+
+<template name="screen-category-form">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">{category_form_title}</text>
+      <button size="sm" variant="ghost" on-press="open_catalogue">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <text-field
+          text="{form_category_name}"
+          placeholder="Starters"
+          label="Name"
+          on-input="form_category_name_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_category">Save</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>
+
+<!-- The categories the menu is organised by. A row opens the form,
+     and the form edits the SAME category the row opens. -->
+
+<template name="screen-categories">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Categories</text>
+      <badge>{category_count} categories</badge>
+      <button size="sm" on-press="new_category">New</button>
+      <button size="sm" variant="ghost" on-press="open_catalogue">Back</button>
+    </row>
+
+    <if test="{category_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No categories yet. The menu needs at least one.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="categories" key="id" as="category">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center" on-press="edit_category:{category.id}">
+            <text grow="1">{category.name}</text>
+            <text size="sm" foreground="text_muted">{category.sort_order}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

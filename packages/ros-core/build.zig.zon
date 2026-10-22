@@ -1,0 +1,7 @@
+.{
+    .name = .ros_core,
+    .fingerprint = 0x8b9508ae3a0491ca,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}
