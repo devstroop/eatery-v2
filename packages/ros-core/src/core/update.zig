@@ -582,6 +582,59 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // operator can see, not a loop that retries forever.
             if (result.outcome != .ok) model.sync_rejected += 1;
         },
+        .reference => |response| net_bridge.onReferenceResponse(model, fx, response),
+        .reference_bumped => |result| {
+            // The counter moved. Rebuild the document the peer asks
+            // for; serving the old one under the new version would be
+            // a lie the receiver could not detect.
+            if (result.outcome == .ok) repos.loadReferenceSnapshot(model, fx);
+        },
+        .reference_loaded => |result| {
+            if (result.outcome != .ok or result.kind != .page) return;
+            var reader = page.Reader.init(result.bytes);
+            var values: [page.max_columns]page.Value = undefined;
+            if (!reader.readHeader()) return;
+            if (!reader.nextRow(&values)) return;
+            const version = reader.intOf(&values, "version", 0);
+            const json = reader.textOf(&values, "snapshot");
+            model.reference_snapshot_buf.reset();
+            const copied = model.reference_snapshot_buf.dupe(json) orelse return;
+            model.reference_snapshot_len = copied.len;
+            model.reference_version = if (version > 0) @as(u64, @intCast(version)) else 1;
+        },
+        .reference_version_loaded => |result| {
+            if (result.outcome != .ok or result.kind != .page) return;
+            var reader = page.Reader.init(result.bytes);
+            var values: [page.max_columns]page.Value = undefined;
+            if (!reader.readHeader()) return;
+            if (!reader.nextRow(&values)) return;
+            const version = reader.intOf(&values, "version", 0);
+            if (version > 0) model.reference_version = @intCast(version);
+        },
+        .reference_applied => |result| {
+            if (result.outcome != .ok) {
+                // The version did not move, so the next pull asks for
+                // the same document again.
+                model.reference_applying = 0;
+                model.sync_rejected += 1;
+                return;
+            }
+            if (model.reference_applying > model.reference_version) {
+                model.reference_version = model.reference_applying;
+            }
+            model.reference_applying = 0;
+            // The catalogue, the people, the tables and the salt all
+            // changed; reload what the screens read.
+            repos.loadConfig(model, fx);
+            repos.loadCompany(model, fx);
+            repos.loadCategories(model, fx);
+            repos.loadTaxSlabs(model, fx);
+            repos.loadProducts(model, fx);
+            repos.loadEmployees(model, fx);
+            repos.loadTableCategories(model, fx);
+            repos.loadTables(model, fx);
+            repos.loadStations(model, fx);
+        },
 
         // -------------------------------------------------------- session
 
@@ -863,6 +916,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // salt in the database. A sign-in may use it.
             model.salt_state = .confirmed;
             repos.loadAll(model, fx);
+            if (model_mod.app_kind == .admin) {
+                // The first document includes the salt and the owner's
+                // PIN hash, so a peer can sign in with them.
+                repos.loadReferenceSnapshot(model, fx);
+            } else {
+                repos.loadReferenceVersion(model, fx);
+            }
         },
 
         // ----------------------------------------------------- navigation
@@ -1058,6 +1118,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
+            publishReference(fx);
             repos.loadTableCategories(model, fx);
             go(model, .table_categories);
         },
@@ -1520,6 +1581,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
+            publishReference(fx);
             repos.loadCompany(model, fx);
         },
 
@@ -1548,6 +1610,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
+            publishReference(fx);
             repos.loadProducts(model, fx);
             repos.loadCategories(model, fx);
             go(model, .product_categories);
@@ -1609,6 +1672,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
+            publishReference(fx);
             repos.loadEmployees(model, fx);
             go(model, .employees);
         },
@@ -1657,6 +1721,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
+            publishReference(fx);
             repos.loadTaxSlabs(model, fx);
             go(model, .settings_tax);
         },
@@ -1690,6 +1755,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
+            publishReference(fx);
             repos.loadCategories(model, fx);
             go(model, .product_categories);
         },
@@ -1747,6 +1813,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 return;
             }
             model.error_text = "";
+            publishReference(fx);
             // Read it back: the form's buffers are the edit model, and
             // the company row is the truth.
             repos.loadCompany(model, fx);
@@ -1811,6 +1878,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // knowing about but not worth failing over.
             if (result.outcome != .ok) {
                 model.error_text = "The PIN could not be upgraded - it still works";
+            } else {
+                // The employee's hash is reference data: the peer's
+                // copy would otherwise stay on the old hash.
+                publishReference(fx);
             }
         },
 
@@ -1960,6 +2031,14 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                     // The database has the salt now: it is the salt a
                     // sign-in has to use.
                     model.salt_state = .confirmed;
+                    // The salt is what the employee hashes were made
+                    // with, so the document can be built (admin) or its
+                    // version read (peer) only now.
+                    if (model_mod.app_kind == .admin) {
+                        repos.loadReferenceSnapshot(model, fx);
+                    } else {
+                        repos.loadReferenceVersion(model, fx);
+                    }
                 },
                 .done => {
                     // The settings query finished. If the database had
@@ -2058,6 +2137,17 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 }
 
 // ------------------------------------------------------------- helpers
+
+/// Move the reference version after a save the admin made.
+///
+/// The admin is the only writer, and a peer asks "what is above my
+/// version?" - so a catalogue edit is not visible until the counter
+/// moves. The bump is a separate transaction that runs after the save
+/// committed, and its result rebuilds the document.
+fn publishReference(fx: *Effects) void {
+    if (model_mod.app_kind != .admin) return;
+    repos.bumpReferenceVersion(fx);
+}
 
 /// Move to a screen, refusing destinations the role may not open.
 fn go(model: *Model, screen: Screen) void {

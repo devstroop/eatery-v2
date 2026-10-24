@@ -35,6 +35,7 @@ pub const net = struct {
     pub const protocol = @import("net/protocol.zig");
     pub const cursor = @import("net/cursor.zig");
     pub const record = @import("net/record.zig");
+    pub const reference = @import("net/reference.zig");
     pub const outbox = @import("net/outbox.zig");
     pub const server = @import("net/server.zig");
     pub const client = @import("net/client.zig");
@@ -48,4 +49,5 @@ test {
     _ = @import("net/protocol.zig");
     _ = @import("net/cursor.zig");
     _ = @import("net/record.zig");
+    _ = @import("net/reference.zig");
 }

@@ -28,6 +28,7 @@ const model_mod = @import("model.zig");
 const msg_mod = @import("msg.zig");
 const protocol = @import("../net/protocol.zig");
 const record = @import("../net/record.zig");
+const reference = @import("../net/reference.zig");
 const server = @import("../net/server.zig");
 const discovery = @import("../net/discovery.zig");
 const client = @import("../net/client.zig");
@@ -229,11 +230,31 @@ pub fn poll(model: *Model, fx: *Effects) void {
             .timeout_ms = 2_000,
             .on_response = Effects.responseMsg(.peer),
         });
+
+        // Only the owner publishes reference data, and only the other
+        // apps need it. The admin keeps its own menu; a peer asks the
+        // admin for what it is missing.
+        if (model_mod.app_kind != .admin and peer.role == .admin) {
+            var reference_buffer: [client.max_url_bytes]u8 = undefined;
+            const reference_url = client.formatReference(
+                &reference_buffer,
+                peer.address(),
+                peer.tcp,
+                model.reference_version,
+            ) catch continue;
+            fx.fetch(.{
+                .key = reference_fetch_key_base + index,
+                .url = reference_url,
+                .timeout_ms = 5_000,
+                .on_response = Effects.responseMsg(.reference),
+            });
+        }
     }
 }
 
 /// The fetch keys sit above the database keys and below the channel.
 pub const sync_fetch_key_base: u64 = 9200;
+pub const reference_fetch_key_base: u64 = 9300;
 
 fn post(context: *anyopaque, bytes: []const u8) bool {
     _ = context;
@@ -316,6 +337,32 @@ fn applyOpLines(model: *Model, fx: *Effects, body: []const u8) usize {
     return accepted;
 }
 
+/// A peer's reference document. A 204 means the admin has nothing newer;
+/// an unreachable admin is not an error - the peer keeps selling with
+/// the rows it has.
+pub fn onReferenceResponse(model: *Model, fx: *Effects, response: native_sdk.EffectResponse) void {
+    if (response.outcome != .ok) return;
+    if (response.status == 204) return;
+    if (response.status != 200 or response.truncated) {
+        model.sync_rejected += 1;
+        return;
+    }
+
+    var arena_buffer: [128 * 1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&arena_buffer);
+    const arena = fba.allocator();
+
+    const snapshot = reference.parse(arena, response.body) catch {
+        model.sync_rejected += 1;
+        return;
+    };
+    if (snapshot.version <= model.reference_version) return;
+    if (snapshot.version <= model.reference_applying) return;
+
+    model.reference_applying = snapshot.version;
+    repos.applyReference(model, fx, snapshot, arena, fx.wallMs());
+}
+
 // --------------------------------------------------------------- answers
 
 fn answer(model: *Model, fx: *Effects, conn: u32, bytes: []const u8) void {
@@ -334,6 +381,32 @@ fn answer(model: *Model, fx: *Effects, conn: u32, bytes: []const u8) void {
         protocol.encodeHello(&writer, helloCard(model)) catch return;
         body_len = writer.end;
         content_type = "application/json";
+    } else if (std.mem.eql(u8, request.path, protocol.endpoints.reference)) {
+        switch (request.method) {
+            .get => {
+                // A peer that already holds this version is up to date.
+                // A peer with nothing is asking for everything.
+                const after_text = request.param("after") orelse "0";
+                const after = std.fmt.parseInt(u64, after_text, 10) catch 0;
+                if (model.reference_snapshot_len == 0 or after >= model.reference_version) {
+                    status = 204;
+                    reason = "No Content";
+                } else {
+                    const len = @min(model.reference_snapshot_len, body.len);
+                    @memcpy(body[0..len], model.reference_snapshot_buf.bytes[0..len]);
+                    body_len = len;
+                    content_type = "application/json";
+                }
+            },
+            .post, .other => {
+                status = 405;
+                reason = "Method Not Allowed";
+                const text = "{\"error\":\"method not allowed\"}\n";
+                @memcpy(body[0..text.len], text);
+                body_len = text.len;
+                content_type = "application/json";
+            },
+        }
     } else if (std.mem.eql(u8, request.path, protocol.endpoints.ops)) {
         switch (request.method) {
             .get => {

@@ -317,6 +317,12 @@ pub const Model = struct {
     manual_peer_port: u16 = 0,
     /// When the next sync pull is due.
     sync_poll_at_ms: i64 = 0,
+    /// The reference snapshot the admin publishes, and the version the
+    /// peer last applied. A peer keeps its rows when the admin is away.
+    reference_version: u64 = 0,
+    reference_applying: u64 = 0,
+    reference_snapshot_buf: bump.Bump(30 * 1024) = .{},
+    reference_snapshot_len: usize = 0,
 
     // --------------------------------------------------------- navigation
 
