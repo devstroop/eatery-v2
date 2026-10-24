@@ -96,6 +96,16 @@ pub const OrderStatusSnapshot = struct {
     changed_at: i64,
 };
 
+/// The money. One payment per order; the payment id is the order id,
+/// which is what makes a second delivery a duplicate rather than a
+/// second charge.
+pub const PaymentSnapshot = struct {
+    order_id: i64,
+    mode: i64,
+    amount_minor: i64,
+    paid_at: i64,
+};
+
 pub fn parseOrder(arena: std.mem.Allocator, data_json: []const u8) !OrderSnapshot {
     return std.json.parseFromSliceLeaky(OrderSnapshot, arena, data_json, .{
         .ignore_unknown_fields = true,
@@ -104,6 +114,12 @@ pub fn parseOrder(arena: std.mem.Allocator, data_json: []const u8) !OrderSnapsho
 
 pub fn parseOrderStatus(arena: std.mem.Allocator, data_json: []const u8) !OrderStatusSnapshot {
     return std.json.parseFromSliceLeaky(OrderStatusSnapshot, arena, data_json, .{
+        .ignore_unknown_fields = true,
+    });
+}
+
+pub fn parsePayment(arena: std.mem.Allocator, data_json: []const u8) !PaymentSnapshot {
+    return std.json.parseFromSliceLeaky(PaymentSnapshot, arena, data_json, .{
         .ignore_unknown_fields = true,
     });
 }
@@ -393,4 +409,25 @@ test "a status snapshot round-trips" {
     try std.testing.expectEqual(snapshot.id, again.id);
     try std.testing.expectEqual(snapshot.status, again.status);
     try std.testing.expectEqual(snapshot.changed_at, again.changed_at);
+}
+
+test "a payment snapshot round-trips" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const snapshot = PaymentSnapshot{
+        .order_id = 42,
+        .mode = 1,
+        .amount_minor = 51450,
+        .paid_at = 1_700_000_000_000,
+    };
+    var out = std.Io.Writer.Allocating.init(arena);
+    try std.json.Stringify.value(snapshot, .{}, &out.writer);
+
+    const again = try parsePayment(arena, out.written());
+    try std.testing.expectEqual(snapshot.order_id, again.order_id);
+    try std.testing.expectEqual(snapshot.mode, again.mode);
+    try std.testing.expectEqual(snapshot.amount_minor, again.amount_minor);
+    try std.testing.expectEqual(snapshot.paid_at, again.paid_at);
 }

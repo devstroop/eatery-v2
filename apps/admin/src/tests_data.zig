@@ -468,7 +468,7 @@ fn latestOp(harness: *Harness, arena: std.mem.Allocator) !record.Op {
         \\SELECT id, entity_table, entity_id, operation, data_json,
         \\  logical_clock, device_id, created_at
         \\FROM op_log
-        \\ORDER BY created_at DESC, logical_clock DESC
+        \\ORDER BY logical_clock DESC
         \\LIMIT 1;
         ,
         .params = &.{},
@@ -770,7 +770,7 @@ test "a payment is taken once" {
 
     // A second tap, from a model that still says the order is open.
     // The customer pays once, whatever the till does.
-    repos.takePayment(harness.fx, repos.key_payment, order.id, domain.OrderStatus.pending, domain.PaymentMode.cash, order.total_minor, 1_700_000_000_000);
+    repos.takePayment(&harness.model, harness.fx, repos.key_payment, order.id, domain.OrderStatus.pending, domain.PaymentMode.cash, order.total_minor, 1_700_000_000_000);
     harness.drain();
 
     // And the second tap is not an error: the order was already
@@ -3361,4 +3361,73 @@ test "the recent op is served above the peer's cursor" {
     var cursor_buffer: [128]u8 = undefined;
     const since = try std.fmt.bufPrint(&cursor_buffer, "test01:{d}", .{harness.model.sync_clock});
     try testing.expectEqual(@as(usize, 0), repos.writeCachedOps(&harness.model, since, &body));
+}
+
+test "a payment op closes the order on the second database" {
+    var a = try seeded(testing.allocator);
+    defer a.deinit();
+
+    a.model.employee_id = 7;
+    a.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    a.send(.{ .add_to_cart = 1 });
+    a.send(Msg{ .place_order = {} });
+    a.drain();
+
+    repos.loadOrders(&a.model, a.fx);
+    a.drain();
+    const order = a.model.orders[0];
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const order_op = try latestOp(&a, arena_state.allocator());
+
+    var b = try seeded(testing.allocator);
+    defer b.deinit();
+    @memcpy(b.model.device_token_buf[0..6], "test02");
+    b.model.device_token_len = 6;
+    repos.applyOp(&b.model, b.fx, order_op);
+    b.drain();
+
+    // A takes the money and closes the ticket.
+    repos.takePayment(
+        &a.model,
+        a.fx,
+        repos.key_payment,
+        order.id,
+        order.status,
+        domain.PaymentMode.cash,
+        order.total_minor,
+        1_700_000_000_500,
+    );
+    a.drain();
+
+    const payment_op = try latestOp(&a, arena_state.allocator());
+    try testing.expectEqualStrings("payment", payment_op.entity_table);
+    try testing.expectEqual(record.Operation.create, payment_op.operation);
+
+    repos.applyOp(&b.model, b.fx, payment_op);
+    b.drain();
+
+    repos.loadOrders(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(domain.OrderStatus.completed, b.model.orders[0].status);
+
+    const payments = try countRows(
+        &b,
+        "SELECT COUNT(*) AS n FROM payment WHERE order_id = ?1;",
+        &.{.{ .integer = order.id }},
+    );
+    try testing.expectEqual(@as(i64, 1), payments);
+
+    // A second delivery is the same payment, not a second charge.
+    repos.applyOp(&b.model, b.fx, payment_op);
+    b.drain();
+    const again = try countRows(
+        &b,
+        "SELECT COUNT(*) AS n FROM payment WHERE order_id = ?1;",
+        &.{.{ .integer = order.id }},
+    );
+    try testing.expectEqual(@as(i64, 1), again);
 }

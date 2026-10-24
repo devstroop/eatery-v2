@@ -1807,6 +1807,7 @@ pub fn saveCurrency(fx: *Effects, key: u64, code: []const u8, symbol: []const u8
 /// money and the closed order land together, or neither does. A paid
 /// order that is still open is a cashier's worst day.
 pub fn takePayment(
+    model: *Model,
     fx: *Effects,
     key: u64,
     order_id: i64,
@@ -1822,6 +1823,7 @@ pub fn takePayment(
     // The payment, the history and the close are all CONDITIONAL on the
     // order being where it should be. A second tap finds the order
     // closed, writes nothing, and the customer is charged once.
+    var statements: [6]native_sdk.EffectDbStatement = undefined;
     var payment_params: [6]native_sdk.EffectDbValue = .{
         .{ .integer = order_id },
         .{ .integer = order_id },
@@ -1842,47 +1844,110 @@ pub fn takePayment(
         .{ .integer = at },
         .{ .integer = @intFromEnum(from_status) },
     };
+    statements[0] = .{
+        // The history first: it says the order closed, and it is only
+        // true if the order was still open.
+        .sql =
+        \\INSERT INTO order_status_history (order_id, status, changed_at)
+        \\SELECT ?1, ?2, ?3
+        \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
+        ,
+        .params = &history_params,
+    };
+    statements[1] = .{
+        // The payment, for the same reason: one order, one payment.
+        // The id is the order id, so the primary key says so too.
+        .sql =
+        \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
+        \\SELECT ?1, ?2, ?3, ?4, '', ?5, ?5
+        \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2 AND status = ?6);
+        ,
+        .params = &payment_params,
+    };
+    statements[2] = .{
+        .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
+        .params = &order_params,
+    };
+    statements[3] = .{
+        // The guest has paid and gone, so the table is free again - in
+        // the same transaction as the payment, so a table is never free
+        // while the money is still owed.
+        .sql =
+        \\UPDATE dining_table SET status = 0
+        \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
+        ,
+        .params = &.{.{ .integer = order_id }},
+    };
+    var count: usize = 4;
+
+    const snapshot = record.PaymentSnapshot{
+        .order_id = order_id,
+        .mode = @intFromEnum(mode),
+        .amount_minor = amount_minor,
+        .paid_at = at,
+    };
+    var json_buffer: [256]u8 = undefined;
+    var op_id_buffer: [96]u8 = undefined;
+    var entity_buffer: [32]u8 = undefined;
+    var clock_buffer: [32]u8 = undefined;
+    var op_params: [8]native_sdk.EffectDbValue = undefined;
+    var clock_params: [1]native_sdk.EffectDbValue = undefined;
+
+    const op_ready = build_op: {
+        var json_writer = std.Io.Writer.fixed(&json_buffer);
+        std.json.Stringify.value(snapshot, .{}, &json_writer) catch break :build_op false;
+        const data_json = json_writer.buffered();
+
+        const device_id = syncDeviceId(model);
+        const clock = nextSyncClock(model);
+        const op_id = record.formatId(&op_id_buffer, device_id, clock, 0) catch break :build_op false;
+        const entity_id = std.fmt.bufPrint(&entity_buffer, "{d}", .{order_id}) catch break :build_op false;
+        const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{clock}) catch break :build_op false;
+
+        op_params = .{
+            .{ .text = op_id },
+            .{ .text = "payment" },
+            .{ .text = entity_id },
+            .{ .text = "create" },
+            .{ .text = data_json },
+            .{ .integer = @intCast(clock) },
+            .{ .text = device_id },
+            .{ .integer = at },
+        };
+        clock_params = .{.{ .text = clock_text }};
+        model.sync_cursor.observe(device_id, clock) catch {};
+
+        const wire_op: record.Op = .{
+            .id = op_id,
+            .entity_table = "payment",
+            .entity_id = entity_id,
+            .operation = .create,
+            .logical_clock = clock,
+            .device_id = device_id,
+            .created_at = at,
+            .data_json = data_json,
+        };
+        var wire_buffer: [8 * 1024]u8 = undefined;
+        var wire_writer = std.Io.Writer.fixed(&wire_buffer);
+        if (record.encode(&wire_writer, wire_op)) {
+            cacheOp(model, wire_op, wire_writer.buffered());
+        } else |_| {}
+        break :build_op true;
+    };
+
+    if (op_ready) {
+        statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+        count += 1;
+        statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+        count += 1;
+    }
 
     fx.dbExec(.{
         .key = key,
-        .statements = &.{
-            .{
-                // The history first: it says the order closed, and it
-                // is only true if the order was still open.
-                .sql =
-                \\INSERT INTO order_status_history (order_id, status, changed_at)
-                \\SELECT ?1, ?2, ?3
-                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
-                ,
-                .params = &history_params,
-            },
-            .{
-                // The payment, for the same reason: one order, one
-                // payment. The index on the table says so too.
-                .sql =
-                \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
-                \\SELECT ?1, ?2, ?3, ?4, '', ?5, ?5
-                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2 AND status = ?6);
-                ,
-                .params = &payment_params,
-            },
-            .{
-                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
-                .params = &order_params,
-            },
-            .{
-                // The guest has paid and gone, so the table is free
-                // again - in the same transaction as the payment, so a
-                // table is never free while the money is still owed.
-                .sql =
-                \\UPDATE dining_table SET status = 0
-                \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
-                ,
-                .params = &.{.{ .integer = order_id }},
-            },
-        },
+        .statements = statements[0..count],
         .on_result = Effects.dbMsg(.payment_taken),
     });
+    saveCursor(model, fx);
 }
 
 /// The first-run setup: the company, the first operator, the
@@ -2577,6 +2642,12 @@ pub fn applyOp(model: *Model, fx: *Effects, op: record.Op) void {
             return;
         };
         applyOrderStatus(fx, op, snapshot);
+    } else if (std.mem.eql(u8, op.entity_table, "payment")) {
+        const snapshot = record.parsePayment(arena, op.data_json) catch {
+            model.sync_rejected += 1;
+            return;
+        };
+        applyPayment(fx, op, snapshot);
     } else {
         // The other tables arrive with their own slices. Refusing an
         // op we do not understand is safer than writing half of it.
@@ -2740,6 +2811,79 @@ fn applyOrderStatus(fx: *Effects, op: record.Op, snapshot: record.OrderStatusSna
         .params = &params,
     };
     var count: usize = 2;
+
+    var op_params: [8]native_sdk.EffectDbValue = .{
+        .{ .text = op.id },
+        .{ .text = op.entity_table },
+        .{ .text = op.entity_id },
+        .{ .text = op.operation.label() },
+        .{ .text = op.data_json },
+        .{ .integer = @intCast(op.logical_clock) },
+        .{ .text = op.device_id },
+        .{ .integer = op.created_at },
+    };
+    statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+    count += 1;
+
+    var clock_buffer: [32]u8 = undefined;
+    const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{op.logical_clock}) catch return;
+    var clock_params: [1]native_sdk.EffectDbValue = .{.{ .text = clock_text }};
+    statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+    count += 1;
+
+    fx.dbExec(.{
+        .key = key_sync_apply,
+        .statements = statements[0..count],
+        .on_result = Effects.dbMsg(.sync_applied),
+    });
+}
+
+fn applyPayment(fx: *Effects, op: record.Op, snapshot: record.PaymentSnapshot) void {
+    var statements: [6]native_sdk.EffectDbStatement = undefined;
+
+    // The payment id is the order id, so a second delivery is the same
+    // row, not a second charge.
+    var payment_params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = snapshot.order_id },
+        .{ .integer = snapshot.mode },
+        .{ .integer = snapshot.amount_minor },
+        .{ .integer = snapshot.paid_at },
+    };
+    statements[0] = .{
+        .sql =
+        \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
+        \\SELECT ?1, ?1, ?2, ?3, '', ?4, ?4
+        \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1)
+        \\ON CONFLICT(id) DO NOTHING;
+        ,
+        .params = &payment_params,
+    };
+
+    var order_params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = snapshot.order_id },
+        .{ .integer = snapshot.paid_at },
+        .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
+    };
+    statements[1] = .{
+        // Paid closes an open ticket. It does not reopen a voided one.
+        .sql = "UPDATE orders SET status = ?3, updated_at = ?2 WHERE id = ?1 AND status < ?3;",
+        .params = &order_params,
+    };
+    statements[2] = .{
+        .sql =
+        \\INSERT INTO order_status_history (order_id, status, changed_at)
+        \\SELECT ?1, ?3, ?2 WHERE changes() > 0;
+        ,
+        .params = &order_params,
+    };
+    statements[3] = .{
+        .sql =
+        \\UPDATE dining_table SET status = 0
+        \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
+        ,
+        .params = &.{.{ .integer = snapshot.order_id }},
+    };
+    var count: usize = 4;
 
     var op_params: [8]native_sdk.EffectDbValue = .{
         .{ .text = op.id },

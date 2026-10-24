@@ -476,6 +476,7 @@ fn takePayment(model: *Model, fx: *Effects) void {
     model.payment_pending = true;
     model.payment_error = "";
     repos.takePayment(
+        model,
         fx,
         repos.key_payment,
         order.id,
