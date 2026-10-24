@@ -585,6 +585,11 @@ pub const Model = struct {
     /// True when the database has no company yet: the app opens on the
     /// setup screen instead of the role picker.
     needs_setup: bool = false,
+    /// True when this terminal has no restaurant of its own and is
+    /// waiting for the admin app's reference data. Only the admin app
+    /// writes the first company; a service or kiosk that started
+    /// first waits instead of inventing a second restaurant.
+    waiting_for_reference: bool = false,
     /// The setup form's fields.
     setup_company_name: canvas.TextBuffer(64) = .{},
     setup_admin_name: canvas.TextBuffer(64) = .{},
@@ -827,6 +832,10 @@ pub const Model = struct {
 
     /// The title of the current screen.
     pub fn screen_title(model: *const Model) []const u8 {
+        // The waiting state is not a `Screen`: the terminal is between
+        // the boot read and the admin's reference data, and the status
+        // bar should say that, not name the picker underneath.
+        if (model.waiting_for_reference) return "Waiting for the restaurant";
         return model.screen().title();
     }
 
@@ -1828,10 +1837,16 @@ pub const Model = struct {
     }
 
     /// True before a role has been chosen: the role picker is showing.
-    /// A fresh installation shows the setup screen first, so the picker
-    /// waits for it.
+    /// A fresh admin installation shows the setup screen first, and a
+    /// service or kiosk waits for the admin's reference data, so the
+    /// picker waits for whichever one applies.
     pub fn show_role_picker(model: *const Model) bool {
-        return !model.role_chosen and !model.needs_setup;
+        return !model.role_chosen and !model.needs_setup and !model.waiting_for_reference;
+    }
+
+    /// True when this terminal started before the admin app did.
+    pub fn show_waiting(model: *const Model) bool {
+        return model.waiting_for_reference;
     }
 
     /// The picker's device half: the two board modes, which sign in by

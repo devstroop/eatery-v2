@@ -1,10 +1,9 @@
 <!-- The service app's shell: the waiter's rail and the waiter's screens.
 
      The shell chrome is the same in all three apps - the title bar, the
-     loading and error banners, the session screens and the status bar -
-     because a fresh installation of any of them starts on the setup
-     screen. What differs is the content pane: only the screens the
-     waiter role may open are mounted here.
+     loading and error banners, the session screens, the waiting screen
+     and the status bar. What differs is the content pane: only the
+     screens the waiter role may open are mounted here.
 
      The gates are the `core/navigation.zig` enum indices. That enum is
      append-only, so these numbers stay true. -->
@@ -49,6 +48,10 @@
 
   <if test="{show_upgrade}">
     <use template="screen-upgrade"/>
+  </if>
+
+  <if test="{show_waiting}">
+    <use template="screen-waiting"/>
   </if>
 
   <if test="{show_landing}">

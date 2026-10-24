@@ -5,9 +5,9 @@
      content pane mounts those two boards and the order detail the
      kitchen opens from a ticket - nothing that changes money.
 
-     The shell chrome is shared with the other two apps, because a fresh
-     installation has to be able to set itself up before it has a
-     board. -->
+     The shell chrome is shared with the other two apps, including the
+     waiting screen a fresh terminal shows until the admin's reference
+     data gives it a restaurant and a board. -->
 
 <import src="screens/screen-session.native"/>
 <import src="screens/screen-orders.native"/>
@@ -46,6 +46,10 @@
 
   <if test="{show_upgrade}">
     <use template="screen-upgrade"/>
+  </if>
+
+  <if test="{show_waiting}">
+    <use template="screen-waiting"/>
   </if>
 
   <if test="{show_landing}">
