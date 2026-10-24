@@ -58,6 +58,10 @@
     <use template="screen-upgrade"/>
   </if>
 
+  <if test="{show_waiting}">
+    <use template="screen-waiting"/>
+  </if>
+
   <if test="{show_landing}">
     <use template="screen-landing"/>
   </if>

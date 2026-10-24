@@ -5,11 +5,13 @@
      than that. A file may hold several templates, so a screen that
      shares a file with its neighbours costs nothing. -->
 
-<!-- The first-run setup: the one screen a fresh installation shows.
-     It creates the company, the first operator and their PIN, and it
-     writes a starter menu and floor so the app is usable the moment it
-     is set up. The button stays disabled until the form is complete -
-     the model decides that, not the markup. -->
+<!-- The first-run setup: the one screen a fresh ADMIN installation
+     shows. A service or kiosk that starts first waits for the admin's
+     reference data instead (see screen-waiting). It creates the
+     company, the first operator and their PIN, and it writes a starter
+     menu and floor so the app is usable the moment it is set up. The
+     button stays disabled until the form is complete - the model
+     decides that, not the markup. -->
 
 <template name="screen-setup">
   <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
@@ -264,6 +266,19 @@
     <text size="heading">This database is newer than Restaurant OS</text>
     <text foreground="text_muted">It has {database_table_count} tables and this app knows {expected_table_count}.</text>
     <text foreground="text_muted">Update Restaurant OS and try again. Nothing has been written.</text>
+  </column>
+</template>
+
+<!-- Waiting for the admin: a service or kiosk that starts before the
+     restaurant exists. Only the admin app writes the first company, so
+     this terminal waits for the reference document instead of asking
+     the waiter or the cook to invent a second restaurant. -->
+
+<template name="screen-waiting">
+  <column grow="1" gap="12" padding="32" main="center" cross="center" background="background">
+    <text size="heading">Waiting for the restaurant</text>
+    <text foreground="text_muted">Start the admin app on the owner's device. This terminal will pick up the menu, the people and the tables automatically.</text>
+    <text size="sm" foreground="text_muted">No setup is needed here.</text>
   </column>
 </template>
 

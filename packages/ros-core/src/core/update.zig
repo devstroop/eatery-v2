@@ -490,6 +490,13 @@ fn takePayment(model: *Model, fx: *Effects) void {
 /// Set up the restaurant: the company, the first operator, and the
 /// starter menu and floor. One transaction, in `repos.setupCompany`.
 fn submitSetup(model: *Model, fx: *Effects) void {
+    // One writer for the restaurant: the admin app. A service or kiosk
+    // gets its rows over the wire, and a second company row would make
+    // "which menu is the menu?" unanswerable.
+    if (model_mod.app_kind != .admin) {
+        model.setup_error = "The restaurant is set up on the admin device";
+        return;
+    }
     const name = std.mem.trim(u8, model.setup_company_name.text(), " ");
     const admin = std.mem.trim(u8, model.setup_admin_name.text(), " ");
     const pin = model.setup_pin.text();
@@ -2077,18 +2084,33 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (result.outcome != .ok) return;
             if (result.kind == .page) repos.decodeCompany(model, result.bytes);
             model.db_ready = true;
-            // No company row: this is a fresh installation, and the
-            // app's first job is to become a restaurant.
-            if (model.company_id == 0 and !model.needs_setup) {
-                model.needs_setup = true;
-                // A fresh install opens on the walk-through: the
-                // company's record first, then the owner.
-                model.stack.resetTo(.create_company);
-                model.setup_currency_code.set("USD");
-                model.setup_currency_symbol.set("$");
-                // The walk-through is the way in: the company's record
-                // first, then the owner and their PIN.
-                resetNavigation(model, .create_company);
+            // No company row: this is a fresh installation. Only the
+            // admin app is the restaurant's writer; a service or kiosk
+            // that started first waits for its reference data rather
+            // than inventing a second restaurant with an admin who
+            // cannot sign in on a waiter binary.
+            if (model.company_id == 0 and !model.needs_setup and !model.waiting_for_reference) {
+                if (model_mod.app_kind == .admin) {
+                    model.needs_setup = true;
+                    // A fresh install opens on the walk-through: the
+                    // company's record first, then the owner.
+                    model.stack.resetTo(.create_company);
+                    model.setup_currency_code.set("USD");
+                    model.setup_currency_symbol.set("$");
+                    // The walk-through is the way in: the company's
+                    // record first, then the owner and their PIN.
+                    resetNavigation(model, .create_company);
+                } else {
+                    model.waiting_for_reference = true;
+                    resetNavigation(model, .role_picker);
+                }
+            } else if (model.company_id != 0 and model.waiting_for_reference) {
+                // The admin's document arrived: this terminal now has
+                // the restaurant, the people and the menu it needed.
+                model.waiting_for_reference = false;
+                if (!model.signed_in and !model.role_chosen) {
+                    resetNavigation(model, .role_picker);
+                }
             }
         },
 
