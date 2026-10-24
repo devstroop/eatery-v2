@@ -66,6 +66,17 @@ pub const Peer = struct {
     last_seen_ms: i64 = 0,
     /// A manual address is never pruned: the operator said it is there.
     manual: bool = false,
+    /// The fetch key of the event stream this peer is holding open, or
+    /// zero when there is none. The key is the stream's identity: the
+    /// terminal names it, and a peer that moves gets a fresh one.
+    event_key: u64 = 0,
+    /// The ops pull currently in flight for this peer, or zero. An
+    /// event that arrives while it is in flight waits for it to land
+    /// rather than racing it for the same fetch key.
+    sync_key: u64 = 0,
+    /// An event arrived during that pull, so one more pull is due as
+    /// soon as the current answer is applied.
+    sync_pending: bool = false,
 
     pub fn id(self: *const Peer) []const u8 {
         return self.device[0..self.device_len];
@@ -245,6 +256,9 @@ pub const Model = struct {
         "sync_applied",
         "sync_skipped",
         "sync_rejected",
+        "event_key_next",
+        "net_events",
+        "net_stream_drops",
     };
 
     // ------------------------------------------------------------ session
@@ -317,6 +331,14 @@ pub const Model = struct {
     manual_peer_port: u16 = 0,
     /// When the next sync pull is due.
     sync_poll_at_ms: i64 = 0,
+    /// The next fetch key handed to an event stream. Keys are allocated
+    /// once and never reused, so a terminal can name the stream it ends
+    /// even after the peer list has moved.
+    event_key_next: u64 = 0,
+    /// Event-stream lines received, and streams that ended in a way the
+    /// poll fallback had to cover.
+    net_events: u32 = 0,
+    net_stream_drops: u32 = 0,
     /// The reference snapshot the admin publishes, and the version the
     /// peer last applied. A peer keeps its rows when the admin is away.
     reference_version: u64 = 0,
@@ -721,6 +743,26 @@ pub const Model = struct {
         return null;
     }
 
+    /// The peer holding the event stream with this fetch key, or null.
+    /// The key, not the peer's index, is the identity: the list can be
+    /// compacted while a stream is still open.
+    pub fn findPeerByEventKey(model: *Model, key: u64) ?*Peer {
+        if (key == 0) return null;
+        for (model.peers[0..model.peer_count]) |*peer| {
+            if (peer.event_key == key) return peer;
+        }
+        return null;
+    }
+
+    /// The peer whose ops pull is the fetch with this key, or null.
+    pub fn findPeerBySyncKey(model: *Model, key: u64) ?*Peer {
+        if (key == 0) return null;
+        for (model.peers[0..model.peer_count]) |*peer| {
+            if (peer.sync_key == key) return peer;
+        }
+        return null;
+    }
+
     /// Remember a beacon. The device id is the key: the same peer
     /// broadcasting again updates its address and role rather than
     /// adding a second row.
@@ -735,6 +777,12 @@ pub const Model = struct {
         }
 
         if (model.findPeer(hello.device)) |peer| {
+            // A moved peer's old stream is pointed at the old address.
+            // Drop the key so the next poll opens one where the peer is
+            // now; the old stream ends on its own timeout.
+            if (peer.tcp != hello.tcp or !std.mem.eql(u8, peer.address(), hello.host)) {
+                peer.event_key = 0;
+            }
             peer.role = hello.role;
             peer.host_len = @min(hello.host.len, peer.host.len);
             @memcpy(peer.host[0..peer.host_len], hello.host[0..peer.host_len]);

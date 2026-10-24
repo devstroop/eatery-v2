@@ -3203,8 +3203,8 @@ test "an order op applies to a second database, and a duplicate changes nothing"
     const served_len = repos.writeCachedOps(&b.model, "", &served);
     try testing.expect(std.mem.indexOf(u8, served[0..served_len], op.id) != null);
 
-    repos.loadOrders(&b.model, b.fx);
-    b.drain();
+    // The applied-op result reloads the board, so the new ticket is
+    // visible without an explicit query or a poll tick.
     try testing.expectEqual(@as(usize, 1), b.model.orders.len);
     try testing.expectEqual(order.id, b.model.orders[0].id);
     try testing.expectEqual(order.total_minor, b.model.orders[0].total_minor);

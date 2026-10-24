@@ -584,10 +584,22 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
         .net => |event| net_bridge.onChannel(model, fx, event),
         .peer => |response| net_bridge.onResponse(model, fx, response),
+        .net_event => |line| net_bridge.onEventLine(model, fx, line),
+        .event_done => |response| net_bridge.onEventDone(model, response),
         .sync_applied => |result| {
             // The cursor has already moved; a failed apply is a gap the
             // operator can see, not a loop that retries forever.
-            if (result.outcome != .ok) model.sync_rejected += 1;
+            if (result.outcome != .ok) {
+                model.sync_rejected += 1;
+            } else {
+                // The op is committed. Wake the other peers' streams
+                // and re-read the board now, so the event stream's
+                // promise - the ticket appears without waiting for the
+                // next poll - reaches the screen and not just the
+                // database.
+                net_bridge.notify();
+                repos.loadOrders(model, fx);
+            }
         },
         .reference => |response| net_bridge.onReferenceResponse(model, fx, response),
         .reference_bumped => |result| {
@@ -1485,6 +1497,9 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.cart_attempt_id = 0;
             go(model, .order_confirmation);
             repos.loadOrders(model, fx);
+            // The order is in the op log. The other apps' boards wake
+            // now instead of waiting for the five-second poll.
+            net_bridge.notify();
         },
 
         // ----------------------------------------------------- the waiter
@@ -1556,6 +1571,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // closed order is now a completed one.
             go(model, .orders);
             repos.loadOrders(model, fx);
+            net_bridge.notify();
         },
 
         // -------------------------------------------------------- the forms
@@ -1903,6 +1919,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             // not the one the model guessed: the board shows the truth
             // and the next move is computed from it.
             repos.loadOrders(model, fx);
+            net_bridge.notify();
         },
 
         // -------------------------------------------------------------- data

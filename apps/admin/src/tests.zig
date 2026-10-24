@@ -22,6 +22,8 @@ const repos = @import("ros_core").repos;
 const page = @import("ros_core").page;
 const auth = @import("ros_core").auth;
 const net_bridge = @import("ros_core").net.bridge;
+const server = @import("ros_core").net.server;
+const client = @import("ros_core").net.client;
 const domain = @import("ros_core").models;
 
 const canvas = native_sdk.canvas;
@@ -1373,4 +1375,267 @@ test "a peer's answer arrives as a message and is recorded" {
     try testing.expectEqual(@as(u16, 200), model.peer_status);
     try testing.expectEqualStrings("ok", model.peer_outcome);
     try testing.expectEqualStrings(body, model.peer_body_buf[0..model.peer_body_len]);
+}
+
+/// Take every delivered message and let the app answer it, the way the
+/// runtime's drain loop does. The fake executor's fetches are recorded,
+/// so the test can see what the app asked for.
+fn drainFx(fx: *Effects, model: *Model) void {
+    var guard: usize = 0;
+    while (fx.takeMsg()) |msg| {
+        main.update(model, msg, fx);
+        guard += 1;
+        if (guard > 64) break;
+    }
+}
+
+/// One peer at a known address, with the event key unset.
+fn withPeer(model: *Model) void {
+    model.observePeer(.{
+        .device = "peer-1",
+        .role = .waiter,
+        .host = "127.0.0.1",
+        .tcp = 45871,
+        .app_version = "0.1.0",
+    }, 0);
+}
+
+test "a peer gets an event stream, and a line pulls that peer's ops" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    withPeer(&model);
+
+    net_bridge.poll(&model, &fx);
+
+    // The poll is the fallback and the event stream is the fast path:
+    // both are issued, and the stream is a `.stream` fetch.
+    try testing.expectEqual(@as(usize, 2), fx.pendingFetchCount());
+    var event_key: u64 = 0;
+    var ops_key: u64 = 0;
+    for (0..fx.pendingFetchCount()) |index| {
+        const request = fx.pendingFetchAt(index).?;
+        if (request.response == .stream) {
+            event_key = request.key;
+            try testing.expectEqualStrings("http://127.0.0.1:45871/v1/events", request.url);
+            try testing.expectEqual(net_bridge.event_stream_timeout_ms, request.timeout_ms);
+        } else {
+            ops_key = request.key;
+        }
+    }
+    try testing.expect(event_key >= net_bridge.event_fetch_key_base);
+    try testing.expectEqual(net_bridge.sync_fetch_key_base, ops_key);
+    try testing.expectEqual(event_key, model.peers[0].event_key);
+
+    // Retire the first pull, so the line's pull is a new fetch rather
+    // than a rejected duplicate key.
+    try fx.feedResponse(ops_key, 200, "");
+    drainFx(&fx, &model);
+    try testing.expectEqual(@as(usize, 1), fx.pendingFetchCount());
+
+    // The line carries no op: it is a hint to pull now.
+    try fx.feedLine(event_key, "{\"seq\":1}\n");
+    drainFx(&fx, &model);
+    try testing.expectEqual(@as(u32, 1), model.net_events);
+
+    var found_ops = false;
+    var found_stream = false;
+    for (0..fx.pendingFetchCount()) |index| {
+        const request = fx.pendingFetchAt(index).?;
+        if (request.key == net_bridge.sync_fetch_key_base) found_ops = true;
+        if (request.response == .stream and request.key == event_key) found_stream = true;
+    }
+    try testing.expect(found_ops);
+    try testing.expect(found_stream);
+    try testing.expectEqual(event_key, model.peers[0].event_key);
+}
+
+test "an event during a pull schedules one more pull when it lands" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    withPeer(&model);
+    net_bridge.poll(&model, &fx);
+
+    var event_key: u64 = 0;
+    var ops_key: u64 = 0;
+    for (0..fx.pendingFetchCount()) |index| {
+        const request = fx.pendingFetchAt(index).?;
+        if (request.response == .stream) {
+            event_key = request.key;
+        } else {
+            ops_key = request.key;
+        }
+    }
+    try testing.expect(event_key != 0);
+    try testing.expectEqual(ops_key, model.peers[0].sync_key);
+
+    // The first pull is still in flight. The line must not be lost
+    // behind a fetch that was issued before the op.
+    try fx.feedLine(event_key, "{\"seq\":1}\n");
+    drainFx(&fx, &model);
+    try testing.expect(model.peers[0].sync_pending);
+    try testing.expectEqual(ops_key, model.peers[0].sync_key);
+
+    // The answer lands; the pending flag turns into exactly one more
+    // pull, from the cursor the answer advanced.
+    try fx.feedResponse(ops_key, 200, "");
+    drainFx(&fx, &model);
+    try testing.expect(!model.peers[0].sync_pending);
+    try testing.expectEqual(ops_key, model.peers[0].sync_key);
+
+    var found_follow_up = false;
+    for (0..fx.pendingFetchCount()) |index| {
+        const request = fx.pendingFetchAt(index).?;
+        if (request.key == net_bridge.sync_fetch_key_base) found_follow_up = true;
+    }
+    try testing.expect(found_follow_up);
+}
+
+test "a failed event stream is counted, and the next poll reopens it" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    withPeer(&model);
+    net_bridge.poll(&model, &fx);
+
+    var event_key: u64 = 0;
+    for (0..fx.pendingFetchCount()) |index| {
+        const request = fx.pendingFetchAt(index).?;
+        if (request.response == .stream) event_key = request.key;
+    }
+    try testing.expect(event_key != 0);
+
+    try fx.feedResponseOutcome(event_key, .connect_failed, 0, "");
+    drainFx(&fx, &model);
+    try testing.expectEqual(@as(u64, 0), model.peers[0].event_key);
+    try testing.expectEqual(@as(u32, 1), model.net_stream_drops);
+
+    // The poll fallback is what reopens it. The next stream gets a fresh
+    // key, so an old terminal cannot clear the new one.
+    net_bridge.poll(&model, &fx);
+    var new_key: u64 = 0;
+    for (0..fx.pendingFetchCount()) |index| {
+        const request = fx.pendingFetchAt(index).?;
+        if (request.response == .stream) new_key = request.key;
+    }
+    try testing.expect(new_key != 0);
+    try testing.expect(new_key != event_key);
+    try testing.expectEqual(new_key, model.peers[0].event_key);
+}
+
+test "a clean event-stream close is not a failure" {
+    var fx = try fakeFx();
+    defer fx.deinit();
+
+    var model = main.initialModel();
+    withPeer(&model);
+    net_bridge.poll(&model, &fx);
+
+    var event_key: u64 = 0;
+    for (0..fx.pendingFetchCount()) |index| {
+        const request = fx.pendingFetchAt(index).?;
+        if (request.response == .stream) event_key = request.key;
+    }
+    try testing.expect(event_key != 0);
+
+    try fx.feedResponse(event_key, 200, "");
+    drainFx(&fx, &model);
+    try testing.expectEqual(@as(u64, 0), model.peers[0].event_key);
+    try testing.expectEqual(@as(u32, 0), model.net_stream_drops);
+}
+
+const EventTestPoster = struct {
+    fn post(_: *anyopaque, _: []const u8) bool {
+        return true;
+    }
+};
+
+test "the SDK's real stream fetch reads the held-open NDJSON server" {
+    const io = std.testing.io;
+    var shared: server.Shared = .{};
+    shared.app_ready.store(true, .release);
+
+    const thread = try std.Thread.spawn(.{}, server.run, .{
+        io,
+        server.Config{
+            .bind_host = "127.0.0.1",
+            .poster = .{ .context = @ptrCast(&shared), .post = EventTestPoster.post },
+        },
+        &shared,
+    });
+    defer {
+        server.stop(io, &shared);
+        thread.join();
+    }
+
+    var waited_ms: u32 = 0;
+    while (!shared.bound.load(.acquire) and waited_ms < 4_000) : (waited_ms += 2) {
+        std.Io.sleep(io, std.Io.Duration.fromMilliseconds(2), .awake) catch break;
+    }
+    try testing.expect(shared.bound.load(.acquire));
+
+    var fx = Effects.init(testing.allocator);
+    defer fx.deinit();
+
+    var url_buffer: [client.max_url_bytes]u8 = undefined;
+    const url = try client.formatEvents(&url_buffer, "127.0.0.1", shared.port.load(.acquire));
+    const fetch_key: u64 = 9500;
+    fx.fetch(.{
+        .key = fetch_key,
+        .url = url,
+        .timeout_ms = 10_000,
+        .response = .stream,
+        .on_line = Effects.lineMsg(.net_event),
+        .on_response = Effects.responseMsg(.event_done),
+    });
+
+    // The server sends the current sequence immediately, so the client
+    // does not have to wait for the next op to prove the stream.
+    var lines: usize = 0;
+    var waited: u32 = 0;
+    while (waited < 5_000 and lines == 0) : (waited += 10) {
+        while (fx.takeMsg()) |msg| {
+            switch (msg) {
+                .net_event => |line| {
+                    try testing.expectEqual(fetch_key, line.key);
+                    try testing.expect(std.mem.indexOf(u8, line.line, "\"seq\":") != null);
+                    lines += 1;
+                },
+                .event_done => |response| {
+                    std.debug.print("event stream ended before its first line: {t} {d}\n", .{ response.outcome, response.status });
+                    return error.EventStreamEnded;
+                },
+                else => {},
+            }
+        }
+        if (lines == 0) std.Io.sleep(io, std.Io.Duration.fromMilliseconds(10), .awake) catch break;
+    }
+    try testing.expect(lines > 0);
+
+    // The app's notify is what a committed local op calls. The same
+    // held-open response gets a second line; no request is made.
+    shared.notify();
+    waited = 0;
+    while (waited < 5_000 and lines < 2) : (waited += 10) {
+        while (fx.takeMsg()) |msg| {
+            switch (msg) {
+                .net_event => |line| {
+                    try testing.expectEqual(fetch_key, line.key);
+                    try testing.expect(std.mem.indexOf(u8, line.line, "\"seq\":") != null);
+                    lines += 1;
+                },
+                .event_done => |response| {
+                    std.debug.print("event stream ended before its second line: {t} {d}\n", .{ response.outcome, response.status });
+                    return error.EventStreamEnded;
+                },
+                else => {},
+            }
+        }
+        if (lines < 2) std.Io.sleep(io, std.Io.Duration.fromMilliseconds(10), .awake) catch break;
+    }
+    try testing.expect(lines >= 2);
 }

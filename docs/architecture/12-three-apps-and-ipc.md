@@ -1,12 +1,12 @@
 # Three apps and the protocol between them
 
 > **Status:** Implemented core. The three shells build; the wire (9.2),
-> the op log (9.3), discovery (9.4) and reference data (9.5) are merged.
-> The push stream (9.6), late-join bootstrap and compaction (9.7), and
+> the op log (9.3), discovery (9.4), reference data (9.5) and the push
+> stream (9.6) are merged. Late-join bootstrap and compaction (9.7) and
 > packaging (9.9) remain. The decision is
 > [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md); the delivery
 > order is [`plan/phase-9`](../plan/phase-9-three-apps-and-ipc.md).
-> **Last reviewed:** 2026-10-24, after the reference-data slice landed.
+> **Last reviewed:** 2026-10-24, after the push-stream slice landed.
 
 ## What this page is
 
@@ -171,11 +171,17 @@ database.** It moves bytes. That is the whole of it.
   `accept` blocks, so a flag alone cannot wake it. The app sets the
   flag and connects to its own listener, which is the portable way to
   make `accept` return.
+- **The event threads:** A held-open `/v1/events` connection gets its
+  own thread. It watches the shared sequence and writes bytes; it does
+  not touch the model, the database or the outbox.
 
-This outbox is the one piece of shared mutable state in an app. It is
-app-owned memory, not the world: no clock, no allocator, no I/O happens
-in `update`. It is called out here because it is the one place the
-design bends, and because a reader should be able to find it.
+This outbox is the one shared mutable **buffer** in an app. The event
+stream adds one atomic counter, `Shared.event_seq`, which the app bumps
+after an op commits and every event thread reads; it carries no rows
+and no answer. Both are app-owned memory, not the world: no clock, no
+allocator, no I/O happens in `update`. The outbox is called out here
+because it is the one place the design bends, and because a reader
+should be able to find it.
 
 **It does not need a lock, and that is a finding rather than a
 preference.** `std.Thread.Mutex` is gone in Zig 0.16, and
@@ -307,6 +313,17 @@ and writes a line as something happens; the client reads it with
 poll on a timer is the fallback, and the two coexist: the stream makes
 the common case immediate, the poll makes the system converge even if
 the stream is dropped.
+
+**As built.** The response is chunked NDJSON and the line is
+`{"seq":N}\n`, where `N` is the server's op-log sequence at the time of
+the write; a heartbeat line keeps an idle connection honest. The server
+gives each stream its own thread and watches a shared atomic sequence
+every 20ms, so the listener keeps accepting. The client holds one
+stream per peer, and a line pulls that peer's ops from the cursor; a
+pull already in flight sets `sync_pending`, and the answer issues
+exactly one follow-up. A terminal or timeout clears the stream key and
+the five-second poll reopens it. The line never carries the op: a
+missed line costs latency, never state.
 
 ### Records
 
