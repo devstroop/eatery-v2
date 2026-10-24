@@ -76,11 +76,11 @@ If you are changing the database, read
 | [05-schema](architecture/05-schema.md) | 43 tables, conventions, migration policy, usage | Scaffolded beyond core |
 | [06-ui-markup-and-theming](architecture/06-ui-markup-and-theming.md) | Markup subset, templates, tokens, layout, a11y | Implemented subset |
 | [07-windowing-and-desktop](architecture/07-windowing-and-desktop.md) | Shell, GPU surface, target multi-window, packaging | Single window implemented / multi-window planned |
-| [08-sync](architecture/08-sync.md) | OpLog, LWW, sidecar transport, failure modes | Scaffolded |
+| [08-sync](architecture/08-sync.md) | OpLog, ownership, failure modes, and the original sidecar design | Implemented core |
 | [09-printing-and-hardware](architecture/09-printing-and-hardware.md) | ESC/POS, sidecar, printer routing | Scaffolded |
 | [10-testing-and-quality](architecture/10-testing-and-quality.md) | Test layers, current coverage, CI target | Partial |
 | [11-capability-gaps](architecture/11-capability-gaps.md) | What the SDK does not provide and the chosen workaround | Reference |
-| [12-three-apps-and-ipc](architecture/12-three-apps-and-ipc.md) | The three-app split, the TCP/IP protocol, and who owns what | Planned |
+| [12-three-apps-and-ipc](architecture/12-three-apps-and-ipc.md) | The three-app split, the TCP/IP protocol, and who owns what | Implemented core |
 
 ### Extended walkthroughs
 

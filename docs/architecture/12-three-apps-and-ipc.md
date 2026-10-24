@@ -1,13 +1,12 @@
 # Three apps and the protocol between them
 
-> **Status:** Target design, with the transport built. The three shells
-> exist and build ([slice 9.1 and the shell split](../plan/phase-9-three-apps-and-ipc.md));
-> slice 9.2 built the wire in `packages/ros-core/src/net/` and both
-> `admin` and `service` answer `GET /v1/hello` on a real socket. The ops
-> themselves, discovery's peer list and push are still ahead. The
-> decision is [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md);
-> the delivery order is [`plan/phase-9`](../plan/phase-9-three-apps-and-ipc.md).
-> **Last reviewed:** 2026-10-23, after slice 9.2 landed.
+> **Status:** Implemented core. The three shells build; the wire (9.2),
+> the op log (9.3), discovery (9.4) and reference data (9.5) are merged.
+> The push stream (9.6), late-join bootstrap and compaction (9.7), and
+> packaging (9.9) remain. The decision is
+> [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md); the delivery
+> order is [`plan/phase-9`](../plan/phase-9-three-apps-and-ipc.md).
+> **Last reviewed:** 2026-10-24, after the reference-data slice landed.
 
 ## What this page is
 

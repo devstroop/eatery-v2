@@ -27,8 +27,8 @@ Ship it: a signed application, a supportable install, and a path from v1.
 | App icon set | One PNG; platform icon requirements differ |
 | Version policy | `0.1.0` only; no build number |
 | Update mechanism | None |
-| CI | No workflows |
-| Automation smoke | None |
+| CI | Exists (`verify` plus an automation smoke); no package or migration job |
+| Automation smoke | Non-blank only; no sale flow (#42) |
 | Legacy migration | None |
 | Backup/restore | No UI, no schedule |
 | Diagnostics | No log export, no crash report path |

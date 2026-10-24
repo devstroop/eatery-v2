@@ -1,17 +1,15 @@
 # ADR-0009: Op-log sync with the transport in a sidecar
 
-> **Status:** Proposed
+> **Status:** Revised by ADR-0017
 > **Date:** 2026-10-20
 > **Deciders:** Devstroop maintainers, product
 > **Related:** [`architecture/08`](../architecture/08-sync.md),
 > [`architecture/12`](../architecture/12-three-apps-and-ipc.md)
 
-**Proposed revision.**
-[ADR-0017](0017-three-apps-over-tcp-ip.md) proposes replacing the
-sidecar with the apps themselves, and replacing the blanket
-last-writer-wins rule with a per-entity-class ownership rule. Both
-records are **Proposed**, so this one has not been agreed in either
-version.
+**Revised by [ADR-0017](0017-three-apps-over-tcp-ip.md).** The op log
+stays, and the apps carry the transport themselves; the sidecar, the
+WebSocket transport and mDNS announcement are dropped. ADR-0017 was
+accepted on 2026-10-24.
 
 **What ADR-0017 changes.** The op log stays, and it becomes the wire
 format rather than a table a sidecar polls. The sidecar, the WebSocket

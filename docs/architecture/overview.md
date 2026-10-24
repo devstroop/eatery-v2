@@ -644,17 +644,17 @@ guessed.
 
 ### Repo-level wrappers
 
-`README.md` refers to three shell wrappers:
+`README.md` names the wrappers:
 
 ```sh
-scripts/verify.sh        # native check + native test for every app
+scripts/verify-all.sh    # native check + native test for every app
 scripts/build.sh         # ReleaseFast build of every app
 scripts/dev.sh           # debug run of the app with markup hot reload
 ```
 
-`scripts/` is currently empty, and so are `tools/sync-sidecar` and
-`tools/print-sidecar`. The wrappers are the intended shape of the loop,
-not a working entry point yet.
+The wrappers are working entry points; `scripts/` also carries
+`check-copies.sh`, `env.sh`, `setup.sh` and `net-diag.sh`. The sync and
+print sidecar prototypes are not part of the three-app tree.
 
 ---
 

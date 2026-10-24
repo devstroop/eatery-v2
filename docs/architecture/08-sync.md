@@ -1,15 +1,16 @@
 # Sync architecture
 
-> **Status:** Scaffolded — `op_log`, `device` and `sync_state` tables exist;
-> the app writes no ops and no sidecar code exists.
-> **Last verified:** 2026-10-20, by source review.
-> **Source:** `src/schema/0010_sync.sql`, `tools/sync-sidecar/` (empty),
-> `PORT-PLAN.md` §8.4.
-> **Target:** this page describes the shape ADR-0009 chose.
-> [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md) revises it — the
-> op log survives as the wire format, the sidecar does not, and the
-> transport becomes HTTP/1.1 on TCP between the apps themselves. See
-> [12-three-apps-and-ipc](12-three-apps-and-ipc.md).
+> **Status:** Implemented core, revised by ADR-0017. The op log,
+> per-device Lamport clock and vector cursor are in the apps; the
+> sidecar and the LWW sections below record the original design and are
+> kept for context.
+> **Last verified:** 2026-10-24, by source review.
+> **Source:** `packages/ros-core/src/net/`,
+> `packages/ros-core/src/data/repos.zig`.
+> **Design:** [12-three-apps-and-ipc](12-three-apps-and-ipc.md) and
+> [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md) — the op log
+> survives as the wire format, the sidecar does not, and the transport
+> is HTTP/1.1 on TCP between the apps themselves.
 
 ## The problem
 
