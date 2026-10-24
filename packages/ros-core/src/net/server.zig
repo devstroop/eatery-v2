@@ -115,6 +115,8 @@ pub fn formatResponse(
 pub const Control = union(enum) {
     listener: struct { host: []const u8, port: u16 },
     request: struct { conn: u32, bytes: []const u8 },
+    /// A hello card heard on the UDP beacon, as its JSON line.
+    beacon: []const u8,
 
     pub fn formatListener(buffer: []u8, host: []const u8, port: u16) ![]const u8 {
         return std.fmt.bufPrint(buffer, "PORT {d} {s}\n", .{ port, host });
@@ -124,7 +126,16 @@ pub const Control = union(enum) {
         return std.fmt.bufPrint(buffer, "CONN {d}\n{s}", .{ conn, bytes });
     }
 
+    pub fn formatBeacon(buffer: []u8, hello_json: []const u8) ![]const u8 {
+        return std.fmt.bufPrint(buffer, "BEACON {s}\n", .{hello_json});
+    }
+
     pub fn parse(bytes: []const u8) ?Control {
+        if (std.mem.startsWith(u8, bytes, "BEACON ")) {
+            const json = std.mem.trim(u8, bytes["BEACON ".len..], " \r\n");
+            if (json.len == 0) return null;
+            return .{ .beacon = json };
+        }
         if (std.mem.startsWith(u8, bytes, "PORT ")) {
             const rest = bytes["PORT ".len..];
             const end = std.mem.indexOfScalar(u8, rest, ' ') orelse return null;
@@ -346,6 +357,14 @@ test "a request line is parsed without guessing" {
     try std.testing.expect(Request.parse("garbage") == null);
 }
 
+test "a beacon control carries the hello line unchanged" {
+    var buffer: [128]u8 = undefined;
+    const hello = "{\"proto\":\"ros/1\",\"device\":\"dev-1\"}";
+    const text = try Control.formatBeacon(&buffer, hello);
+    const control = Control.parse(text).?;
+    try std.testing.expectEqualStrings(hello, control.beacon);
+}
+
 test "the body is split from the head the thread posts" {
     const bytes = "POST /v1/ops HTTP/1.1\nContent-Length: 5\n\nhello";
     const split = splitBody(bytes);
@@ -379,6 +398,7 @@ const TestPeer = struct {
         const control = Control.parse(bytes) orelse return false;
         switch (control) {
             .listener => |where| self.listener_port = where.port,
+            .beacon => {},
             .request => |request| {
                 self.requests += 1;
                 const split = splitBody(request.bytes);

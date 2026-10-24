@@ -30,6 +30,7 @@ const domain = @import("../domain/models.zig");
 const bump = @import("../bump.zig");
 const auth = @import("../data/auth.zig");
 const cursor = @import("../net/cursor.zig");
+const protocol = @import("../net/protocol.zig");
 
 const canvas = native_sdk.canvas;
 
@@ -48,6 +49,31 @@ pub const SyncCacheMeta = struct {
     clock: u64 = 0,
     offset: usize = 0,
     len: usize = 0,
+};
+
+/// The devices this one has heard from. The list is in memory because
+/// a peer is a fact about the room, not a row the restaurant keeps: a
+/// device that goes quiet for fifteen seconds is gone.
+pub const max_peers = 8;
+
+pub const Peer = struct {
+    device: [cursor.max_device_id_len]u8 = undefined,
+    device_len: usize = 0,
+    role: protocol.DeviceRole = .admin,
+    host: [64]u8 = undefined,
+    host_len: usize = 0,
+    tcp: u16 = 0,
+    last_seen_ms: i64 = 0,
+    /// A manual address is never pruned: the operator said it is there.
+    manual: bool = false,
+
+    pub fn id(self: *const Peer) []const u8 {
+        return self.device[0..self.device_len];
+    }
+
+    pub fn address(self: *const Peer) []const u8 {
+        return self.host[0..self.host_len];
+    }
 };
 
 // ------------------------------------------------------------ the binary
@@ -280,6 +306,17 @@ pub const Model = struct {
     sync_cache_buf: bump.Bump(24 * 1024) = .{},
     sync_cache_meta: [sync_cache_slots]SyncCacheMeta = [_]SyncCacheMeta{.{}} ** sync_cache_slots,
     sync_cache_count: usize = 0,
+
+    /// The devices heard on the LAN. A beacon updates a row; a tick
+    /// forgets one that has gone quiet.
+    peers: [max_peers]Peer = [_]Peer{.{}} ** max_peers,
+    peer_count: usize = 0,
+    /// The manual address from `ROS_PEER`, if the operator gave one.
+    manual_peer_host_buf: [64]u8 = undefined,
+    manual_peer_host_len: usize = 0,
+    manual_peer_port: u16 = 0,
+    /// When the next sync pull is due.
+    sync_poll_at_ms: i64 = 0,
 
     // --------------------------------------------------------- navigation
 
@@ -653,6 +690,113 @@ pub const Model = struct {
     /// How many devices have been in this restaurant.
     pub fn device_count(model: *const Model) usize {
         return model.devices_list.len;
+    }
+
+    /// The peers heard on the LAN, in the order they were first seen.
+    pub fn peer_devices(model: *const Model) []const Peer {
+        return model.peers[0..model.peer_count];
+    }
+
+    /// How many peers this device has heard from.
+    pub fn peer_devices_count(model: *const Model) usize {
+        return model.peer_count;
+    }
+
+    /// The peer with this device id, or null.
+    pub fn findPeer(model: *Model, device: []const u8) ?*Peer {
+        for (model.peers[0..model.peer_count]) |*peer| {
+            if (std.mem.eql(u8, peer.id(), device)) return peer;
+        }
+        return null;
+    }
+
+    /// Remember a beacon. The device id is the key: the same peer
+    /// broadcasting again updates its address and role rather than
+    /// adding a second row.
+    pub fn observePeer(model: *Model, hello: protocol.Hello, now_ms: i64) void {
+        if (hello.device.len == 0 or hello.host.len == 0 or hello.tcp == 0) return;
+        // A device is not its own peer. The token is the installation's
+        // name, and the beacon carries it back to us.
+        if (model.device_token_len > 0 and
+            std.mem.eql(u8, hello.device, model.device_token_buf[0..model.device_token_len]))
+        {
+            return;
+        }
+
+        if (model.findPeer(hello.device)) |peer| {
+            peer.role = hello.role;
+            peer.host_len = @min(hello.host.len, peer.host.len);
+            @memcpy(peer.host[0..peer.host_len], hello.host[0..peer.host_len]);
+            peer.tcp = hello.tcp;
+            peer.last_seen_ms = now_ms;
+            return;
+        }
+
+        var slot: *Peer = undefined;
+        if (model.peer_count < max_peers) {
+            slot = &model.peers[model.peer_count];
+            model.peer_count += 1;
+        } else {
+            // The list is full: the peer we have not heard from the
+            // longest gives up its row. A manual address never does.
+            var victim: ?*Peer = null;
+            for (model.peers[0..model.peer_count]) |*peer| {
+                if (peer.manual) continue;
+                if (victim == null or peer.last_seen_ms < victim.?.last_seen_ms) victim = peer;
+            }
+            slot = victim orelse return;
+        }
+
+        const device_len = @min(hello.device.len, slot.device.len);
+        const host_len = @min(hello.host.len, slot.host.len);
+        slot.* = .{
+            .device_len = device_len,
+            .role = hello.role,
+            .host_len = host_len,
+            .tcp = hello.tcp,
+            .last_seen_ms = now_ms,
+        };
+        @memcpy(slot.device[0..device_len], hello.device[0..device_len]);
+        @memcpy(slot.host[0..host_len], hello.host[0..host_len]);
+    }
+
+    /// Add the address the operator typed. It is not pruned: a manual
+    /// peer is a promise, not a rumour.
+    pub fn observeManualPeer(model: *Model, host: []const u8, tcp: u16, now_ms: i64) void {
+        if (host.len == 0 or tcp == 0) return;
+
+        // A manual entry replaces a discovered entry at the same
+        // address, so the pull does not happen twice.
+        for (model.peers[0..model.peer_count]) |*peer| {
+            if (peer.tcp == tcp and std.mem.eql(u8, peer.address(), host)) {
+                peer.manual = true;
+                peer.last_seen_ms = now_ms;
+                return;
+            }
+        }
+
+        var id_buffer: [cursor.max_device_id_len]u8 = undefined;
+        const id = std.fmt.bufPrint(&id_buffer, "manual:{s}:{d}", .{ host, tcp }) catch return;
+        model.observePeer(.{
+            .device = id,
+            .role = .admin,
+            .host = host,
+            .tcp = tcp,
+            .app_version = "",
+        }, now_ms);
+        if (model.findPeer(id)) |peer| peer.manual = true;
+    }
+
+    /// Forget peers that have gone quiet. A manual address stays.
+    pub fn prunePeers(model: *Model, cutoff_ms: i64) void {
+        var write: usize = 0;
+        for (model.peers[0..model.peer_count]) |peer| {
+            if (peer.manual or peer.last_seen_ms >= cutoff_ms) {
+                model.peers[write] = peer;
+                write += 1;
+            }
+        }
+        model.peer_count = write;
     }
 
     /// What the sync sidecar has left behind.

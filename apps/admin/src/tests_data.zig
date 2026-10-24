@@ -33,6 +33,8 @@ const repos = @import("ros_core").repos;
 const auth = @import("ros_core").auth;
 const domain = @import("ros_core").models;
 const record = @import("ros_core").net.record;
+const protocol = @import("ros_core").net.protocol;
+const bridge = @import("ros_core").net.bridge;
 
 const Model = core.Model;
 const Msg = msg_mod.Msg;
@@ -3430,4 +3432,71 @@ test "a payment op closes the order on the second database" {
         &.{.{ .integer = order.id }},
     );
     try testing.expectEqual(@as(i64, 1), again);
+}
+
+test "a beacon adds a peer once and updates it in place" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    @memcpy(harness.model.device_token_buf[0..6], "test01");
+    harness.model.device_token_len = 6;
+
+    const hello = protocol.Hello{
+        .device = "peer-a",
+        .role = .waiter,
+        .host = "192.168.1.20",
+        .tcp = 45891,
+        .app_version = "0.1.0",
+    };
+    harness.model.observePeer(hello, 1_000);
+    try testing.expectEqual(@as(usize, 1), harness.model.peer_count);
+    try testing.expectEqualStrings("peer-a", harness.model.peers[0].id());
+    try testing.expectEqual(protocol.DeviceRole.waiter, harness.model.peers[0].role);
+    try testing.expectEqual(@as(u16, 45891), harness.model.peers[0].tcp);
+
+    // The same device broadcasting again is an update, not a row.
+    var moved = hello;
+    moved.tcp = 45900;
+    harness.model.observePeer(moved, 2_000);
+    try testing.expectEqual(@as(usize, 1), harness.model.peer_count);
+    try testing.expectEqual(@as(u16, 45900), harness.model.peers[0].tcp);
+
+    // A device is not its own peer.
+    harness.model.observePeer(.{
+        .device = "test01",
+        .role = .admin,
+        .host = "127.0.0.1",
+        .tcp = 45880,
+        .app_version = "0.1.0",
+    }, 3_000);
+    try testing.expectEqual(@as(usize, 1), harness.model.peer_count);
+}
+
+test "a manual peer survives the prune and a quiet peer does not" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+    @memcpy(harness.model.device_token_buf[0..6], "test01");
+    harness.model.device_token_len = 6;
+
+    harness.model.observeManualPeer("10.0.0.5", 45890, 1_000);
+    harness.model.observePeer(.{
+        .device = "peer-b",
+        .role = .kds,
+        .host = "10.0.0.6",
+        .tcp = 45891,
+        .app_version = "0.1.0",
+    }, 1_000);
+    try testing.expectEqual(@as(usize, 2), harness.model.peer_count);
+
+    // Twenty seconds later the beacon peer is gone; the manual one is
+    // a promise the operator made, so it stays.
+    harness.model.prunePeers(20_000);
+    try testing.expectEqual(@as(usize, 1), harness.model.peer_count);
+    try testing.expect(harness.model.peers[0].manual);
+    try testing.expectEqualStrings("10.0.0.5", harness.model.peers[0].address());
+
+    // The environment form of the same path.
+    bridge.parseManualPeer(&harness.model, "10.0.0.9:45899");
+    try testing.expectEqual(@as(usize, 2), harness.model.peer_count);
+    try testing.expectEqual(@as(u16, 45899), harness.model.peers[1].tcp);
 }
