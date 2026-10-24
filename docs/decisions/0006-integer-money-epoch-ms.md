@@ -2,7 +2,7 @@
 
 > **Status:** Accepted
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/05`](../architecture/05-schema.md),
 > [`architecture/04`](../architecture/04-data-layer.md)
 

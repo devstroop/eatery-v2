@@ -26,7 +26,7 @@ and no transition system. A navigation is three things and nothing else:
 
 Eatery v1 had 77 `GoRoute` entries with a `redirect:` callback that owned
 the permission check. That callback was the one place that knew what a
-role could open, and it was untested. v2 moves the same decision into a
+role could open, and it was untested. Restaurant OS moves the same decision into a
 pure function (`core/rbac.zig`) that a test is meant to walk in full (the
 current matrix test is tautological; see the documentation audit),
 and leaves the drawing of the result to the markup.
@@ -801,7 +801,7 @@ const role_cards = [_]RoleCard{
 > // src/main.zig
 > const shell_windows = [_]native_sdk.ShellWindow{.{
 >     .label = "main",
->     .title = "Eatery",
+>     .title = "Restaurant OS",
 >     .width = window_width,
 >     .height = window_height,
 >     .views = &shell_views,
@@ -836,7 +836,7 @@ fn windowView(ui: *App.Ui, model: *const Model, window_label: []const u8) App.Ui
 // options: .windows_fn = windows, .window_view = windowView,
 ```
 
-### What Eatery would do with it
+### What Restaurant OS would do with it
 
 The product argument is that the four roles do not have to be four
 machines. A counter machine can be the POS, the KDS and the customer
@@ -865,7 +865,7 @@ different **view** over existing state, not new state.
 
 ### Constraints the platform imposes
 
-| Constraint | Value | Consequence for Eatery |
+| Constraint | Value | Consequence for Restaurant OS |
 |---|---|---|
 | Declared windows | at most 4 (`UiApp.max_ui_windows`) | admin + KDS + display fits, with room to spare |
 | Canvas labels | unique across the app | the KDS and display windows need their own `canvas_label` |
@@ -895,7 +895,7 @@ different **view** over existing state, not new state.
 
 The SDK documents the per-window view as a compiled markup tree: a
 markup-authored secondary window is a `canvas.CompiledMarkupView` whose
-`build` the `window_view` callback calls for that label. Eatery runs the
+`build` the `window_view` callback calls for that label. Restaurant OS runs the
 **runtime** markup engine in development (`.markup = .{ .source =
 app_markup, .sources = &app_sources, .watch_path = "src/app.native" }`),
 not the compiled one, so the hot-reload path for a secondary window's

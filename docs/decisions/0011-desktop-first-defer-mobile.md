@@ -2,7 +2,7 @@
 
 > **Status:** Proposed — needs a product decision
 > **Date:** 2026-10-20
-> **Deciders:** Product, Eatery maintainers
+> **Deciders:** Product, Devstroop maintainers
 > **Related:** [`architecture/07`](../architecture/07-windowing-and-desktop.md),
 > [`plan/open-questions.md`](../plan/open-questions.md)
 
@@ -21,7 +21,7 @@ waiter tablets. Dropping mobile is not a neutral choice.
 **Proposed: ship desktop first (macOS, then Linux/Windows) and treat mobile
 as a separate, later effort.**
 
-- The v2 UI targets a 1280×800 desktop window with a 960×600 floor.
+- The Restaurant OS UI targets a 1280×800 desktop window with a 960×600 floor.
 - Touch-first interaction (large targets, gestures, on-screen keyboard) is
   not designed.
 - A tablet build is explicitly out of scope until the desktop release is
@@ -35,7 +35,7 @@ as a separate, later effort.**
 
 - Ships on the platform the SDK supports best.
 - Avoids designing two interaction models at once.
-- The counter/KDS/display desktop story is the strongest part of v2.
+- The counter/KDS/display desktop story is the strongest part of Restaurant OS.
 - Packaging and signing are understood on macOS.
 
 ### Negative

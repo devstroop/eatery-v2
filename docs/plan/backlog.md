@@ -1,15 +1,15 @@
 # Screen backlog
 
 **Status:** Living document. 45 screens, tracked one by one.
-**Source of truth:** `apps/eatery/src/core/navigation.zig` (the `Screen`
-enum), `apps/eatery/src/app.native` (the mount gates) and
-`apps/eatery/src/screens/` (the templates).
+**Source of truth:** `apps/admin/src/core/navigation.zig` (the `Screen`
+enum), `apps/admin/src/app.native` (the mount gates) and
+`apps/admin/src/screens/` (the templates).
 
 ## How to read this page
 
-**Route-ish identity.** v2 has no router, so there is no URL. The third
+**Route-ish identity.** Restaurant OS has no router, so there is no URL. The third
 column is a documentation slug, built from the screen's nav section
-(`Screen.nav_section()` in `apps/eatery/src/core/navigation.zig`) and the
+(`Screen.nav_section()` in `apps/admin/src/core/navigation.zig`) and the
 screen name in kebab-case. A screen with no nav section — the onboarding
 and session screens, which are reached by drilling in rather than by a tab
 — uses `session/` instead. The slug is for talking about a screen; the
@@ -25,11 +25,11 @@ ordinal is in this table so nobody has to count by hand.
 | Status | Meaning |
 |---|---|
 | **Done** | A template exists, it is mounted in `src/app.native`, and a headless test builds its tree. |
-| **Foundation** | The enum variant, the title, the nav section and the permission grant exist, and the data the screen needs already has a read path in `apps/eatery/src/data/repos.zig`. The remaining work is the template. |
+| **Foundation** | The enum variant, the title, the nav section and the permission grant exist, and the data the screen needs already has a read path in `apps/admin/src/data/repos.zig`. The remaining work is the template. |
 | **Planned** | The enum variant exists and the schema table exists, but the data path or the screen itself has not been written. |
 
 **Roles.** The role that opens the screen, from `rbac.allows` in
-`apps/eatery/src/core/rbac.zig`. Admin may open all 43.
+`apps/admin/src/core/rbac.zig`. Admin may open all 43.
 
 **Platform elements.** The SDK elements the template will need, from the
 grammar the seven existing templates use. Colour and radius attributes take
@@ -45,7 +45,7 @@ status is a `badge`.
 | Template | Mounted at | Ordinal | Screen | Test |
 |---|---|---|---|---|
 | `src/screens/screen-setup.native` | `show_setup` gate | 3 | `setup` | `expectByText(tree.root, .text, "Set up your restaurant")` |
-| `src/screens/screen-role-picker.native` | `show_role_picker` gate | 0 | `role_picker` | `expectByText(tree.root, .text, "Eatery")` |
+| `src/screens/screen-role-picker.native` | `show_role_picker` gate | 0 | `role_picker` | `expectByText(tree.root, .text, "Restaurant OS")` |
 | `src/screens/screen-login.native` | `show_login` gate | 1 | `login` | `expectByText(tree.root, .text, "Sign in")` |
 | `src/screens/screen-dashboard.native` | `screen_index == 8` | 8 | `admin_dashboard` | none |
 | `src/screens/screen-pos.native` | `screen_index == 10` | 10 | `pos` | `expectByText(tree.root, .text, "Paneer Tikka")` |
@@ -54,7 +54,7 @@ status is a `badge`.
 | `src/screens/screen-order-confirmation.native` | `screen_index == 12` | 12 | `order_confirmation` | `expectByText(tree.root, .text, "Order 1700000000")` |
 | `src/screens/screen-kitchen.native` | `screen_index == 41` | 41 | `kds_board` | none |
 
-All nine are listed in `apps/eatery/src/app_sources.zig` and imported at
+All nine are listed in `apps/admin/src/app_sources.zig` and imported at
 the top of `src/app.native`. A template that is not in both places does
 not exist: the import closure is embedded, and a missing entry fails
 loudly at the import site.
@@ -189,26 +189,26 @@ No nav section. These are reached by drilling in, not by a tab.
 A screen is done when all of these are true. None of them is optional and
 none of them is "later".
 
-- [ ] The `Screen` variant exists in `apps/eatery/src/core/navigation.zig`
+- [ ] The `Screen` variant exists in `apps/admin/src/core/navigation.zig`
       with a `title` and a `nav_section` (or an explicit `null`), and it was
       **appended** — no variant was inserted, reordered or removed.
 - [ ] The ordinal was read off the enum, not counted by hand, and it is
       recorded in this table.
-- [ ] `rbac.allows` in `apps/eatery/src/core/rbac.zig` grants the screen to
+- [ ] `rbac.allows` in `apps/admin/src/core/rbac.zig` grants the screen to
       every role that may open it and denies it to every role that may not.
       The matrix test still walks every pair.
 - [ ] If it is a rail destination, it appears in the right role's rail
       table in `src/core/rbac.zig` **and** in `rbac.section_screen`.
 - [ ] The data it needs has a named SQL constant, a loader and a decoder in
-      `apps/eatery/src/data/repos.zig`, each with its own `key_*` effect
+      `apps/admin/src/data/repos.zig`, each with its own `key_*` effect
       constant, and every write is one `dbExec` with all of its statements.
 - [ ] Every value the model keeps is copied into a bump buffer; nothing
       holds a slice into the page bytes.
-- [ ] A template exists at `apps/eatery/src/screens/screen-<name>.native`
+- [ ] A template exists at `apps/admin/src/screens/screen-<name>.native`
       with exactly one `<template name="screen-<name>">` and exactly one
       element child.
 - [ ] The file is imported in `src/app.native` **and** listed in
-      `apps/eatery/src/app_sources.zig`.
+      `apps/admin/src/app_sources.zig`.
 - [ ] The shell has an `<if test="{screen_index == N}">` gate for it, and
       the gate is inside the `show_shell` block.
 - [ ] Every binding in the template is a model field, a zero-argument
@@ -219,7 +219,7 @@ none of them is "later".
 - [ ] Every message payload is a binding path. A constant has its own
       message.
 - [ ] Every colour and radius is a token name written as a literal, in
-      both `light()` and `dark()` in `apps/eatery/src/core/theme.zig` if the
+      both `light()` and `dark()` in `apps/admin/src/core/theme.zig` if the
       token is new.
 - [ ] Every `card`, `panel`, `stack`, `dialog`, `drawer`, `sheet`, `alert`
       and `bubble` puts its children in a `column` or a `row`.
@@ -235,4 +235,4 @@ none of them is "later".
       text in it.
 - [ ] The screen's status in this table is **Done**, and the count in the
       scoreboard is updated.
-- [ ] `cd apps/eatery && native check` is clean and `native test` is green.
+- [ ] `cd apps/admin && native check` is clean and `native test` is green.

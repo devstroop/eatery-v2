@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time toolchain setup for Eatery v2.
+# One-time toolchain setup for Restaurant OS.
 #
 #   ./scripts/setup.sh
 #
@@ -11,7 +11,7 @@
 # Safe to re-run: every step checks before it acts.
 set -u
 
-eatery_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+ros_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 sdk_dir="${NATIVE_SDK_DIR:-$HOME/native-sdk}"
 sdk_tag="${NATIVE_SDK_TAG:-v0.11.0}"
 
@@ -80,5 +80,11 @@ say "Building the native CLI"
 
 printf '\n== done\n'
 printf 'the CLI is at %s/zig-out/bin/native\n' "$sdk_dir"
+
+# The app builds name the SDK by path: apps/*/build.zig.zon points at
+# <repo>/.native-sdk. The link is what makes the committed build portable.
+ln -sfn "$sdk_dir" "$ros_root/.native-sdk"
+printf 'linked %s/.native-sdk -> %s\n' "$ros_root" "$sdk_dir"
+
 printf 'run:  source scripts/env.sh\n'
-printf 'then: scripts/verify.sh\n'
+printf 'then: scripts/verify-all.sh\n'

@@ -285,7 +285,7 @@ content. Display and KDS cannot run side by side from one process.
 **Impact:** a single machine cannot show a customer display and a POS at
 once; a second monitor is unused.
 
-**Next step:** decide whether v2 is one-window-per-device (document it) or
+**Next step:** decide whether Restaurant OS is one-window-per-device (document it) or
 multi-window; if multi-window, add a second shell view and route the
 display role to it.
 
@@ -449,11 +449,11 @@ the lists, cap the dashboard to the latest five, and assert node counts.
 
 **Severity:** P1 · **Area:** cutover
 
-The v2 schema is new; there is no importer or mapping from the Flutter
+The Restaurant OS schema is new; there is no importer or mapping from the Flutter
 app's SQLite database. Phase 8 mentions cutover, but no field mapping,
 validation or dry-run exists.
 
-**Impact:** an existing restaurant cannot adopt v2 without re-entering its
+**Impact:** an existing restaurant cannot adopt Restaurant OS without re-entering its
 menu and losing history.
 
 **Next step:** write the field mapping and a dry-run importer, then a

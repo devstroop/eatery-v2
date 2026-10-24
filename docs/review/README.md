@@ -12,7 +12,7 @@ claims. Every one of them that was still true became an issue, with a
 plan, the files it touches and a done-when, labelled by severity, by
 kind and by the track that owns the fix.
 
-- **The tracker:** [devstroop/eatery-v2/issues](https://github.com/devstroop/eatery-v2/issues)
+- **The tracker:** [devstroop/ros/issues](https://github.com/devstroop/ros/issues)
 - **The tracks:** [`../plan/track.md`](../plan/track.md) - which branch
   each label lands on, and in what order
 - **The snapshot:** [`archive/2026-10-20-audit.md`](archive/2026-10-20-audit.md)

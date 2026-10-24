@@ -1,8 +1,8 @@
 # ADR-0004: Money is i64 minor units; time is epoch milliseconds
 
 **Status:** Accepted (2026-10)
-**Applies to:** `apps/eatery/src/schema/**`, `apps/eatery/src/domain/models.zig`,
-`apps/eatery/src/core/model.zig`
+**Applies to:** `apps/ros/src/schema/**`, `apps/ros/src/domain/models.zig`,
+`apps/ros/src/core/model.zig`
 **Related:** [`architecture/data-model.md`](../../architecture/data-model.md)
 
 ## Context
@@ -23,7 +23,7 @@ INTEGER` alongside `payment.date INTEGER`, while other records carried
 formatted strings. Sorting then depended on every writer agreeing on the
 format.
 
-v2 has one answer for both. Every money column is an `INTEGER` count of the
+Restaurant OS has one answer for both. Every money column is an `INTEGER` count of the
 smallest unit of the currency; every rate is an integer number of basis
 points; every timestamp is an `INTEGER` count of milliseconds since the Unix
 epoch, in UTC.
@@ -71,7 +71,7 @@ storage.
   The compliance report in `src/schema/0008_compliance.sql` records
   `gross_minor`, `discount_minor`, `tax_minor` and `net_minor` as integers
   and `payment_split_json` as the per-mode split.
-- The rule is a test, not a comment: `apps/eatery/src/tests.zig` has
+- The rule is a test, not a comment: `apps/ros/src/tests.zig` has
   "money stays integer: two hundred and fifty cents is never a float".
 - **Cost:** every column name carries the unit. A reader of the schema has
   to know that "minor" means the smallest unit of the company's currency,
@@ -149,6 +149,6 @@ Before a schema or model change is treated as done:
       `order_discount` tables.
 - [ ] Money formatting goes through one model method that honours
       `currency.minor_units`, not a `/100` written into a template.
-- [ ] The money test in `apps/eatery/src/tests.zig` still passes, and a
+- [ ] The money test in `apps/ros/src/tests.zig` still passes, and a
       new test covers any new arithmetic.
 - [ ] `native check` is clean and `native test` is green.

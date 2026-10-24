@@ -61,6 +61,9 @@ date before that phase starts.
 | A19 | What is the day boundary and timezone for reporting? | Epoch-ms is UTC; reports are local | Accountant + product | Product | Open |
 | A20 | What happens when two waiters edit one table? | Shared model and sync | Interviews + pilot | Product | Open |
 | A21 | Can a customer take the goods and settle later, and who may allow it? | An order now closes only when it is paid for, so "pay later" needs an explicit action | Interviews + product | Product | Open |
+| A22 | Is the counter POS the `admin` app or the `service` app? | The three-app split puts `pos` and `payments` in `admin` today, which means the till is the dedicated machine. If the till is a counter tablet, the permission matrix and the partition both change. | Product decision + a store visit | Product | Open |
+| A23 | Does the `service` app ever take money? | The waiter role cannot open `payments` today. If a waiter takes a card, the money must be replicated with the same discipline as the order. | Interviews + product | Product | Open |
+| A24 | Does the kiosk app run one board or both? | A single `kiosk` binary serves the kitchen and the customer display; the device chooses at install. A restaurant wanting both on one screen is a different requirement. | Store visit | Product | Open |
 
 ## B. Data and migration
 
@@ -113,12 +116,19 @@ date before that phase starts.
 | D4 | How are deletes represented? | Convergence correctness | Design | Eng | Open |
 | D5 | How long are ops retained, and when is compaction safe? | Database growth and restore | Design + load test | Eng | Open |
 | D6 | Does a single-device install run the sidecar? | Simplicity vs one code path | Design | Eng | Open |
-| D7 | Must v2 interoperate with the Flutter app during rollout? | Protocol compatibility | Product rollout plan | Product | Open |
+| D7 | Must Restaurant OS interoperate with the Flutter app during rollout? | Protocol compatibility | Product rollout plan | Product | Open |
 | D8 | Is a cloud relay ever required? | Architecture | Product strategy | Product | Open |
 | D9 | Who is the host, and what happens when it leaves? | Availability | Design + test | Eng | Open |
 | D10 | What happens after a restore from backup with an old clock? | Correctness | Design + test | Eng | Open |
 | D11 | How does a new device bootstrap: full snapshot or replay? | Time to join, data size | Design | Eng | Open |
 | D12 | Are there regulatory constraints on LAN traffic? | Security | Legal/IT review | Product | Open |
+| D13 | Are peers authenticated, and with what? | A trusted LAN means any device on the wire is a device in the restaurant. A shared secret in the handshake is the smallest answer that is not nothing. | Design | Eng | Open |
+| D14 | Which app owns which entity, formally? | The ownership table in `architecture/12` is a proposal. Moving an entity between owners later is a protocol change. | Design review | Eng | Open |
+| D15 | How are ops compacted into a snapshot, and when? | The log grows without bound and a device that joins late replays it. | Design + load test | Eng | Open |
+| D16 | What happens to the ops of a device that is removed from the restaurant? | The history of a sale outlives the till that took it | Product decision | Product | Open |
+| D17 | What is the acceptable convergence latency, and is a poll enough? | The kitchen board must show a ticket when it is placed, not on the next tick | Measurement | Product | Open |
+| D18 | Is the admin app the preferred bootstrap peer and the reference-data seed? | A peer design does not need a seed, but a restaurant with one always-on machine should not pay for a slower join | Design | Eng | Open |
+| D19 | Does the PIN salt become per-employee, or does the installation salt replicate as reference data? | The PIN hash is computed from the **installation** salt and the sign-in matches it for equality, and each app has its own installation salt - so a second device cannot let a waiter in. **Answered: per-employee**, by [ADR-0018](../decisions/0018-the-pin-hash-is-the-employees.md) and [#95](https://github.com/devstroop/ros/issues/95) - the picker identifies the employee before it hashes, so the row is self-verifying and no shared secret crosses the wire. | Product decision + a migration | Product/Eng | Answered - ADR-0018, [#95](https://github.com/devstroop/ros/issues/95) |
 
 ## E. Printing and hardware
 
@@ -166,7 +176,7 @@ date before that phase starts.
 | G8 | Are there hardware/OS constraints in target restaurants (old machines, no Metal)? | GPU backend and performance | Customer audit | Eng | Open |
 | G9 | How is the database stored and protected on disk? | Privacy and tamper resistance | Security review | Eng | Open |
 | G10 | What journal mode and backup policy does the engine use? | Durability and recovery (G-022) | SDK docs + a power-loss test | Eng | Open |
-| G11 | How does a second app instance behave on the same database? | Salt race and write contention (B-028) | Two-instance spike | Eng | Open |
+| G11 | How does a second app instance behave on the same database? | The salt race is closed by a read-back; write contention and a single-instance guard remain (B-028, E-014) | Two-instance spike | Eng | Open |
 | G10 | Is there a licence/subscription enforcement requirement? | `subscription` table is unused | Product | Product | Open |
 
 ## H. Scale and performance
@@ -201,17 +211,17 @@ listed so the team treats them as discovery work, not as solved.
 
 | Area | Why we are blind | First move |
 |---|---|---|
-| **The rush** | No one has watched a real service at peak with v2. Timing, interruptions and workarounds are invisible in code. | Shadow a lunch and dinner service; time each step. |
+| **The rush** | No one has watched a real service at peak with Restaurant OS. Timing, interruptions and workarounds are invisible in code. | Shadow a lunch and dinner service; time each step. |
 | **Hardware reality** | No target printer, drawer, scanner or card terminal has been tested. | Buy the three most common devices; run a hardware day. |
 | **Legacy data reality** | We have not inspected real customer databases. | Collect anonymised copies; profile every column. |
 | **Tax and legal** | Rules vary by jurisdiction and change; v1 may be wrong. | Accountant and legal review; a per-market checklist. |
-| **Multi-device behaviour** | Sync has never run in v2; human behaviour around conflicts is unknown. | Prototype fake-transport convergence, then a two-device pilot. |
+| **Multi-device behaviour** | Sync has never run in Restaurant OS; human behaviour around conflicts is unknown. | Prototype fake-transport convergence, then a two-device pilot. |
 | **Failure behaviour** | No one knows how staff react to a printer/DB/network failure mid-service. | Failure injection in a pilot; observe recovery. |
 | **Accessibility** | No audit has been done; the SDK's a11y surface is not fully known. | Screen-reader and keyboard pass; contrast audit. |
 | **Localisation** | The product may need languages and code pages we have not tested. | Market review; print a receipt in each language. |
 | **Performance at scale** | Capacities are guesses; no fixture has 500 products or 10k orders. | Build large fixtures; measure nodes, memory, query time. |
-| **Operator setup** | No real operator has installed v2 from scratch. | Usability test the setup flow on a clean machine. |
-| **Support** | We do not know what a support call sounds like for v2 failure modes. | Interview support; design diagnostics from tickets. |
+| **Operator setup** | No real operator has installed Restaurant OS from scratch. | Usability test the setup flow on a clean machine. |
+| **Support** | We do not know what a support call sounds like for Restaurant OS failure modes. | Interview support; design diagnostics from tickets. |
 | **Security adversary** | The threat model is assumed, not observed. | Security review with a realistic device-access scenario. |
 | **Data retention** | No one has asked customers how long they keep history. | Customer interviews + legal. |
 | **The upgrade moment** | Cutover from v1 has never been rehearsed. | Dry-run on a real database and a real device. |

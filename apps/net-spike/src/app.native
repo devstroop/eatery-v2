@@ -1,0 +1,15 @@
+<!-- The whole view: what the seam proved. Every line is a claim, and
+     each one is bound to something the app actually did. -->
+<column gap="12" padding="16">
+  <row gap="8" cross="center">
+    <text grow="1">Net spike</text>
+    <text>{verdict}</text>
+  </row>
+  <text>listener: {host_text}:{port}</text>
+  <text>request seen by the app: {request_text}</text>
+  <text>connection: {conn_id}</text>
+  <text>fetch outcome: {outcome} status: {status}</text>
+  <text>body: {body_text}</text>
+  <text>answers dropped: {dropped}</text>
+  <status-bar>the net thread owns the socket; the loop thread owns the model</status-bar>
+</column>

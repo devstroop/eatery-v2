@@ -2,7 +2,7 @@
 
 > **Status:** Accepted
 > **Date:** 2026-10-20
-> **Deciders:** Eatery maintainers
+> **Deciders:** Devstroop maintainers
 > **Related:** [`architecture/02`](../architecture/02-app-model-and-effects.md)
 
 ## Context

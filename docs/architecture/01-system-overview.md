@@ -4,7 +4,7 @@
 > Planned edges (sync, printing, full admin surface).
 > **Last verified:** 2026-10-20, by source review.
 
-## What Eatery v2 is
+## What Restaurant OS is
 
 A restaurant operating system in one native binary:
 
@@ -143,11 +143,12 @@ anchor.
 | I2 | Navigation is refused for a role that lacks permission. | `go()` at `src/core/update.zig:329`; RBAC test |
 | I3 | Money is integer minor units. | `src/domain/models.zig:1`; money test |
 | I4 | The view cannot bind a private field. | `view_unbound` in `model.zig` and `msg.zig` |
-| I5 | The model never borrows effect scratch memory. | `src/data/page.zig:16`; decode copies into bumps |
+| I5 | The model never borrows effect scratch memory. | `src/data/page.zig:16`; decode copies into bumps, and a test overwrites the page after decoding |
 | I6 | An order and its lines are written atomically. | `repos.saveOrder` single `dbExec` |
 | I7 | The `Screen` enum is append-only. | `src/core/navigation.zig:47`; markup compares indices |
 | I8 | Every imported template is in `app_sources.zig`. | `src/app_sources.zig`; import fails loudly |
 | I9 | A navigation is never refused because the stack is full. | `Stack.push` is a no-op on the current screen and drops the oldest entry at depth 32 ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
+| I10 | Every text pair in both palettes clears WCAG AA. | the contrast test in `src/tests.zig`; token table in [ui-components](ui-components.md) |
 
 ## Current boundary of the system
 
@@ -160,7 +161,7 @@ Implemented end to end today:
 - floor table board (read-only);
 - kitchen board with lifecycle advance;
 - 43-table schema, 11 migrations, core repositories;
-- 69 authored headless tests, of which 41 run against an in-memory database.
+- 80 authored headless tests, of which 47 run against an in-memory database.
 
 Not implemented, despite appearing as types or tables:
 
@@ -188,3 +189,5 @@ See [`plan/status.md`](../plan/status.md) for the screen-by-screen view.
 - The contract: [02-app-model-and-effects](02-app-model-and-effects.md)
 - The as-built picture: [plan/status](../plan/status.md)
 - The unknowns: [plan/open-questions](../plan/open-questions.md)
+- The target shape, once the one binary becomes three:
+  [12-three-apps-and-ipc](12-three-apps-and-ipc.md)

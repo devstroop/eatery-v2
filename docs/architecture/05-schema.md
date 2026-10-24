@@ -32,7 +32,7 @@ partly by review.
   never runs migration code.
 - A schema change is one edit in `repos.zig` plus one new migration.
 - The target is a greenfield baseline plus forward migrations. There is no
-  installed v2 base yet, so a correction can still be folded into a new
+  installed Restaurant OS base yet, so a correction can still be folded into a new
   migration without a data migration. Once a release ships, that stops.
 
 ## Tables by domain
@@ -163,10 +163,10 @@ reservations by status, and `op_log` by `created_at` for pruning.
 
 ## Relationship to the Flutter schema
 
-The v1 app had 39 tables in `assets/db/schema.sql`. v2 has 43, rewritten
+The v1 app had 39 tables in `assets/db/schema.sql`. Restaurant OS has 43, rewritten
 as STRICT. The differences that matter:
 
-| v1 | v2 | Why |
+| v1 | Restaurant OS | Why |
 |---|---|---|
 | `order_product` | `order_line` | Clearer name; frozen product name/price |
 | `payments` / `payment` naming drift | `payment` | One spelling |
@@ -177,7 +177,7 @@ as STRICT. The differences that matter:
 | `REAL` money | `INTEGER` minor units | Rounding bugs |
 | Loose affinity | `STRICT` + `CHECK`s | The SDK requires it |
 
-The v1 `app_config` also held `schema_version` and `device_role`; v2 keeps
+The v1 `app_config` also held `schema_version` and `device_role`; Restaurant OS keeps
 the table but only reads/writes `pin_salt` today.
 
 ## Schema gaps and decisions still open
@@ -198,7 +198,7 @@ the table but only reads/writes `pin_salt` today.
 8. **Sync identity.** `device.id` is `TEXT`; who generates it and how it
    is trusted is not defined.
 9. **Schema version.** `app_config.schema_version` is mentioned in v1
-   docs but not written by v2. The migration lock is the real version.
+   docs but not written by Restaurant OS. The migration lock is the real version.
 10. **One company.** Enforced by query, not by a constraint. A second row
     would be silently ignored by `LIMIT 1`.
 11. **No seed data.** A fresh install has no company, no employee and no

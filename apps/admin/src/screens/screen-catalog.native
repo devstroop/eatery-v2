@@ -1,0 +1,139 @@
+<!-- The the catalogue's trade: suppliers and what was ordered from them.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
+<!-- The suppliers the restaurant buys from. -->
+
+<template name="screen-suppliers">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Suppliers</text>
+      <text foreground="text_muted">{supplier_count}</text>
+    </row>
+
+    <if test="{supplier_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No suppliers yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="suppliers" key="id" as="supplier">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <column gap="2" grow="1">
+              <text>{supplier.name}</text>
+              <text size="sm" foreground="text_muted">{supplier.phone}</text>
+            </column>
+            <text size="sm" foreground="text_muted">{supplier.gstin}</text>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The purchase orders: what has been ordered from a supplier, and
+     what is still on its way. -->
+
+<template name="screen-purchase-orders">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Purchase orders</text>
+      <text foreground="text_muted">{purchase_order_count}</text>
+    </row>
+
+    <if test="{purchase_order_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing ordered yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="purchase_orders" key="id" as="purchase">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <column gap="2" grow="1">
+              <text>{purchase.order_no}</text>
+              <text size="sm" foreground="text_muted">{date(purchase.ordered_seconds)}</text>
+            </column>
+            <text>{currency_symbol}{fixed(purchase.total_minor / currency_divisor, currency_decimal_count)}</text>
+            <badge>{purchase.status_label}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The stock on the shelf. The owner counts what is there, and the
+     count is written with the reason it moved: a number that changed
+     with no reason behind it is a number nobody can trust later. -->
+
+<template name="screen-inventory-items">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Stock</text>
+      <text foreground="text_muted">{stock_item_count} counted</text>
+      <button size="sm" variant="ghost" on-press="open_dashboard">Back</button>
+    </row>
+
+    <if test="{stock_item_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing is counted. Turn on stock tracking on a product and it appears here.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="stock_items" key="id" as="item">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1" on-press="count_stock:{item.id}">{item.name}</text>
+            <text>{item.stock_qty}</text>
+            <button size="sm" variant="secondary" on-press="count_stock:{item.id}">Count</button>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>
+
+<!-- The count: what the owner sees, and why it is different from what
+     the shelf said. -->
+
+<template name="screen-stock-count">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Count {form_stock_name}</text>
+      <button size="sm" variant="ghost" on-press="open_inventory">Back</button>
+    </row>
+
+    <card padding="16" width="460">
+      <column gap="8">
+        <row cross="center">
+          <text size="sm" foreground="text_muted" grow="1">The shelf says</text>
+          <text>{form_stock_current}</text>
+        </row>
+        <text-field
+          text="{form_stock_count}"
+          placeholder="the number you counted"
+          label="Counted"
+          on-input="form_stock_count_edit"
+        />
+        <text-field
+          text="{form_stock_reason}"
+          placeholder="delivery, breakage, a count"
+          label="Why it changed"
+          on-input="form_stock_reason_edit"
+        />
+        <row gap="8">
+          <spacer grow="1"/>
+          <button variant="primary" on-press="save_stock_count">Save the count</button>
+        </row>
+      </column>
+    </card>
+  </column>
+</template>

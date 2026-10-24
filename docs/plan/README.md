@@ -7,7 +7,7 @@
 
 ## The goal
 
-A native Eatery that a restaurant can run for a service:
+A native Restaurant OS that a restaurant can run for a service:
 
 1. an operator can set up a company and a menu;
 2. a cashier can take an order and take payment;
@@ -35,7 +35,7 @@ The current tree is a **vertical slice in progress**, not a release.
 | Migrations | 11 |
 | Entities with a read + decode path | 8 |
 | Entities with a write path | 6 (order, lines, history, config, setup, payment) |
-| Headless tests | 69 authored (70 reported with the generated one) |
+| Headless tests | 80 authored (81 reported with the generated one) |
 | Sidecars | 0 (two README-only directories) |
 | CI workflows | 1 (verify + smoke) |
 
@@ -47,7 +47,7 @@ Full matrix: [`status.md`](status.md).
 |---|---|---|
 | **M1 — Usable sale** | 0–4 | Role picker → login → POS → order → KDS, on one machine, with the four roles reachable |
 | **M2 — Back office** | 5 | Every remaining screen has a template; setup, catalog, payments, reports |
-| **M3 — Fabric** | 6–7 | Two devices converge; receipts and KOTs print |
+| **M3 — Fabric** | 7, 9 | Three apps converge; receipts and KOTs print |
 | **M4 — Release** | 8 | Signed package, migrated data, CI sale smoke |
 
 M1 is the only milestone that can be demoed to a restaurant. Do not start
@@ -62,17 +62,23 @@ scheme collides (B-006), and the setup gaps remain (G-001).
 |---|---|---|---|---|
 | [0](phase-0-toolchain.md) | Toolchain & skeleton | 2 d | Partial | No (scripts and CI exist; no clean-machine proof) |
 | [1](phase-1-foundation.md) | Model, navigation, theme, shell | 4 d | Partial | No (the shell is there; no responsive layout mode) |
-| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (41 in-memory database tests exist; the read paths are not all written) |
+| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (47 in-memory database tests exist; the read paths are not all written) |
 | [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (the order writes and reads back; no modifiers, no tax, no discount) |
 | [4](phase-4-kds-display-waiter.md) | KDS, display, waiter | 6 d | Partial | No (all three render and the waiter joins a table's order; the waiter cannot pay) |
 | [5](phase-5-admin-surfaces.md) | Admin surfaces | 10 d | Partial | No (the settings screens, the catalogue and the people forms exist; reports do not) |
-| [6](phase-6-sync-sidecar.md) | Sync sidecar | 10 d | Scaffolded | No |
+| [6](phase-6-sync-sidecar.md) | Sync sidecar | 10 d | Superseded by phase 9 | No |
 | [7](phase-7-printing-hardware.md) | Printing & hardware | 8 d | Scaffolded | No |
 | [8](phase-8-packaging-cutover.md) | Packaging & cutover | 5 d | Planned | No |
+| [9](phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP | 42 d | Partial (9.1 done, the shells exist; the fabric does not) | No |
 
-Estimates are engineer-days for one developer familiar with Zig but new to
-the Native SDK, carried from the port plan. They do not include the
+Estimates are engineer-days for one developer familiar with Zig but new
+to the Native SDK, carried from the port plan. They do not include the
 unknowns in [`open-questions.md`](open-questions.md), which can move them.
+
+Phase 9 **supersedes phase 6**: the op log and the transport are the
+same work, and the sidecar is not being built. The three apps and the
+protocol between them are one phase, and phase 8 now has three
+artifacts to sign rather than one.
 
 ## Sequencing rules
 
@@ -105,7 +111,7 @@ A phase is done when:
 
 ## Definition of release
 
-- All four roles usable end to end on a clean machine.
+- All three apps usable end to end on clean machines.
 - Every `Screen` rendered or removed.
 - Order → payment → receipt → KOT → status history complete.
 - Setup creates a company, an admin, tables and a menu.
@@ -120,8 +126,8 @@ A phase is done when:
 
 - [`roadmap.md`](roadmap.md) — product-ordered delivery view
 - [`backlog.md`](backlog.md) — all 43 screens, one row each
-- [`gaps-from-v1.md`](gaps-from-v1.md) — what v2 drops, fixes and still owes v1
+- [`gaps-from-v1.md`](gaps-from-v1.md) — what Restaurant OS drops, fixes and still owes v1
 - [`status.md`](status.md) — as-built matrix and known defects
 - [`risks.md`](risks.md) — risk register
 - [`open-questions.md`](open-questions.md) — what we do not know
-- Phase pages 0–8
+- Phase pages 0–9

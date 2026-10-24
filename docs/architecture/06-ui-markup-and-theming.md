@@ -118,6 +118,11 @@ These come from the SDK and are non-negotiable:
 10. **Widget budget per view:** 1024 retained nodes, 64 KiB text, 512
     context-menu items, 16 floating surfaces, 2048 commands / 8192 glyphs
     per frame.
+11. **The shell's import closure holds thirty-two files.** The limit is
+    on FILES, not on templates: one file may hold several templates, so
+    a screen that shares a file with its neighbours costs nothing. The
+    app is at the ceiling, and the two settings forms share one file
+    because of it.
 
 ## Binding patterns
 
@@ -178,14 +183,18 @@ pub fn tokens(model: *const Model) canvas.DesignTokens {
 
 | Name | Value | Use |
 |---|---|---|
-| Primary | `#30A8CF` | Accent, focus ring |
-| Primary dark | `#227A96` | Reserved |
+| Primary | `#176B84` | Accent, focus ring |
+| Primary dark | `#12566A` | Reserved |
 | Secondary | `#4AC3A1` | Brand, success family |
 | Accent | `#705EE0` | Reserved |
-| Success | `#2F9E69` | Success text/status |
-| Warning | `#C87A14` | Warning |
-| Danger | `#D94335` | Destructive |
+| Success | `#1B6E47` | Success text/status |
+| Warning | `#87520C` | Warning |
+| Danger | `#B32D22` | Destructive |
 | Info | `#2F5EC2` | Info |
+
+The light semantic fills are the darkest step of the v1 hues that clears
+WCAG AA with white text, and as text on the light background and surface
+(`tests.zig` asserts both palettes).
 
 ### Semantic tokens in use
 
@@ -198,10 +207,10 @@ pub fn tokens(model: *const Model) canvas.DesignTokens {
 | `text` | `#151A21` | `#ECEFF3` |
 | `text_muted` | `#646E7A` | `#9AA5B1` |
 | `border` | `#E1E5EA` | `#2A333D` |
-| `accent` | `#30A8CF` | `#4CC2EA` |
-| `destructive` | `#D94335` | `#E85D51` |
-| `success` | `#2F9E69` | `#45B886` |
-| `warning` | `#C87A14` | `#E09A3C` |
+| `accent` | `#176B84` | `#4CC2EA` |
+| `destructive` | `#B32D22` | `#E85D51` |
+| `success` | `#1B6E47` | `#45B886` |
+| `warning` | `#87520C` | `#E09A3C` |
 | `info` | `#2F5EC2` | `#5B8CE0` |
 
 ### Type, spacing, radius
@@ -213,7 +222,7 @@ pub fn tokens(model: *const Model) canvas.DesignTokens {
 | Radius | none 0, sm 4, md 8, lg 12, xl 16 |
 
 The v1 app had 14 type rungs, 11 menu-tile colours and an 8-step spacing
-scale. v2 keeps 6/5/5. The lost colour range is a deliberate trade-off;
+scale. Restaurant OS keeps 6/5/5. The lost colour range is a deliberate trade-off;
 see [ADR-0010](../decisions/0010-markup-only-no-custom-paint.md) and the
 open question about brand fidelity.
 
@@ -241,15 +250,15 @@ There is no responsive variant yet. The shell assumes a desktop window
 
 ## Accessibility
 
-- Shell and canvas carry accessibility labels ("Eatery").
+- Shell and canvas carry accessibility labels ("Restaurant OS").
 - Icon-only buttons must carry `label=`; the SDK rejects unnamed
   interactive controls.
 - Text is real text, so the OS can read it; there is no canvas-drawn copy.
 - Focus order follows declaration order. The POS search field is not
   autofocused; login's PIN field is.
 - Colour is not the only status signal: badges carry a text label.
-- Target: a keyboard-only pass, focus-visible checks, and a contrast audit
-  of both palettes. Not done.
+- Both palettes' text pairs are asserted against WCAG AA in
+  `src/tests.zig`; a keyboard-only pass and focus-visible checks remain.
 
 ## Adding a screen: checklist
 
@@ -296,4 +305,6 @@ patterns are repeated inline.
    visible (empty states, headers, rows).
 4. **No responsive mode.** Window resize changes the split fraction only.
 5. **No motion.** There are no transitions or tweened values.
-6. **No dark-mode contrast audit.**
+6. **Contrast is tested only for the token pairs.** Both palettes' text
+   pairs are asserted, but non-text contrast and real screen composition
+   are not audited.

@@ -1,8 +1,8 @@
 # ADR-0002: Model / Msg / update with declarative markup
 
 **Status:** Accepted (2026-10)
-**Applies to:** `apps/eatery/src/core/**`, `apps/eatery/src/app.native`,
-`apps/eatery/src/screens/**`
+**Applies to:** `apps/ros/src/core/**`, `apps/ros/src/app.native`,
+`apps/ros/src/screens/**`
 **Related:** [`architecture/overview.md`](../../architecture/overview.md),
 [`architecture/ui-components.md`](../../architecture/ui-components.md)
 
@@ -36,17 +36,17 @@ failure.
 ## Decision
 
 **One `Model`, one `Msg` union, one `update(model, msg, fx)`, and a
-declarative view.** `apps/eatery/src/core/model.zig` declares every fact
-the app knows; `apps/eatery/src/core/msg.zig` declares every thing that can
-happen; `apps/eatery/src/core/update.zig` is the only writer of model
-state; `apps/eatery/src/app.native` and the templates in
-`apps/eatery/src/screens/` are the view.
+declarative view.** `apps/ros/src/core/model.zig` declares every fact
+the app knows; `apps/ros/src/core/msg.zig` declares every thing that can
+happen; `apps/ros/src/core/update.zig` is the only writer of model
+state; `apps/ros/src/app.native` and the templates in
+`apps/ros/src/screens/` are the view.
 
 `update` is a pure function of `(model, message)`. It reads no clock, opens
 no file and queries no database. Everything the world holds — the database,
 the wall clock, files, the clipboard, a printer — is reached through the
 effects channel, and every answer comes back as another message. That is
-why `apps/eatery/src/tests.zig` can drive the whole app headlessly with
+why `apps/ros/src/tests.zig` can drive the whole app headlessly with
 `fx.executor = .fake`.
 
 Two corollaries are part of the decision, not conveniences:
@@ -108,7 +108,7 @@ Two corollaries are part of the decision, not conveniences:
   than a container that swaps children.
 - **Cost:** the whole UI is rewritten by hand. v1's widget vocabulary
   (`AppFormField`, `AppMultiStepForm`, `AppDialog`, `AppNotificationBanner`)
-  has no equivalent library in v2; `apps/eatery/src/components/` is empty
+  has no equivalent library in Restaurant OS; `apps/ros/src/components/` is empty
   and building it is Phase 2 work.
 
 ## Alternatives considered

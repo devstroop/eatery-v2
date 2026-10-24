@@ -1,0 +1,130 @@
+<!-- The the kitchen and the customer: the board, and the display across the room.
+
+     The screens of one area share one file: the shell's import closure
+     allows thirty-two files, and the app is a product with more screens
+     than that. A file may hold several templates, so a screen that
+     shares a file with its neighbours costs nothing. -->
+
+<!-- The kitchen board. One card per ticket the kitchen is working
+     through, oldest first, with a one-tap "next" that walks the order
+     along its lifecycle. The ticket rows are a derived binding: the
+     model decides which orders belong on the board and how each one is
+     summarised. -->
+
+<template name="screen-kitchen">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Kitchen</text>
+      <badge>{ticket_count} on the board</badge>
+    </row>
+
+    <row gap="4" cross="center">
+      <toggle-button selected="{station_filter == 0}" on-toggle="set_station_filter_all">All</toggle-button>
+      <for each="stations" key="id" as="station">
+        <toggle-button selected="{station.id == station_filter}" on-toggle="set_station_filter:{station.id}">{station.name}</toggle-button>
+      </for>
+    </row>
+
+    <if test="{ticket_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">Nothing cooking. The board fills up as orders land.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <grid columns="3" gap="8">
+        <for each="kitchen_tickets" key="id" as="ticket">
+          <card padding="12">
+            <column gap="6">
+              <row gap="8" cross="center">
+                <text size="lg" grow="1">{ticket.order_no}</text>
+                <badge>{ticket.status_label}</badge>
+              </row>
+              <text wrap="true">{ticket.summary}</text>
+              <row gap="8">
+                <button size="sm" variant="primary" disabled="{advancing}" on-press="advance_order:{ticket.id}">Next</button>
+                <text size="sm" foreground="text_muted">{ticket.waiting_label}</text>
+              </row>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
+  </column>
+</template>
+
+<!-- The customer display: what the room is waiting for. It is the one
+     screen nobody touches, so it has no controls at all - just the
+     orders in progress, big enough to read from across a restaurant.
+     The kitchen role signs in by device; the display does the same. -->
+
+<template name="screen-display">
+  <column grow="1" gap="16" padding="24" background="background">
+    <row gap="12" cross="center">
+      <text size="heading" grow="1">{company_label}</text>
+      <badge>{order_count} in progress</badge>
+    </row>
+
+    <if test="{order_count == 0}">
+      <column grow="1" gap="8" main="center" cross="center">
+        <text size="display">No orders</text>
+        <text foreground="text_muted">Your order will appear here.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <grid columns="3" gap="12">
+        <for each="display_cards" key="order_no" as="card">
+          <card padding="16">
+            <column gap="8">
+              <text size="display">{card.label}</text>
+              <row gap="8" cross="center">
+                <badge>{card.status_label}</badge>
+                <text size="sm" foreground="text_muted">{card.type_label}</text>
+              </row>
+            </column>
+          </card>
+        </for>
+      </grid>
+    </scroll>
+  </column>
+</template>
+
+<!-- The dishes and the stations that cook them. The kitchen board
+     shows the tickets; this shows why a ticket went to the station it
+     did. The owner picks a dish, then picks the station that cooks
+     it, and the ticket follows. -->
+
+<template name="screen-kitchen-dishes">
+  <column grow="1" gap="12" padding="16" background="background">
+    <row gap="8" cross="center">
+      <text size="heading" grow="1">Dishes</text>
+      <text foreground="text_muted">{kitchen_dish_count} on the menu</text>
+      <button size="sm" variant="ghost" on-press="open_dashboard">Back</button>
+    </row>
+
+    <text size="lg">Stations</text>
+    <row gap="4" cross="center">
+      <for each="stations" key="id" as="station">
+        <button size="sm" variant="secondary" on-press="assign_station:{station.id}">{station.name}</button>
+      </for>
+    </row>
+
+    <if test="{kitchen_dish_count == 0}">
+      <column background="surface" radius="md" padding="16">
+        <text foreground="text_muted">No dishes on the menu yet.</text>
+      </column>
+    </if>
+
+    <scroll grow="1">
+      <column gap="4">
+        <for each="kitchen_dishes" key="id" as="dish">
+          <row background="surface" radius="md" padding="10" gap="10" cross="center">
+            <text grow="1" on-press="select_dish:{dish.id}">{dish.name}</text>
+            <badge>{dish.station_name}</badge>
+          </row>
+        </for>
+      </column>
+    </scroll>
+  </column>
+</template>

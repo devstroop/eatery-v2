@@ -51,7 +51,7 @@ audit](../review/docs-audit.md#d-007--the-rbac-matrix-test-is-tautological).
 How they run:
 
 ```
-native test apps/eatery --yes
+native test apps/admin --yes
 ```
 
 The test block in `main.zig` imports `tests.zig`. Markup tests resolve the
@@ -166,7 +166,7 @@ relational toolchain. A CI runner that "looks fine" will fail at step 1.
 ## Known testing hazards
 
 1. **Markup tests are brittle to copy changes.** They find literal text
-   ("Eatery", "Sign in"). Changing display copy breaks tests; that is
+   ("Restaurant OS", "Sign in"). Changing display copy breaks tests; that is
    usually the right trade, but keep landmarks stable.
 2. **Fake effects do not answer.** A test that expects a follow-up message
    must synthesize the result.

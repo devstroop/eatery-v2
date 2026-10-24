@@ -4,12 +4,12 @@
 > what each one owns, and the order they run in.
 > **The as-built tree is described by [`status.md`](status.md).** The
 > findings that became this page are tracked in the
-> [issue tracker](https://github.com/devstroop/eatery-v2/issues) - one
+> [issue tracker](https://github.com/devstroop/ros/issues) - one
 > issue per finding, labelled by track and milestone.
 
 ## What this page is for
 
-A restaurant runs a service on Eatery v2 when:
+A restaurant runs a service on Restaurant OS when:
 
 1. an owner installs it, creates a company, an admin PIN, a menu and a
    floor;
@@ -32,11 +32,18 @@ an exit criterion that can be checked rather than asserted.
 | **Money** | `feat/money` | Tax and discount arithmetic, the order identifier, idempotent writes, a payment that cannot be taken twice, a PIN that is not a fast digest over four digits | A bill is right for a taxed restaurant, and an order cannot complete unpaid |
 | **Back office** | `feat/back-office` | The operator's surfaces: the catalogue, the people, the customers, the stock, the floor, and the writes behind them | Every entity in the schema can be written, and every screen that shows one can edit it |
 | **Reports** | `feat/reports` | Z and X reports, the tax report, item mix, CSV export, the audit trail | A report is a query, not a description of a query |
-| **Sync** | `feat/sync-sidecar` | The operation log the app writes, and the LAN sidecar that relays it | Two devices on the same network converge with no cloud involved |
+| **Sync** | `feat/three-apps` | The split into three apps, the TCP/IP protocol between them, and the op log that carries state across devices | Three apps on three devices converge, and the kitchen keeps cooking while the admin app is closed |
 | **Print** | `feat/print-sidecar` | The receipt and kitchen-ticket payloads, the ESC/POS encoder, the sidecar that writes them | A receipt prints on a real device, and the same bytes can be tested to a file |
 | **Release** | `chore/release` | Packaging, signing, the v1 data decision, the CI sale smoke | A signed build installs on a clean machine with a migrated database |
 | **Core** | `feat/core` | The app model and the runtime: the session, the navigation stack, the loading states, the accessibility pass | The shell behaves the same on every role, and the app is operable without a mouse |
 | **Docs** | `chore/docs` | The documentation set: one owner per claim, the status vocabulary, the checks that keep it true | Every number in the docs has one page that owns it, and a test or a check proves it |
+
+The Sync track was reshaped by
+[ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md): the LAN
+sidecar is not being built, the branch is `feat/three-apps`, and the
+track now owns the split into three apps as well as the protocol
+between them. The label `track/sync-sidecar` stays on the issues that
+already carry it.
 
 ### The order
 
@@ -50,9 +57,9 @@ Core ──┘
         ├─► M2  a back office: every screen renders, every entity writes
 Reports ┘
         │
-        ├─► M3  fabric: two devices converge, receipts and tickets print
-Sync ───┤
-Print ──┘
+        ├─► M3  fabric: three apps converge, receipts and tickets print
+        Sync ───┤
+        Print ──┘
         │
         └─► M4  release: a signed build, migrated data, a CI sale smoke
 ```
@@ -91,7 +98,7 @@ review of everything the tracks landed since the last one.
 
 ## How work lands
 
-1. **A branch, cut from `develop`:** `git worktree add ../eatery-v2-worktrees/<name> -b <type>/<name> develop`.
+1. **A branch, cut from `develop`:** `git worktree add ../ros-worktrees/<name> -b <type>/<name> develop`.
 2. **A test that fails first.** Every rule this repository protects is a
    test. A fix without a test is a fix that comes back.
 3. **Conventional Commits,** one concern per commit, in the imperative:

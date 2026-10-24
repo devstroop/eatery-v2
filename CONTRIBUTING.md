@@ -1,6 +1,6 @@
-# Contributing to Eatery v2
+# Contributing to Restaurant OS
 
-Eatery v2 is a restaurant POS written in Zig on the
+Restaurant OS is a restaurant POS written in Zig on the
 [Native SDK](https://native-sdk.dev). It is a rewrite of a Flutter app, and
 it inherits one lesson from that app: **the rules that protect the money
 must live in code, not in a convention everybody remembers.**

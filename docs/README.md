@@ -1,8 +1,8 @@
-# Eatery v2 documentation
+# Restaurant OS documentation
 
-Eatery v2 is the native rewrite of the Eatery restaurant operating system:
-point of sale, kitchen display, customer display and back office in one
-Zig binary built on the [Native SDK](https://native-sdk.dev).
+Restaurant OS is the native rewrite of Eatery v1, the restaurant operating
+system: point of sale, kitchen display, customer display and back office in
+one Zig binary built on the [Native SDK](https://native-sdk.dev).
 
 This directory is the maintained documentation set. It describes the
 **target system**, and labels every subsystem with what actually exists
@@ -10,7 +10,7 @@ in the source tree today. It is not a changelog and not a promise: a page
 marked `Planned` is a design, not code.
 
 > **Last full source review:** 2026-10-20
-> **Source of truth:** `apps/eatery/` for behaviour, `docs/` for intent.
+> **Source of truth:** `apps/admin/` for behaviour, `docs/` for intent.
 > **Upstream analysis:** [`../../PORT-PLAN.md`](../../PORT-PLAN.md) — the
 > original Flutter-to-Native gap analysis. This documentation supersedes
 > it where the two disagree; the plan document is historical input.
@@ -18,7 +18,7 @@ marked `Planned` is a design, not code.
 > Statuses below were established by reading the source. The Native SDK
 > CLI (`native`) is not on this shell's PATH, so the test suite was not
 > re-run for this review. A built binary exists at
-> `apps/eatery/zig-out/bin/eatery`; it backs "it compiles", not "the tests
+> `apps/admin/zig-out/bin/ros`; it backs "it compiles", not "the tests
 > pass". When a status changes, update the page that owns the claim, not a
 > status table in three places.
 
@@ -31,6 +31,7 @@ marked `Planned` is a design, not code.
 | **Implemented** | Code exists, is wired into the running app, and is exercised by at least one test or is directly rendered. |
 | **Partial** | Code exists but is unreachable, incomplete, or only covers part of the described behaviour. |
 | **Scaffolded** | A type, schema, directory or enum entry exists; no behaviour is wired. |
+| **Superseded** | A later decision or phase replaces it. The page is kept for its reasoning; it is not scheduled. |
 | **Planned** | Target design only. No code. |
 | **Unknown** | We do not yet know the answer, including whether the question is the right one. |
 | **Accepted / Proposed / Provisional / Superseded** | ADR decision states (see `decisions/`). |
@@ -79,6 +80,7 @@ If you are changing the database, read
 | [09-printing-and-hardware](architecture/09-printing-and-hardware.md) | ESC/POS, sidecar, printer routing | Scaffolded |
 | [10-testing-and-quality](architecture/10-testing-and-quality.md) | Test layers, current coverage, CI target | Partial |
 | [11-capability-gaps](architecture/11-capability-gaps.md) | What the SDK does not provide and the chosen workaround | Reference |
+| [12-three-apps-and-ipc](architecture/12-three-apps-and-ipc.md) | The three-app split, the TCP/IP protocol, and who owns what | Planned |
 
 ### Extended walkthroughs
 
@@ -93,7 +95,7 @@ into one subsystem and include more code excerpts.
 | [data-model](architecture/data-model.md) | Schema rules, migration workflow, page dialect, repositories, salt lifecycle | [04](architecture/04-data-layer.md), [05](architecture/05-schema.md) |
 | [ui-components](architecture/ui-components.md) | Markup grammar in practice, templates, tokens, component library plan | [06](architecture/06-ui-markup-and-theming.md) |
 | [roadmap](plan/roadmap.md) | Product-ordered delivery plan, mapped to the engineering phase pages | [plan/README](plan/README.md) |
-| [gaps-from-v1](plan/gaps-from-v1.md) | What v2 drops, fixes and still owes the Flutter app | [11](architecture/11-capability-gaps.md) |
+| [gaps-from-v1](plan/gaps-from-v1.md) | What Restaurant OS drops, fixes and still owes the Flutter app | [11](architecture/11-capability-gaps.md) |
 
 Where an extended page and a numbered page disagree, the numbered page
 wins until both are corrected. Status claims belong to
@@ -109,7 +111,11 @@ template. The short version:
   only.
 - Provisional: PIN hashing, clock-based order IDs.
 - Proposed (need an owner): printing sidecar, sync sidecar, desktop-first,
-  CSV-first interchange.
+  CSV-first interchange, three apps over TCP/IP.
+
+The last one proposes to supersede "one binary four roles". A proposal
+to supersede is not a supersession: the one-binary decision stands
+until the three-app one is accepted.
 
 ### Plan
 
@@ -128,13 +134,15 @@ template. The short version:
 | [plan/phase-6-sync-sidecar](plan/phase-6-sync-sidecar.md) | LAN sync |
 | [plan/phase-7-printing-hardware](plan/phase-7-printing-hardware.md) | Printing and devices |
 | [plan/phase-8-packaging-cutover](plan/phase-8-packaging-cutover.md) | Packaging, migration, release |
+| [plan/phase-9-three-apps-and-ipc](plan/phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP; supersedes phase 6 |
+| [apps/net-spike](../apps/net-spike/README.md) | The seam: a net thread and the loop thread, proved by running |
 | [plan/risks](plan/risks.md) | Risk register |
 | [plan/open-questions](plan/open-questions.md) | Known unknowns and unknown unknowns |
 
 ### Review
 
 The findings of the 2026-10-20 audit are
-[issues](https://github.com/devstroop/eatery-v2/issues) now, labelled
+[issues](https://github.com/devstroop/ros/issues) now, labelled
 by the track that owns the fix. The audit itself is a dated snapshot
 in the archive, and it stays as the record of how the project found out
 what it did not know.
@@ -158,7 +166,7 @@ what it did not know.
    (`path:line`) or a wired screen. "Planned" requires no code.
 3. **Design and reality are separate paragraphs.** Do not describe a
    target as if it ships today. Use the status block.
-4. **Source anchors are relative to `apps/eatery/`.** For example
+4. **Source anchors are relative to `apps/admin/`.** For example
    `src/core/update.zig:67`. Line numbers drift; the symbol name is the
    stable part.
 5. **An ADR is immutable once accepted** except for a status change and a
@@ -176,6 +184,6 @@ When a change lands, update:
 | New table or column | `architecture/05`, `plan/status` |
 | New effect or message | `architecture/02`, `architecture/04` |
 | Role or permission change | `architecture/03`, add/extend the RBAC test |
-| New external process or protocol | `architecture/08` or `09`, ADR if the decision is new |
+| New external process or protocol | `architecture/08` or `09`, `architecture/12` for the app-to-app protocol, ADR if the decision is new |
 | A phase is finished | Its phase page, `plan/README`, `plan/status` |
 | A question is answered | `plan/open-questions`, possibly a new ADR |

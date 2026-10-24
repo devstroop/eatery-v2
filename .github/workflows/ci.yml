@@ -65,6 +65,11 @@ jobs:
           set -euo pipefail
           cd "$HOME/native-sdk/packages/core"
           npm ci --include=dev
+      - name: Point the app builds at the SDK
+        # The apps own their build.zig (they were ejected) and name the SDK
+        # by path: ../../.native-sdk. That link is what keeps the committed
+        # build portable; scripts/env.sh creates it on a dev machine.
+        run: ln -sfn "$HOME/native-sdk" "$GITHUB_WORKSPACE/.native-sdk"
       - name: Cache the Zig compiler cache
         uses: actions/cache@v4
         with:
@@ -79,7 +84,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [eatery]
+        app: [admin, service, kiosk]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Zig
@@ -116,6 +121,8 @@ jobs:
           set -euo pipefail
           cd "$HOME/native-sdk/packages/core"
           npm ci --include=dev
+      - name: Point the app builds at the SDK
+        run: ln -sfn "$HOME/native-sdk" "$GITHUB_WORKSPACE/.native-sdk"
       - name: Cache the Zig compiler cache
         uses: actions/cache@v4
         with:
@@ -126,10 +133,13 @@ jobs:
           set -euo pipefail
           cd "apps/${{ matrix.app }}"
           native build -Dautomation=true --yes
+          # The binary is named for the product, not the directory:
+          # apps/admin builds zig-out/bin/ros-admin.
+          bin="$(basename "$(find zig-out/bin -type f | head -1)")"
           rm -rf .zig-cache/native-sdk-automation
-          xvfb-run -a "./zig-out/bin/${{ matrix.app }}" &
+          xvfb-run -a "./zig-out/bin/$bin" &
           pid=$!
-          trap 'kill "$pid" >/dev/null 2>&1 || true; pkill -x "${{ matrix.app }}" >/dev/null 2>&1 || true' EXIT
+          trap 'kill "$pid" >/dev/null 2>&1 || true; pkill -x "$bin" >/dev/null 2>&1 || true' EXIT
           native automate wait
           native automate assert 'gpu_nonblank=true'
           native automate screenshot main-canvas

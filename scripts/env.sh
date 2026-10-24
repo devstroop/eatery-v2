@@ -8,7 +8,7 @@
 # yourself: it also tells you when something is missing.
 set -u
 
-eatery_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+ros_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 
 # --- Zig: the SDK is pinned to 0.16. Homebrew's 0.17 shadows it on PATH,
 # so the pinned path goes FIRST, not last.
@@ -28,19 +28,27 @@ if [ -x "$HOME/native-sdk/zig-out/bin/native" ]; then
   export PATH="$HOME/native-sdk/zig-out/bin:$PATH"
 fi
 
+# --- The app builds name the SDK by path. `apps/*/build.zig.zon` points at
+# `<repo>/.native-sdk`, so the same committed build works on any machine:
+# this link is what makes it find *this* checkout. Keep it current.
+sdk_home="${NATIVE_SDK_DIR:-$HOME/native-sdk}"
+if [ -d "$sdk_home" ]; then
+  ln -sfn "$sdk_home" "$ros_root/.native-sdk"
+fi
+
 missing=0
 for tool in zig node native; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    printf 'eatery: %s is not on PATH\n' "$tool" >&2
+    printf 'ros: %s is not on PATH\n' "$tool" >&2
     missing=1
   fi
 done
 if [ "$missing" -ne 0 ]; then
-  printf 'eatery: run scripts/setup.sh first\n' >&2
+  printf 'ros: run scripts/setup.sh first\n' >&2
 fi
 
 zig_version="$(command -v zig >/dev/null 2>&1 && zig version || echo none)"
 case "$zig_version" in
   0.16.*) ;;
-  *) printf 'eatery: zig %s is on PATH; the Native SDK needs 0.16.0\n' "$zig_version" >&2 ;;
+  *) printf 'ros: zig %s is on PATH; the Native SDK needs 0.16.0\n' "$zig_version" >&2 ;;
 esac
