@@ -29,12 +29,26 @@ const rbac = @import("rbac.zig");
 const domain = @import("../domain/models.zig");
 const bump = @import("../bump.zig");
 const auth = @import("../data/auth.zig");
+const cursor = @import("../net/cursor.zig");
 
 const canvas = native_sdk.canvas;
 
 pub const Role = nav.Role;
 pub const Screen = nav.Screen;
 pub const Stack = nav.Stack;
+
+/// The recent ops this device can serve to a peer without a database
+/// read on the loop thread. The op log is the truth; this is a bounded
+/// window over it, reset when it fills.
+pub const sync_cache_slots = 8;
+
+pub const SyncCacheMeta = struct {
+    device: [cursor.max_device_id_len]u8 = undefined,
+    device_len: usize = 0,
+    clock: u64 = 0,
+    offset: usize = 0,
+    len: usize = 0,
+};
 
 // ------------------------------------------------------------ the binary
 
@@ -200,6 +214,11 @@ pub const Model = struct {
         "peer_outcome",
         "peer_body_buf",
         "peer_body_len",
+        "sync_clock",
+        "sync_cursor",
+        "sync_applied",
+        "sync_skipped",
+        "sync_rejected",
     };
 
     // ------------------------------------------------------------ session
@@ -243,6 +262,24 @@ pub const Model = struct {
     peer_outcome: []const u8 = "none",
     peer_body_buf: [4096]u8 = undefined,
     peer_body_len: usize = 0,
+
+    /// The Lamport clock this device writes at. A writer bumps it to
+    /// `max(own, highest seen) + 1`; it never moves backward.
+    sync_clock: u64 = 0,
+    /// The highest clock applied from each source device. A scalar
+    /// cursor silently drops a peer's ops when two clocks disagree,
+    /// which is the normal case; this one remembers every source.
+    sync_cursor: cursor.Vector = .{},
+    /// Ops applied, skipped as already seen, and refused as malformed.
+    sync_applied: u32 = 0,
+    sync_skipped: u32 = 0,
+    sync_rejected: u32 = 0,
+    /// The recent op lines, in the order they were written or applied.
+    /// A peer that pulls asks for what is above its cursor; the lines
+    /// here are what this device can answer without a database read.
+    sync_cache_buf: bump.Bump(24 * 1024) = .{},
+    sync_cache_meta: [sync_cache_slots]SyncCacheMeta = [_]SyncCacheMeta{.{}} ** sync_cache_slots,
+    sync_cache_count: usize = 0,
 
     // --------------------------------------------------------- navigation
 

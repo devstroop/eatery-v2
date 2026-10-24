@@ -53,6 +53,61 @@ pub const ParsedId = struct {
     sequence: u64,
 };
 
+/// One line of an order, as the op carries it. The name and the price
+/// are frozen at the moment of the sale, so the receiving device can
+/// show the ticket even when its own menu has moved on.
+pub const OrderLineSnapshot = struct {
+    id: i64,
+    product_id: ?i64 = null,
+    product_name: []const u8,
+    qty: i64,
+    unit_price_minor: i64,
+    tax_bps: i64,
+    notes: []const u8 = "",
+};
+
+/// The order aggregate one op carries.
+///
+/// The order number is deliberately absent. It is a local sequence on
+/// each database, assigned by the database that stores the order, so
+/// two devices never fight over the same ticket number. The order's
+/// identity is `id`, and that is what the peers agree on.
+pub const OrderSnapshot = struct {
+    id: i64,
+    order_type: i64,
+    status: i64,
+    dining_table_id: ?i64 = null,
+    customer_id: ?i64 = null,
+    employee_id: ?i64 = null,
+    subtotal_minor: i64,
+    tax_minor: i64,
+    discount_minor: i64,
+    total_minor: i64,
+    placed_at: i64,
+    notes: []const u8 = "",
+    lines: []const OrderLineSnapshot = &.{},
+};
+
+/// A status move. It is its own op because the order's content is
+/// immutable and the status is the one part that moves.
+pub const OrderStatusSnapshot = struct {
+    id: i64,
+    status: i64,
+    changed_at: i64,
+};
+
+pub fn parseOrder(arena: std.mem.Allocator, data_json: []const u8) !OrderSnapshot {
+    return std.json.parseFromSliceLeaky(OrderSnapshot, arena, data_json, .{
+        .ignore_unknown_fields = true,
+    });
+}
+
+pub fn parseOrderStatus(arena: std.mem.Allocator, data_json: []const u8) !OrderStatusSnapshot {
+    return std.json.parseFromSliceLeaky(OrderStatusSnapshot, arena, data_json, .{
+        .ignore_unknown_fields = true,
+    });
+}
+
 /// `<device_id>:<logical_clock>:<sequence>` - unique without a
 /// coordinator, and recognisable from its own text.
 pub fn formatId(buffer: []u8, device_id: []const u8, clock: u64, sequence: u64) ![]const u8 {
@@ -282,4 +337,60 @@ test "an op without data still carries an empty object" {
         \\{"id":"dev-1:5:1","entity_table":"config","entity_id":"theme","operation":"delete","logical_clock":5,"device_id":"dev-1","created_at":1}
     );
     try std.testing.expectEqualStrings("{}", op.data_json);
+}
+
+test "an order snapshot round-trips with its lines" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const lines = [_]OrderLineSnapshot{.{
+        .id = 2,
+        .product_id = 1,
+        .product_name = "Paneer Tikka",
+        .qty = 2,
+        .unit_price_minor = 24500,
+        .tax_bps = 500,
+        .notes = "no onion",
+    }};
+    const snapshot = OrderSnapshot{
+        .id = 1_700_000_000_000,
+        .order_type = 0,
+        .status = 0,
+        .dining_table_id = 3,
+        .customer_id = null,
+        .employee_id = 7,
+        .subtotal_minor = 49000,
+        .tax_minor = 2450,
+        .discount_minor = 0,
+        .total_minor = 51450,
+        .placed_at = 1_700_000_000_000,
+        .notes = "",
+        .lines = &lines,
+    };
+
+    var out = std.Io.Writer.Allocating.init(arena);
+    try std.json.Stringify.value(snapshot, .{}, &out.writer);
+
+    const again = try parseOrder(arena, out.written());
+    try std.testing.expectEqual(snapshot.id, again.id);
+    try std.testing.expectEqual(snapshot.total_minor, again.total_minor);
+    try std.testing.expectEqual(@as(usize, 1), again.lines.len);
+    try std.testing.expectEqualStrings("Paneer Tikka", again.lines[0].product_name);
+    try std.testing.expectEqual(@as(i64, 2), again.lines[0].qty);
+}
+
+test "a status snapshot round-trips" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const snapshot = OrderStatusSnapshot{ .id = 42, .status = 2, .changed_at = 1_700_000_000_000 };
+    var out = std.Io.Writer.Allocating.init(arena);
+    try std.json.Stringify.value(snapshot, .{}, &out.writer);
+
+    const again = try parseOrderStatus(arena, out.written());
+    try std.testing.expectEqual(snapshot.id, again.id);
+    try std.testing.expectEqual(snapshot.status, again.status);
+    try std.testing.expectEqual(snapshot.changed_at, again.changed_at);
 }

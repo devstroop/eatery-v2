@@ -13,8 +13,8 @@
 //! | Request | Today |
 //! |---|---|
 //! | `GET /v1/hello` | the peer card, from the model |
-//! | `GET /v1/ops` | an empty NDJSON body - the ops arrive in 9.3 |
-//! | `POST /v1/ops` | accepted, counted, and held for 9.3 |
+//! | `GET /v1/ops` | the recent ops above the requester's cursor |
+//! | `POST /v1/ops` | decoded, validated, and applied |
 //! | anything else | 404 |
 //!
 //! The device id is the installation token for now. It is stable for the
@@ -27,7 +27,9 @@ const native_sdk = @import("native_sdk");
 const model_mod = @import("model.zig");
 const msg_mod = @import("msg.zig");
 const protocol = @import("../net/protocol.zig");
+const record = @import("../net/record.zig");
 const server = @import("../net/server.zig");
+const repos = @import("../data/repos.zig");
 
 const Model = model_mod.Model;
 const Msg = msg_mod.Msg;
@@ -91,7 +93,7 @@ fn post(context: *anyopaque, bytes: []const u8) bool {
 }
 
 /// A message from the net thread.
-pub fn onChannel(model: *Model, event: native_sdk.EffectChannelEvent) void {
+pub fn onChannel(model: *Model, fx: *Effects, event: native_sdk.EffectChannelEvent) void {
     switch (event.kind) {
         .data => {
             // The bytes are drain scratch: valid only for this call, so
@@ -107,7 +109,7 @@ pub fn onChannel(model: *Model, event: native_sdk.EffectChannelEvent) void {
                 },
                 .request => |request| {
                     model.net_requests +%= 1;
-                    answer(model, request.conn, request.bytes);
+                    answer(model, fx, request.conn, request.bytes);
                 },
             }
         },
@@ -115,23 +117,55 @@ pub fn onChannel(model: *Model, event: native_sdk.EffectChannelEvent) void {
     }
 }
 
-/// A peer's answer to a request this app made. 9.3 applies the ops it
-/// carries; today the answer is recorded so the seam is visible.
-pub fn onResponse(model: *Model, response: native_sdk.EffectResponse) void {
+/// A peer's answer to a request this app made. The answer is recorded
+/// so the seam is visible, and an ops body is decoded and applied one
+/// op at a time.
+pub fn onResponse(model: *Model, fx: *Effects, response: native_sdk.EffectResponse) void {
     model.peer_outcome = @tagName(response.outcome);
     model.peer_status = response.status;
     const len = @min(response.body.len, model.peer_body_buf.len);
     @memcpy(model.peer_body_buf[0..len], response.body[0..len]);
     model.peer_body_len = len;
+
+    if (response.outcome != .ok or response.status != 200) return;
+    // The hello card and the POST acknowledgement are JSON objects,
+    // not ops. Only a body that carries op records is applied.
+    if (std.mem.indexOf(u8, response.body, "\"entity_table\"") == null) return;
+
+    _ = applyOpLines(model, fx, response.body);
+}
+
+/// Decode and apply every op in an NDJSON body. One op at a time, with
+/// an arena that dies at the end of the iteration: the apply's `dbExec`
+/// is synchronous, so the decoded strings are alive for exactly as long
+/// as they are needed.
+fn applyOpLines(model: *Model, fx: *Effects, body: []const u8) usize {
+    var accepted: usize = 0;
+    var lines = std.mem.splitScalar(u8, body, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+
+        var arena_buffer: [16 * 1024]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&arena_buffer);
+        const op = record.decode(fba.allocator(), trimmed) catch {
+            model.sync_rejected += 1;
+            continue;
+        };
+        repos.applyOp(model, fx, op);
+        accepted += 1;
+    }
+    return accepted;
 }
 
 // --------------------------------------------------------------- answers
 
-fn answer(model: *Model, conn: u32, bytes: []const u8) void {
+fn answer(model: *Model, fx: *Effects, conn: u32, bytes: []const u8) void {
     const split = server.splitBody(bytes);
     const request = server.Request.parse(split.head) orelse return;
 
-    var body: [4096]u8 = undefined;
+    // The body must leave room for the response head inside one frame.
+    var body: [server.max_frame_bytes - 256]u8 = undefined;
     var body_len: usize = 0;
     var status: u16 = 200;
     var reason: []const u8 = "OK";
@@ -145,12 +179,18 @@ fn answer(model: *Model, conn: u32, bytes: []const u8) void {
     } else if (std.mem.eql(u8, request.path, protocol.endpoints.ops)) {
         switch (request.method) {
             .get => {
-                // 9.3: the ops this device holds above the cursor. The
-                // empty answer is honest - this build has no op log yet.
-                body_len = 0;
+                // The recent ops above the requester's cursor. The
+                // cursor is a vector, so a peer that has seen a lot
+                // from one device still receives another's first op.
+                const since = request.param("since") orelse "";
+                body_len = repos.writeCachedOps(model, since, &body);
             },
             .post => {
-                const text = std.fmt.bufPrint(&body, "{{\"accepted\":{d}}}\n", .{split.body.len}) catch return;
+                // A push is applied on the loop thread, in the same
+                // transaction path as a local write. The answer counts
+                // the ops that were well formed and handed to apply.
+                const accepted = applyOpLines(model, fx, split.body);
+                const text = std.fmt.bufPrint(&body, "{{\"accepted\":{d}}}\n", .{accepted}) catch return;
                 body_len = text.len;
                 content_type = "application/json";
             },
