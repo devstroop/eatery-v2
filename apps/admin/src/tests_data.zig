@@ -32,6 +32,7 @@ const rbac = @import("ros_core").rbac;
 const repos = @import("ros_core").repos;
 const auth = @import("ros_core").auth;
 const domain = @import("ros_core").models;
+const record = @import("ros_core").net.record;
 
 const Model = core.Model;
 const Msg = msg_mod.Msg;
@@ -456,6 +457,50 @@ fn countRows(harness: *Harness, sql: []const u8, params: []const native_sdk.Effe
     return -1;
 }
 
+/// The newest op_log row, copied into `arena`.
+///
+/// The page bytes are drain scratch, so every field is copied before
+/// the next message takes the memory. The caller owns the copy.
+fn latestOp(harness: *Harness, arena: std.mem.Allocator) !record.Op {
+    harness.fx.dbQuery(.{
+        .key = 908,
+        .sql =
+        \\SELECT id, entity_table, entity_id, operation, data_json,
+        \\  logical_clock, device_id, created_at
+        \\FROM op_log
+        \\ORDER BY logical_clock DESC
+        \\LIMIT 1;
+        ,
+        .params = &.{},
+        .on_result = Effects.dbMsg(.config_loaded),
+    });
+    while (harness.fx.takeMsg()) |msg| {
+        switch (msg) {
+            .config_loaded => |result| {
+                if (result.kind != .page) continue;
+                var reader = repos.page.Reader.init(result.bytes);
+                var values: [repos.page.max_columns]repos.page.Value = undefined;
+                if (!reader.readHeader() or !reader.nextRow(&values)) continue;
+                const operation_text = reader.textOf(&values, "operation");
+                const operation = std.meta.stringToEnum(record.Operation, operation_text) orelse
+                    return error.OpOperationUnknown;
+                return .{
+                    .id = try arena.dupe(u8, reader.textOf(&values, "id")),
+                    .entity_table = try arena.dupe(u8, reader.textOf(&values, "entity_table")),
+                    .entity_id = try arena.dupe(u8, reader.textOf(&values, "entity_id")),
+                    .operation = operation,
+                    .logical_clock = @intCast(reader.intOf(&values, "logical_clock", 0)),
+                    .device_id = try arena.dupe(u8, reader.textOf(&values, "device_id")),
+                    .created_at = reader.intOf(&values, "created_at", 0),
+                    .data_json = try arena.dupe(u8, reader.textOf(&values, "data_json")),
+                };
+            },
+            else => {},
+        }
+    }
+    return error.OpNotFound;
+}
+
 test "advancing an order twice writes one history row" {
     var harness = try seeded(testing.allocator);
     defer harness.deinit();
@@ -480,7 +525,7 @@ test "advancing an order twice writes one history row" {
     // A second tap, from a model that still says the ticket is
     // pending - the kind of double tap a fast kitchen produces. The
     // move does not apply, because the ticket has already moved on.
-    repos.setOrderStatus(harness.fx, order.id, domain.OrderStatus.pending, domain.OrderStatus.preparing, 1_700_000_000_000);
+    repos.setOrderStatus(&harness.model, harness.fx, order.id, domain.OrderStatus.pending, domain.OrderStatus.preparing, 1_700_000_000_000);
     harness.drain();
 
     // One history row, not two: the timeline is the record of what
@@ -505,7 +550,7 @@ test "a move that does not apply leaves the order where it is" {
 
     // A move from a status the order is not in: the order does not
     // move, and nothing is written.
-    repos.setOrderStatus(harness.fx, order.id, domain.OrderStatus.ready, domain.OrderStatus.served, 1_700_000_000_000);
+    repos.setOrderStatus(&harness.model, harness.fx, order.id, domain.OrderStatus.ready, domain.OrderStatus.served, 1_700_000_000_000);
     harness.drain();
 
     repos.loadOrders(&harness.model, harness.fx);
@@ -725,7 +770,7 @@ test "a payment is taken once" {
 
     // A second tap, from a model that still says the order is open.
     // The customer pays once, whatever the till does.
-    repos.takePayment(harness.fx, repos.key_payment, order.id, domain.OrderStatus.pending, domain.PaymentMode.cash, order.total_minor, 1_700_000_000_000);
+    repos.takePayment(&harness.model, harness.fx, repos.key_payment, order.id, domain.OrderStatus.pending, domain.PaymentMode.cash, order.total_minor, 1_700_000_000_000);
     harness.drain();
 
     // And the second tap is not an error: the order was already
@@ -863,7 +908,7 @@ test "an order does not close without the money" {
     // the status the order is in, so the expected status moves with it.
     var expected = order.status;
     for ([_]domain.OrderStatus{ .preparing, .ready, .served }) |status| {
-        repos.setOrderStatus(harness.fx, order.id, expected, status, 1_700_000_000_000);
+        repos.setOrderStatus(&harness.model, harness.fx, order.id, expected, status, 1_700_000_000_000);
         harness.drain();
         expected = status;
     }
@@ -991,10 +1036,10 @@ test "a retried write is the same sale" {
     }};
     const key = "test01-1700000000000";
 
-    repos.saveOrder(harness.fx, order, &lines, key);
+    repos.saveOrder(&harness.model, harness.fx, order, &lines, key);
     harness.drain();
     // The same sale, submitted again.
-    repos.saveOrder(harness.fx, order, &lines, key);
+    repos.saveOrder(&harness.model, harness.fx, order, &lines, key);
     harness.drain();
 
     // One sale, one number, one set of lines - and the number the
@@ -3067,4 +3112,322 @@ test "the effects channel has sixteen slots, so the loads are lazy" {
     // the timers and the live subscription take three of them.
     const queries = messages / 2;
     try testing.expect(queries <= 12);
+}
+
+// ------------------------------------------------------------ the op log
+
+test "placing an order writes one op row and a durable clock" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    harness.drain();
+
+    repos.loadOrders(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 1), harness.model.orders.len);
+    const order = harness.model.orders[0];
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const op = try latestOp(&harness, arena_state.allocator());
+
+    try testing.expectEqualStrings("order", op.entity_table);
+    try testing.expectEqual(record.Operation.create, op.operation);
+    try testing.expect(op.logical_clock > 0);
+    try testing.expectEqualStrings("test01", op.device_id);
+
+    var id_buffer: [32]u8 = undefined;
+    const order_id_text = try std.fmt.bufPrint(&id_buffer, "{d}", .{order.id});
+    try testing.expectEqualStrings(order_id_text, op.entity_id);
+
+    // The snapshot is the whole ticket, not a header the receiver has
+    // to guess the lines from.
+    try testing.expect(std.mem.indexOf(u8, op.data_json, "\"total_minor\":24500") != null);
+    try testing.expect(std.mem.indexOf(u8, op.data_json, "\"lines\":[") != null);
+    try testing.expect(std.mem.indexOf(u8, op.data_json, "\"product_name\":\"Paneer Tikka\"") != null);
+
+    // The Lamport clock is in the database, not only in the model: a
+    // restart must not reuse it.
+    var clock_buffer: [32]u8 = undefined;
+    const clock_text = try std.fmt.bufPrint(&clock_buffer, "{d}", .{op.logical_clock});
+    const clock_rows = try countRows(
+        &harness,
+        "SELECT COUNT(*) AS n FROM sync_state WHERE key = 'clock' AND value = ?1;",
+        &.{.{ .text = clock_text }},
+    );
+    try testing.expectEqual(@as(i64, 1), clock_rows);
+}
+
+test "an order op applies to a second database, and a duplicate changes nothing" {
+    var a = try seeded(testing.allocator);
+    defer a.deinit();
+
+    a.model.employee_id = 7;
+    a.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    a.send(.{ .add_to_cart = 1 });
+    a.send(Msg{ .place_order = {} });
+    a.drain();
+
+    repos.loadOrders(&a.model, a.fx);
+    a.drain();
+    try testing.expectEqual(@as(usize, 1), a.model.orders.len);
+    const order = a.model.orders[0];
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const op = try latestOp(&a, arena_state.allocator());
+
+    var b = try seeded(testing.allocator);
+    defer b.deinit();
+    @memcpy(b.model.device_token_buf[0..6], "test02");
+    b.model.device_token_len = 6;
+
+    repos.applyOp(&b.model, b.fx, op);
+    b.drain();
+    try testing.expectEqual(@as(u32, 1), b.model.sync_applied);
+    try testing.expectEqual(@as(u32, 0), b.model.sync_skipped);
+
+    // B holds the op now, so a third device can pull it from B.
+    var served: [4096]u8 = undefined;
+    const served_len = repos.writeCachedOps(&b.model, "", &served);
+    try testing.expect(std.mem.indexOf(u8, served[0..served_len], op.id) != null);
+
+    repos.loadOrders(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(@as(usize, 1), b.model.orders.len);
+    try testing.expectEqual(order.id, b.model.orders[0].id);
+    try testing.expectEqual(order.total_minor, b.model.orders[0].total_minor);
+    try testing.expectEqual(domain.OrderStatus.pending, b.model.orders[0].status);
+
+    repos.loadOrderLines(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(@as(usize, 1), b.model.order_lines.len);
+    try testing.expectEqualStrings("Paneer Tikka", b.model.order_lines[0].product_name);
+
+    // The same op, delivered again. The vector cursor covers it, so
+    // the second delivery is a no-op.
+    repos.applyOp(&b.model, b.fx, op);
+    b.drain();
+    try testing.expectEqual(@as(u32, 1), b.model.sync_applied);
+    try testing.expectEqual(@as(u32, 1), b.model.sync_skipped);
+
+    repos.loadOrders(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(@as(usize, 1), b.model.orders.len);
+    repos.loadOrderLines(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(@as(usize, 1), b.model.order_lines.len);
+}
+
+test "ops from two peers with unrelated clocks both apply" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    const order_a =
+        \\{"id":1001,"order_type":0,"status":0,"employee_id":7,"subtotal_minor":1000,"tax_minor":0,"discount_minor":0,"total_minor":1000,"placed_at":1700000000000,"notes":"","lines":[{"id":1001,"product_id":1,"product_name":"Paneer Tikka","qty":1,"unit_price_minor":1000,"tax_bps":0,"notes":""}]}
+    ;
+    const order_b =
+        \\{"id":1002,"order_type":0,"status":0,"employee_id":7,"subtotal_minor":2000,"tax_minor":0,"discount_minor":0,"total_minor":2000,"placed_at":1700000001000,"notes":"","lines":[{"id":1002,"product_id":1,"product_name":"Paneer Tikka","qty":2,"unit_price_minor":1000,"tax_bps":0,"notes":""}]}
+    ;
+    const op_a: record.Op = .{
+        .id = "dev-a:500:0",
+        .entity_table = "order",
+        .entity_id = "1001",
+        .operation = .create,
+        .logical_clock = 500,
+        .device_id = "dev-a",
+        .created_at = 1_700_000_000_000,
+        .data_json = order_a,
+    };
+    const op_b: record.Op = .{
+        .id = "dev-b:20:0",
+        .entity_table = "order",
+        .entity_id = "1002",
+        .operation = .create,
+        .logical_clock = 20,
+        .device_id = "dev-b",
+        .created_at = 1_700_000_001_000,
+        .data_json = order_b,
+    };
+
+    repos.applyOp(&harness.model, harness.fx, op_a);
+    harness.drain();
+    repos.applyOp(&harness.model, harness.fx, op_b);
+    harness.drain();
+
+    try testing.expectEqual(@as(u32, 2), harness.model.sync_applied);
+    try testing.expectEqual(@as(u64, 500), harness.model.sync_cursor.get("dev-a"));
+    try testing.expectEqual(@as(u64, 20), harness.model.sync_cursor.get("dev-b"));
+
+    repos.loadOrders(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(usize, 2), harness.model.orders.len);
+}
+
+test "a status op moves a ticket forward, and a stale one does not" {
+    var a = try seeded(testing.allocator);
+    defer a.deinit();
+
+    a.model.employee_id = 7;
+    a.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    a.send(.{ .add_to_cart = 1 });
+    a.send(Msg{ .place_order = {} });
+    a.drain();
+
+    repos.loadOrders(&a.model, a.fx);
+    a.drain();
+    const order = a.model.orders[0];
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const order_op = try latestOp(&a, arena_state.allocator());
+
+    var b = try seeded(testing.allocator);
+    defer b.deinit();
+    @memcpy(b.model.device_token_buf[0..6], "test02");
+    b.model.device_token_len = 6;
+    repos.applyOp(&b.model, b.fx, order_op);
+    b.drain();
+
+    // The kitchen moves the ticket on A.
+    a.send(.{ .advance_order = order.id });
+    a.drain();
+    const status_op = try latestOp(&a, arena_state.allocator());
+    try testing.expectEqualStrings("order_status", status_op.entity_table);
+
+    repos.applyOp(&b.model, b.fx, status_op);
+    b.drain();
+    repos.loadOrders(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(domain.OrderStatus.preparing, b.model.orders[0].status);
+
+    // A stale pending op from a third device arrives later. The
+    // cursor lets it in, but the status rule refuses to move the
+    // ticket backward.
+    const stale_json = try std.fmt.allocPrint(
+        arena_state.allocator(),
+        "{{\"id\":{d},\"status\":0,\"changed_at\":1700000002000}}",
+        .{order.id},
+    );
+    const stale: record.Op = .{
+        .id = "dev-c:1:0",
+        .entity_table = "order_status",
+        .entity_id = order_op.entity_id,
+        .operation = .update,
+        .logical_clock = 1,
+        .device_id = "dev-c",
+        .created_at = 1_700_000_002_000,
+        .data_json = stale_json,
+    };
+    repos.applyOp(&b.model, b.fx, stale);
+    b.drain();
+
+    repos.loadOrders(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(domain.OrderStatus.preparing, b.model.orders[0].status);
+}
+
+test "the recent op is served above the peer's cursor" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    harness.model.employee_id = 7;
+    harness.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    harness.send(.{ .add_to_cart = 1 });
+    harness.send(Msg{ .place_order = {} });
+    harness.drain();
+
+    var body: [4096]u8 = undefined;
+
+    // A peer with an empty cursor gets the whole recent window.
+    const all = repos.writeCachedOps(&harness.model, "", &body);
+    try testing.expect(all > 0);
+    try testing.expect(std.mem.indexOf(u8, body[0..all], "\"entity_table\":\"order\"") != null);
+    try testing.expect(std.mem.indexOf(u8, body[0..all], "\"total_minor\":24500") != null);
+
+    // A peer that already has this device's clock gets nothing new.
+    var cursor_buffer: [128]u8 = undefined;
+    const since = try std.fmt.bufPrint(&cursor_buffer, "test01:{d}", .{harness.model.sync_clock});
+    try testing.expectEqual(@as(usize, 0), repos.writeCachedOps(&harness.model, since, &body));
+}
+
+test "a payment op closes the order on the second database" {
+    var a = try seeded(testing.allocator);
+    defer a.deinit();
+
+    a.model.employee_id = 7;
+    a.model.products = &.{
+        .{ .id = 1, .category_id = 1, .name = "Paneer Tikka", .food_label = "Veg", .price_minor = 24500, .product_type = .dish, .food_type = .veg, .tax_slab_id = 0, .stock_qty = 0, .active = true },
+    };
+    a.send(.{ .add_to_cart = 1 });
+    a.send(Msg{ .place_order = {} });
+    a.drain();
+
+    repos.loadOrders(&a.model, a.fx);
+    a.drain();
+    const order = a.model.orders[0];
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const order_op = try latestOp(&a, arena_state.allocator());
+
+    var b = try seeded(testing.allocator);
+    defer b.deinit();
+    @memcpy(b.model.device_token_buf[0..6], "test02");
+    b.model.device_token_len = 6;
+    repos.applyOp(&b.model, b.fx, order_op);
+    b.drain();
+
+    // A takes the money and closes the ticket.
+    repos.takePayment(
+        &a.model,
+        a.fx,
+        repos.key_payment,
+        order.id,
+        order.status,
+        domain.PaymentMode.cash,
+        order.total_minor,
+        1_700_000_000_500,
+    );
+    a.drain();
+
+    const payment_op = try latestOp(&a, arena_state.allocator());
+    try testing.expectEqualStrings("payment", payment_op.entity_table);
+    try testing.expectEqual(record.Operation.create, payment_op.operation);
+
+    repos.applyOp(&b.model, b.fx, payment_op);
+    b.drain();
+
+    repos.loadOrders(&b.model, b.fx);
+    b.drain();
+    try testing.expectEqual(domain.OrderStatus.completed, b.model.orders[0].status);
+
+    const payments = try countRows(
+        &b,
+        "SELECT COUNT(*) AS n FROM payment WHERE order_id = ?1;",
+        &.{.{ .integer = order.id }},
+    );
+    try testing.expectEqual(@as(i64, 1), payments);
+
+    // A second delivery is the same payment, not a second charge.
+    repos.applyOp(&b.model, b.fx, payment_op);
+    b.drain();
+    const again = try countRows(
+        &b,
+        "SELECT COUNT(*) AS n FROM payment WHERE order_id = ?1;",
+        &.{.{ .integer = order.id }},
+    );
+    try testing.expectEqual(@as(i64, 1), again);
 }

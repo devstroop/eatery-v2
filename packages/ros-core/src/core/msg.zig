@@ -407,6 +407,8 @@ pub const Msg = union(enum) {
     net: native_sdk.EffectChannelEvent,
     /// A peer's answer to a fetch this app made.
     peer: native_sdk.EffectResponse,
+    /// A peer's op was applied to the database.
+    sync_applied: native_sdk.EffectDbResult,
 
     // -------------------------------------------------------------- data
 
@@ -479,6 +481,7 @@ pub const Msg = union(enum) {
     pub const view_unbound = .{
         "net",
         "peer",
+        "sync_applied",
         "login_checked",
         "products_loaded",
         "categories_loaded",

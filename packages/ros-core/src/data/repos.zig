@@ -18,6 +18,8 @@ const native_sdk = @import("native_sdk");
 const model_mod = @import("../core/model.zig");
 const domain = @import("../domain/models.zig");
 const nav = @import("../core/navigation.zig");
+const record = @import("../net/record.zig");
+const cursor_mod = @import("../net/cursor.zig");
 pub const page = @import("page.zig");
 const starter = @import("starter.zig");
 
@@ -91,6 +93,8 @@ pub const key_save_customer = 53;
 pub const key_deactivate_employee = 54;
 pub const key_devices = 49;
 pub const key_sync_state = 50;
+pub const key_sync_apply = 58;
+pub const key_sync_cursor = 59;
 
 // ------------------------------------------------------------ queries
 
@@ -969,6 +973,10 @@ pub fn loadAll(model: *Model, fx: *Effects) void {
     loadCustomers(model, fx);
     loadOrders(model, fx);
     loadOrderLines(model, fx);
+    // The Lamport clock and the vector cursor are as much a part of
+    // boot as the menu: a device that forgets them reuses a clock or
+    // re-applies its own history.
+    loadSyncState(model, fx);
 }
 
 // ------------------------------------------------------------ decoding
@@ -1232,6 +1240,17 @@ pub fn decodeSyncState(model: *Model, bytes: []const u8) void {
         };
     }
     model.sync_state_list = list[0..index];
+
+    // The clock and the cursor are the two rows the wire depends on.
+    // They are read on boot so a restart neither reuses a clock nor
+    // re-applies the ops it already has.
+    for (list[0..index]) |row| {
+        if (std.mem.eql(u8, row.key, "clock")) {
+            model.sync_clock = std.fmt.parseInt(u64, row.value, 10) catch 0;
+        } else if (std.mem.eql(u8, row.key, "cursor")) {
+            model.sync_cursor.parse(row.value) catch {};
+        }
+    }
 }
 
 /// Decode the tables in the database.
@@ -1788,6 +1807,7 @@ pub fn saveCurrency(fx: *Effects, key: u64, code: []const u8, symbol: []const u8
 /// money and the closed order land together, or neither does. A paid
 /// order that is still open is a cashier's worst day.
 pub fn takePayment(
+    model: *Model,
     fx: *Effects,
     key: u64,
     order_id: i64,
@@ -1803,6 +1823,7 @@ pub fn takePayment(
     // The payment, the history and the close are all CONDITIONAL on the
     // order being where it should be. A second tap finds the order
     // closed, writes nothing, and the customer is charged once.
+    var statements: [6]native_sdk.EffectDbStatement = undefined;
     var payment_params: [6]native_sdk.EffectDbValue = .{
         .{ .integer = order_id },
         .{ .integer = order_id },
@@ -1823,47 +1844,110 @@ pub fn takePayment(
         .{ .integer = at },
         .{ .integer = @intFromEnum(from_status) },
     };
+    statements[0] = .{
+        // The history first: it says the order closed, and it is only
+        // true if the order was still open.
+        .sql =
+        \\INSERT INTO order_status_history (order_id, status, changed_at)
+        \\SELECT ?1, ?2, ?3
+        \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
+        ,
+        .params = &history_params,
+    };
+    statements[1] = .{
+        // The payment, for the same reason: one order, one payment.
+        // The id is the order id, so the primary key says so too.
+        .sql =
+        \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
+        \\SELECT ?1, ?2, ?3, ?4, '', ?5, ?5
+        \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2 AND status = ?6);
+        ,
+        .params = &payment_params,
+    };
+    statements[2] = .{
+        .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
+        .params = &order_params,
+    };
+    statements[3] = .{
+        // The guest has paid and gone, so the table is free again - in
+        // the same transaction as the payment, so a table is never free
+        // while the money is still owed.
+        .sql =
+        \\UPDATE dining_table SET status = 0
+        \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
+        ,
+        .params = &.{.{ .integer = order_id }},
+    };
+    var count: usize = 4;
+
+    const snapshot = record.PaymentSnapshot{
+        .order_id = order_id,
+        .mode = @intFromEnum(mode),
+        .amount_minor = amount_minor,
+        .paid_at = at,
+    };
+    var json_buffer: [256]u8 = undefined;
+    var op_id_buffer: [96]u8 = undefined;
+    var entity_buffer: [32]u8 = undefined;
+    var clock_buffer: [32]u8 = undefined;
+    var op_params: [8]native_sdk.EffectDbValue = undefined;
+    var clock_params: [1]native_sdk.EffectDbValue = undefined;
+
+    const op_ready = build_op: {
+        var json_writer = std.Io.Writer.fixed(&json_buffer);
+        std.json.Stringify.value(snapshot, .{}, &json_writer) catch break :build_op false;
+        const data_json = json_writer.buffered();
+
+        const device_id = syncDeviceId(model);
+        const clock = nextSyncClock(model);
+        const op_id = record.formatId(&op_id_buffer, device_id, clock, 0) catch break :build_op false;
+        const entity_id = std.fmt.bufPrint(&entity_buffer, "{d}", .{order_id}) catch break :build_op false;
+        const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{clock}) catch break :build_op false;
+
+        op_params = .{
+            .{ .text = op_id },
+            .{ .text = "payment" },
+            .{ .text = entity_id },
+            .{ .text = "create" },
+            .{ .text = data_json },
+            .{ .integer = @intCast(clock) },
+            .{ .text = device_id },
+            .{ .integer = at },
+        };
+        clock_params = .{.{ .text = clock_text }};
+        model.sync_cursor.observe(device_id, clock) catch {};
+
+        const wire_op: record.Op = .{
+            .id = op_id,
+            .entity_table = "payment",
+            .entity_id = entity_id,
+            .operation = .create,
+            .logical_clock = clock,
+            .device_id = device_id,
+            .created_at = at,
+            .data_json = data_json,
+        };
+        var wire_buffer: [8 * 1024]u8 = undefined;
+        var wire_writer = std.Io.Writer.fixed(&wire_buffer);
+        if (record.encode(&wire_writer, wire_op)) {
+            cacheOp(model, wire_op, wire_writer.buffered());
+        } else |_| {}
+        break :build_op true;
+    };
+
+    if (op_ready) {
+        statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+        count += 1;
+        statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+        count += 1;
+    }
 
     fx.dbExec(.{
         .key = key,
-        .statements = &.{
-            .{
-                // The history first: it says the order closed, and it
-                // is only true if the order was still open.
-                .sql =
-                \\INSERT INTO order_status_history (order_id, status, changed_at)
-                \\SELECT ?1, ?2, ?3
-                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
-                ,
-                .params = &history_params,
-            },
-            .{
-                // The payment, for the same reason: one order, one
-                // payment. The index on the table says so too.
-                .sql =
-                \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
-                \\SELECT ?1, ?2, ?3, ?4, '', ?5, ?5
-                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2 AND status = ?6);
-                ,
-                .params = &payment_params,
-            },
-            .{
-                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
-                .params = &order_params,
-            },
-            .{
-                // The guest has paid and gone, so the table is free
-                // again - in the same transaction as the payment, so a
-                // table is never free while the money is still owed.
-                .sql =
-                \\UPDATE dining_table SET status = 0
-                \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
-                ,
-                .params = &.{.{ .integer = order_id }},
-            },
-        },
+        .statements = statements[0..count],
         .on_result = Effects.dbMsg(.payment_taken),
     });
+    saveCursor(model, fx);
 }
 
 /// The first-run setup: the company, the first operator, the
@@ -2074,6 +2158,116 @@ fn categoryIdOf(name: []const u8) i64 {
 /// path allocation-free.
 pub const max_order_lines = 64;
 
+/// The op row joins the write's own transaction. `previous_json` and
+/// the host/parent columns are the sidecar's; a peer writes them empty,
+/// exactly as `record.zig` says.
+const insert_op_log_sql =
+    \\INSERT INTO op_log (id, entity_table, entity_id, operation, data_json,
+    \\  previous_json, logical_clock, device_id, host_id, parent_id, created_at)
+    \\VALUES (?1, ?2, ?3, ?4, ?5, '{}', ?6, ?7, '', '', ?8)
+    \\ON CONFLICT(id) DO NOTHING;
+;
+
+/// The local Lamport clock is durable: a device that restarts must not
+/// reuse a clock and make an old op look new.
+const save_clock_sql =
+    \\INSERT INTO sync_state (key, value) VALUES ('clock', ?1)
+    \\ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+;
+
+/// The cursor is durable too. It is a cache of the op log, so a lost
+/// write costs a re-read, not a lost op - but a device that forgets it
+/// re-applies its own history on every restart.
+const save_cursor_sql =
+    \\INSERT INTO sync_state (key, value) VALUES ('cursor', ?1)
+    \\ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+;
+
+/// The device id the op is written under. The token is generated at
+/// boot; a model without one still writes, under "local", so a sale is
+/// never blocked by a missing token.
+fn syncDeviceId(model: *Model) []const u8 {
+    if (model.device_token_len == 0) return "local";
+    return model.device_token_buf[0..model.device_token_len];
+}
+
+/// The next Lamport clock. The writer bumps to `max(own, highest seen)
+/// + 1`, and the vector cursor is where the highest seen lives.
+fn nextSyncClock(model: *Model) u64 {
+    const highest = @max(model.sync_clock, model.sync_cursor.highest());
+    model.sync_clock = highest + 1;
+    return model.sync_clock;
+}
+
+/// An id from a snapshot: zero and null both mean "no row". The apply
+/// path turns a missing reference into NULL rather than failing the
+/// foreign key, so an order still arrives on a device that has not
+/// received the reference data yet.
+fn nullableIdParam(value: ?i64) native_sdk.EffectDbValue {
+    if (value) |id| {
+        if (id == 0) return .null_value;
+        return .{ .integer = id };
+    }
+    return .null_value;
+}
+
+/// Write the vector cursor. It is a separate effect from the op
+/// itself because it is a cache: the op log is the truth, and a cursor
+/// write that loses a race costs a re-read, not an op.
+fn saveCursor(model: *Model, fx: *Effects) void {
+    var buffer: [2048]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    model.sync_cursor.write(&writer) catch return;
+    var params: [1]native_sdk.EffectDbValue = .{.{ .text = writer.buffered() }};
+    fx.dbExec(.{
+        .key = key_sync_cursor,
+        .statements = &.{.{ .sql = save_cursor_sql, .params = &params }},
+        .on_result = Effects.dbMsg(.sync_applied),
+    });
+}
+
+/// Remember one op line for a peer that pulls. The cache is a recent
+/// window, not the log: when it fills it starts over, and a peer that
+/// missed the window falls back to the durable op_log.
+pub fn cacheOp(model: *Model, op: record.Op, line: []const u8) void {
+    if (line.len == 0) return;
+    if (model.sync_cache_count == model_mod.sync_cache_slots or
+        model.sync_cache_buf.free() < line.len)
+    {
+        model.sync_cache_buf.reset();
+        model.sync_cache_count = 0;
+    }
+    const offset = model.sync_cache_buf.len;
+    const stored = model.sync_cache_buf.dupe(line) orelse return;
+    const meta = &model.sync_cache_meta[model.sync_cache_count];
+    const device_len = @min(op.device_id.len, meta.device.len);
+    meta.* = .{
+        .device_len = device_len,
+        .clock = op.logical_clock,
+        .offset = offset,
+        .len = stored.len,
+    };
+    @memcpy(meta.device[0..device_len], op.device_id[0..device_len]);
+    model.sync_cache_count += 1;
+}
+
+/// Write the cached ops above `since` as NDJSON. The cursor is the
+/// requester's vector: an op is new to it when its clock is above the
+/// position for its device.
+pub fn writeCachedOps(model: *const Model, since: []const u8, body: []u8) usize {
+    var cursor: cursor_mod.Vector = .{};
+    cursor.parse(since) catch {};
+
+    var writer = std.Io.Writer.fixed(body);
+    for (model.sync_cache_meta[0..model.sync_cache_count]) |meta| {
+        const device = meta.device[0..meta.device_len];
+        if (meta.clock <= cursor.get(device)) continue;
+        const line = model.sync_cache_buf.bytes[meta.offset..][0..meta.len];
+        writer.writeAll(line) catch break;
+    }
+    return writer.end;
+}
+
 /// Write one order and its lines as a single transaction. The engine
 /// runs the statements atomically, so the order is either fully there
 /// or not there at all.
@@ -2087,10 +2281,11 @@ pub const max_order_lines = 64;
 /// No allocator is needed: `dbExec` executes the statements
 /// synchronously, so the parameters can live on the stack for the
 /// duration of the call.
-pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderLine, request_key: []const u8) void {
-    // The order, its lines, and the stock it takes: three statements
-    // per line, and one transaction for all of them.
-    var statements: [2 + 3 * max_order_lines]native_sdk.EffectDbStatement = undefined;
+pub fn saveOrder(model: *Model, fx: *Effects, order: domain.Order, lines: []const domain.OrderLine, request_key: []const u8) void {
+    // The order, its lines, the stock it takes, and the op row: three
+    // statements per line plus four, and one transaction for all of
+    // them.
+    var statements: [4 + 3 * max_order_lines]native_sdk.EffectDbStatement = undefined;
     var line_params: [max_order_lines][9]native_sdk.EffectDbValue = undefined;
     var stock_params: [max_order_lines][3]native_sdk.EffectDbValue = undefined;
 
@@ -2193,11 +2388,106 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
         count += 1;
     }
 
+    // The op the peers receive. One op carries the whole order - the
+    // header and its lines - so a receiving device can show the ticket
+    // in one transaction. The order number is absent on purpose: the
+    // receiver's database assigns its own, and the order's identity is
+    // the id both devices already agree on.
+    var snapshot_lines: [max_order_lines]record.OrderLineSnapshot = undefined;
+    var snapshot_count: usize = 0;
+    for (lines) |line| {
+        if (snapshot_count == max_order_lines) break;
+        snapshot_lines[snapshot_count] = .{
+            .id = line.id,
+            .product_id = if (line.product_id == 0) null else line.product_id,
+            .product_name = line.product_name,
+            .qty = line.qty,
+            .unit_price_minor = line.unit_price_minor,
+            .tax_bps = line.tax_bps,
+            .notes = line.notes,
+        };
+        snapshot_count += 1;
+    }
+    const snapshot = record.OrderSnapshot{
+        .id = order.id,
+        .order_type = @intFromEnum(order.order_type),
+        .status = @intFromEnum(order.status),
+        .dining_table_id = if (order.dining_table_id == 0) null else order.dining_table_id,
+        .customer_id = if (order.customer_id == 0) null else order.customer_id,
+        .employee_id = if (order.employee_id == 0) null else order.employee_id,
+        .subtotal_minor = order.subtotal_minor,
+        .tax_minor = order.tax_minor,
+        .discount_minor = order.discount_minor,
+        .total_minor = order.total_minor,
+        .placed_at = order.placed_at,
+        .notes = order.notes,
+        .lines = snapshot_lines[0..snapshot_count],
+    };
+
+    var json_buffer: [16 * 1024]u8 = undefined;
+    var op_id_buffer: [96]u8 = undefined;
+    var entity_buffer: [32]u8 = undefined;
+    var clock_buffer: [32]u8 = undefined;
+    var op_params: [8]native_sdk.EffectDbValue = undefined;
+    var clock_params: [1]native_sdk.EffectDbValue = undefined;
+
+    const op_ready = build_op: {
+        var json_writer = std.Io.Writer.fixed(&json_buffer);
+        std.json.Stringify.value(snapshot, .{}, &json_writer) catch break :build_op false;
+        const data_json = json_writer.buffered();
+
+        const device_id = syncDeviceId(model);
+        const clock = nextSyncClock(model);
+        const op_id = record.formatId(&op_id_buffer, device_id, clock, 0) catch break :build_op false;
+        const entity_id = std.fmt.bufPrint(&entity_buffer, "{d}", .{order.id}) catch break :build_op false;
+        const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{clock}) catch break :build_op false;
+
+        op_params = .{
+            .{ .text = op_id },
+            .{ .text = "order" },
+            .{ .text = entity_id },
+            .{ .text = "create" },
+            .{ .text = data_json },
+            .{ .integer = @intCast(clock) },
+            .{ .text = device_id },
+            .{ .integer = order.placed_at },
+        };
+        clock_params = .{.{ .text = clock_text }};
+        // The device has now seen its own op. A peer that echoes it
+        // back is a duplicate, not a new sale.
+        model.sync_cursor.observe(device_id, clock) catch {};
+
+        const wire_op: record.Op = .{
+            .id = op_id,
+            .entity_table = "order",
+            .entity_id = entity_id,
+            .operation = .create,
+            .logical_clock = clock,
+            .device_id = device_id,
+            .created_at = order.placed_at,
+            .data_json = data_json,
+        };
+        var wire_buffer: [8 * 1024]u8 = undefined;
+        var wire_writer = std.Io.Writer.fixed(&wire_buffer);
+        if (record.encode(&wire_writer, wire_op)) {
+            cacheOp(model, wire_op, wire_writer.buffered());
+        } else |_| {}
+        break :build_op true;
+    };
+
+    if (op_ready) {
+        statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+        count += 1;
+        statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+        count += 1;
+    }
+
     fx.dbExec(.{
         .key = key_write_order,
         .statements = statements[0..count],
         .on_result = Effects.dbMsg(.order_placed),
     });
+    saveCursor(model, fx);
 }
 
 /// Move an order along its lifecycle. The status history is written in
@@ -2214,43 +2504,410 @@ pub fn saveOrder(fx: *Effects, order: domain.Order, lines: []const domain.OrderL
 /// model read it a moment ago; the database is the one that decides
 /// whether the move still applies.
 pub fn setOrderStatus(
+    model: *Model,
     fx: *Effects,
     order_id: i64,
     from_status: domain.OrderStatus,
     to_status: domain.OrderStatus,
     at: i64,
 ) void {
+    var statements: [4]native_sdk.EffectDbStatement = undefined;
+    var history_params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(to_status) },
+        .{ .integer = at },
+        .{ .integer = @intFromEnum(from_status) },
+    };
+    var order_params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = order_id },
+        .{ .integer = @intFromEnum(to_status) },
+        .{ .integer = at },
+        .{ .integer = @intFromEnum(from_status) },
+    };
+    statements[0] = .{
+        // The history first, and only for an order that is where the
+        // move expects it: the row says the order BECAME this status,
+        // and it is only true if it was not already.
+        .sql =
+        \\INSERT INTO order_status_history (order_id, status, changed_at)
+        \\SELECT ?1, ?2, ?3
+        \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
+        ,
+        .params = &history_params,
+    };
+    statements[1] = .{
+        .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
+        .params = &order_params,
+    };
+    var count: usize = 2;
+
+    const snapshot = record.OrderStatusSnapshot{
+        .id = order_id,
+        .status = @intFromEnum(to_status),
+        .changed_at = at,
+    };
+    var json_buffer: [256]u8 = undefined;
+    var op_id_buffer: [96]u8 = undefined;
+    var entity_buffer: [32]u8 = undefined;
+    var clock_buffer: [32]u8 = undefined;
+    var op_params: [8]native_sdk.EffectDbValue = undefined;
+    var clock_params: [1]native_sdk.EffectDbValue = undefined;
+
+    const op_ready = build_op: {
+        var json_writer = std.Io.Writer.fixed(&json_buffer);
+        std.json.Stringify.value(snapshot, .{}, &json_writer) catch break :build_op false;
+        const data_json = json_writer.buffered();
+
+        const device_id = syncDeviceId(model);
+        const clock = nextSyncClock(model);
+        const op_id = record.formatId(&op_id_buffer, device_id, clock, 0) catch break :build_op false;
+        const entity_id = std.fmt.bufPrint(&entity_buffer, "{d}", .{order_id}) catch break :build_op false;
+        const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{clock}) catch break :build_op false;
+
+        op_params = .{
+            .{ .text = op_id },
+            .{ .text = "order_status" },
+            .{ .text = entity_id },
+            .{ .text = "update" },
+            .{ .text = data_json },
+            .{ .integer = @intCast(clock) },
+            .{ .text = device_id },
+            .{ .integer = at },
+        };
+        clock_params = .{.{ .text = clock_text }};
+        model.sync_cursor.observe(device_id, clock) catch {};
+
+        const wire_op: record.Op = .{
+            .id = op_id,
+            .entity_table = "order_status",
+            .entity_id = entity_id,
+            .operation = .update,
+            .logical_clock = clock,
+            .device_id = device_id,
+            .created_at = at,
+            .data_json = data_json,
+        };
+        var wire_buffer: [8 * 1024]u8 = undefined;
+        var wire_writer = std.Io.Writer.fixed(&wire_buffer);
+        if (record.encode(&wire_writer, wire_op)) {
+            cacheOp(model, wire_op, wire_writer.buffered());
+        } else |_| {}
+        break :build_op true;
+    };
+
+    if (op_ready) {
+        statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+        count += 1;
+        statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+        count += 1;
+    }
+
     fx.dbExec(.{
         .key = key_write_order,
-        .statements = &.{
-            .{
-                // The history first, and only for an order that is
-                // where the move expects it: the row says the order
-                // BECAME this status, and it is only true if it was
-                // not already.
-                .sql =
-                \\INSERT INTO order_status_history (order_id, status, changed_at)
-                \\SELECT ?1, ?2, ?3
-                \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND status = ?4);
-                ,
-                .params = &.{
-                    .{ .integer = order_id },
-                    .{ .integer = @intFromEnum(to_status) },
-                    .{ .integer = at },
-                    .{ .integer = @intFromEnum(from_status) },
-                },
-            },
-            .{
-                .sql = "UPDATE orders SET status = ?2, updated_at = ?3 WHERE id = ?1 AND status = ?4;",
-                .params = &.{
-                    .{ .integer = order_id },
-                    .{ .integer = @intFromEnum(to_status) },
-                    .{ .integer = at },
-                    .{ .integer = @intFromEnum(from_status) },
-                },
-            },
-        },
+        .statements = statements[0..count],
         .on_result = Effects.dbMsg(.order_status_saved),
+    });
+    saveCursor(model, fx);
+}
+
+// ------------------------------------------------------------- apply
+//
+// The receiving half of the op log. An op is applied only when its
+// clock is above the cursor for its source device; that is the
+// idempotency rule, and it is what makes a repeat, a reconnect and a
+// re-ask safe. The write joins the op row and the local clock in one
+// transaction, so a peer can pass the op on without ever seeing half
+// of it.
+
+/// Apply one op from a peer.
+pub fn applyOp(model: *Model, fx: *Effects, op: record.Op) void {
+    if (model.sync_cursor.covers(op.device_id, op.logical_clock)) {
+        model.sync_skipped += 1;
+        return;
+    }
+
+    var arena_buffer: [16 * 1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&arena_buffer);
+    const arena = fba.allocator();
+
+    if (std.mem.eql(u8, op.entity_table, "order")) {
+        const snapshot = record.parseOrder(arena, op.data_json) catch {
+            model.sync_rejected += 1;
+            return;
+        };
+        applyOrder(fx, op, snapshot);
+    } else if (std.mem.eql(u8, op.entity_table, "order_status")) {
+        const snapshot = record.parseOrderStatus(arena, op.data_json) catch {
+            model.sync_rejected += 1;
+            return;
+        };
+        applyOrderStatus(fx, op, snapshot);
+    } else if (std.mem.eql(u8, op.entity_table, "payment")) {
+        const snapshot = record.parsePayment(arena, op.data_json) catch {
+            model.sync_rejected += 1;
+            return;
+        };
+        applyPayment(fx, op, snapshot);
+    } else {
+        // The other tables arrive with their own slices. Refusing an
+        // op we do not understand is safer than writing half of it.
+        model.sync_rejected += 1;
+        return;
+    }
+
+    model.sync_cursor.observe(op.device_id, op.logical_clock) catch {
+        model.sync_rejected += 1;
+        return;
+    };
+    model.sync_clock = @max(model.sync_clock, op.logical_clock);
+    model.sync_applied += 1;
+
+    // Keep the op for the next peer in the chain. A device that only
+    // applied an op still holds it, and the pull after that is how the
+    // change reaches a third instance.
+    var wire_buffer: [8 * 1024]u8 = undefined;
+    var wire_writer = std.Io.Writer.fixed(&wire_buffer);
+    if (record.encode(&wire_writer, op)) {
+        cacheOp(model, op, wire_writer.buffered());
+    } else |_| {}
+
+    saveCursor(model, fx);
+}
+
+fn applyOrder(fx: *Effects, op: record.Op, snapshot: record.OrderSnapshot) void {
+    var statements: [4 + max_order_lines]native_sdk.EffectDbStatement = undefined;
+    var count: usize = 0;
+
+    // The number is local. The bump is conditional on the order id
+    // being new, so a duplicate op does not consume a second number.
+    var sequence_params: [2]native_sdk.EffectDbValue = .{
+        .{ .integer = snapshot.placed_at },
+        .{ .integer = snapshot.id },
+    };
+    statements[count] = .{
+        .sql =
+        \\INSERT INTO sequence (name, value, updated_at)
+        \\SELECT 'order_no', 1, ?1
+        \\WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = ?2)
+        \\ON CONFLICT(name) DO UPDATE SET value = value + 1, updated_at = ?1;
+        ,
+        .params = &sequence_params,
+    };
+    count += 1;
+
+    // A reference row this device has not received yet becomes NULL,
+    // not a foreign-key failure: the ticket still arrives, and the
+    // reference-data slice (#109) fills in the name later.
+    var order_params: [13]native_sdk.EffectDbValue = .{
+        .{ .integer = snapshot.id },
+        .{ .integer = snapshot.order_type },
+        .{ .integer = snapshot.status },
+        nullableIdParam(snapshot.dining_table_id),
+        nullableIdParam(snapshot.customer_id),
+        nullableIdParam(snapshot.employee_id),
+        .{ .integer = snapshot.subtotal_minor },
+        .{ .integer = snapshot.tax_minor },
+        .{ .integer = snapshot.discount_minor },
+        .{ .integer = snapshot.total_minor },
+        .{ .integer = snapshot.placed_at },
+        .{ .text = snapshot.notes },
+        .{ .text = op.id },
+    };
+    statements[count] = .{
+        .sql =
+        \\INSERT INTO orders (id, order_no, order_type, status, dining_table_id,
+        \\  customer_id, employee_id, subtotal_minor, tax_minor, discount_minor,
+        \\  total_minor, placed_at, notes, created_at, updated_at, request_key)
+        \\VALUES (?1, (SELECT printf('%06d', value) FROM sequence WHERE name = 'order_no'),
+        \\  ?2, ?3,
+        \\  (SELECT id FROM dining_table WHERE id = ?4),
+        \\  (SELECT id FROM customer WHERE id = ?5),
+        \\  (SELECT id FROM employee WHERE id = ?6),
+        \\  ?7, ?8, ?9, ?10, ?11, ?12, ?11, ?11, ?13)
+        \\ON CONFLICT DO NOTHING;
+        ,
+        .params = &order_params,
+    };
+    count += 1;
+
+    var line_params: [max_order_lines][9]native_sdk.EffectDbValue = undefined;
+    for (snapshot.lines) |line| {
+        // Two slots are reserved for the op row and the clock.
+        if (count + 3 > statements.len) break;
+        const slot = count - 2;
+        line_params[slot] = .{
+            .{ .integer = line.id },
+            .{ .integer = snapshot.id },
+            nullableIdParam(line.product_id),
+            .{ .text = line.product_name },
+            .{ .integer = line.qty },
+            .{ .integer = line.unit_price_minor },
+            .{ .integer = line.tax_bps },
+            .{ .text = line.notes },
+            .{ .integer = snapshot.placed_at },
+        };
+        statements[count] = .{
+            .sql =
+            \\INSERT INTO order_line (id, order_id, product_id, product_name, qty,
+            \\  unit_price_minor, tax_bps, notes, created_at)
+            \\SELECT ?1, ?2, (SELECT id FROM product WHERE id = ?3), ?4, ?5, ?6, ?7, ?8, ?9
+            \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2)
+            \\ON CONFLICT DO NOTHING;
+            ,
+            .params = &line_params[slot],
+        };
+        count += 1;
+    }
+
+    var op_params: [8]native_sdk.EffectDbValue = .{
+        .{ .text = op.id },
+        .{ .text = op.entity_table },
+        .{ .text = op.entity_id },
+        .{ .text = op.operation.label() },
+        .{ .text = op.data_json },
+        .{ .integer = @intCast(op.logical_clock) },
+        .{ .text = op.device_id },
+        .{ .integer = op.created_at },
+    };
+    statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+    count += 1;
+
+    var clock_buffer: [32]u8 = undefined;
+    const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{op.logical_clock}) catch return;
+    var clock_params: [1]native_sdk.EffectDbValue = .{.{ .text = clock_text }};
+    statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+    count += 1;
+
+    fx.dbExec(.{
+        .key = key_sync_apply,
+        .statements = statements[0..count],
+        .on_result = Effects.dbMsg(.sync_applied),
+    });
+}
+
+fn applyOrderStatus(fx: *Effects, op: record.Op, snapshot: record.OrderStatusSnapshot) void {
+    var statements: [4]native_sdk.EffectDbStatement = undefined;
+    var params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = snapshot.id },
+        .{ .integer = snapshot.status },
+        .{ .integer = snapshot.changed_at },
+    };
+    statements[0] = .{
+        // The status is monotonic. `voided` is the terminal exception:
+        // it can end an open ticket, but it cannot undo a completed
+        // one.
+        .sql =
+        \\UPDATE orders SET status = ?2, updated_at = ?3
+        \\WHERE id = ?1 AND status <> ?2
+        \\  AND (status < ?2 OR (?2 = 5 AND status < 4));
+        ,
+        .params = &params,
+    };
+    statements[1] = .{
+        .sql =
+        \\INSERT INTO order_status_history (order_id, status, changed_at)
+        \\SELECT ?1, ?2, ?3 WHERE changes() > 0;
+        ,
+        .params = &params,
+    };
+    var count: usize = 2;
+
+    var op_params: [8]native_sdk.EffectDbValue = .{
+        .{ .text = op.id },
+        .{ .text = op.entity_table },
+        .{ .text = op.entity_id },
+        .{ .text = op.operation.label() },
+        .{ .text = op.data_json },
+        .{ .integer = @intCast(op.logical_clock) },
+        .{ .text = op.device_id },
+        .{ .integer = op.created_at },
+    };
+    statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+    count += 1;
+
+    var clock_buffer: [32]u8 = undefined;
+    const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{op.logical_clock}) catch return;
+    var clock_params: [1]native_sdk.EffectDbValue = .{.{ .text = clock_text }};
+    statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+    count += 1;
+
+    fx.dbExec(.{
+        .key = key_sync_apply,
+        .statements = statements[0..count],
+        .on_result = Effects.dbMsg(.sync_applied),
+    });
+}
+
+fn applyPayment(fx: *Effects, op: record.Op, snapshot: record.PaymentSnapshot) void {
+    var statements: [6]native_sdk.EffectDbStatement = undefined;
+
+    // The payment id is the order id, so a second delivery is the same
+    // row, not a second charge.
+    var payment_params: [4]native_sdk.EffectDbValue = .{
+        .{ .integer = snapshot.order_id },
+        .{ .integer = snapshot.mode },
+        .{ .integer = snapshot.amount_minor },
+        .{ .integer = snapshot.paid_at },
+    };
+    statements[0] = .{
+        .sql =
+        \\INSERT INTO payment (id, order_id, mode, amount_minor, reference, paid_at, created_at)
+        \\SELECT ?1, ?1, ?2, ?3, '', ?4, ?4
+        \\WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?1)
+        \\ON CONFLICT(id) DO NOTHING;
+        ,
+        .params = &payment_params,
+    };
+
+    var order_params: [3]native_sdk.EffectDbValue = .{
+        .{ .integer = snapshot.order_id },
+        .{ .integer = snapshot.paid_at },
+        .{ .integer = @intFromEnum(domain.OrderStatus.completed) },
+    };
+    statements[1] = .{
+        // Paid closes an open ticket. It does not reopen a voided one.
+        .sql = "UPDATE orders SET status = ?3, updated_at = ?2 WHERE id = ?1 AND status < ?3;",
+        .params = &order_params,
+    };
+    statements[2] = .{
+        .sql =
+        \\INSERT INTO order_status_history (order_id, status, changed_at)
+        \\SELECT ?1, ?3, ?2 WHERE changes() > 0;
+        ,
+        .params = &order_params,
+    };
+    statements[3] = .{
+        .sql =
+        \\UPDATE dining_table SET status = 0
+        \\WHERE id = (SELECT dining_table_id FROM orders WHERE id = ?1);
+        ,
+        .params = &.{.{ .integer = snapshot.order_id }},
+    };
+    var count: usize = 4;
+
+    var op_params: [8]native_sdk.EffectDbValue = .{
+        .{ .text = op.id },
+        .{ .text = op.entity_table },
+        .{ .text = op.entity_id },
+        .{ .text = op.operation.label() },
+        .{ .text = op.data_json },
+        .{ .integer = @intCast(op.logical_clock) },
+        .{ .text = op.device_id },
+        .{ .integer = op.created_at },
+    };
+    statements[count] = .{ .sql = insert_op_log_sql, .params = &op_params };
+    count += 1;
+
+    var clock_buffer: [32]u8 = undefined;
+    const clock_text = std.fmt.bufPrint(&clock_buffer, "{d}", .{op.logical_clock}) catch return;
+    var clock_params: [1]native_sdk.EffectDbValue = .{.{ .text = clock_text }};
+    statements[count] = .{ .sql = save_clock_sql, .params = &clock_params };
+    count += 1;
+
+    fx.dbExec(.{
+        .key = key_sync_apply,
+        .statements = statements[0..count],
+        .on_result = Effects.dbMsg(.sync_applied),
     });
 }
 

@@ -476,6 +476,7 @@ fn takePayment(model: *Model, fx: *Effects) void {
     model.payment_pending = true;
     model.payment_error = "";
     repos.takePayment(
+        model,
         fx,
         repos.key_payment,
         order.id,
@@ -574,8 +575,13 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
     switch (msg) {
         // ----------------------------------------------------------- the wire
 
-        .net => |event| net_bridge.onChannel(model, event),
-        .peer => |response| net_bridge.onResponse(model, response),
+        .net => |event| net_bridge.onChannel(model, fx, event),
+        .peer => |response| net_bridge.onResponse(model, fx, response),
+        .sync_applied => |result| {
+            // The cursor has already moved; a failed apply is a gap the
+            // operator can see, not a loop that retries forever.
+            if (result.outcome != .ok) model.sync_rejected += 1;
+        },
 
         // -------------------------------------------------------- session
 
@@ -1796,7 +1802,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             }
             model.advance_order_id = order_id;
             model.busy = true;
-            repos.setOrderStatus(fx, order_id, order.status, next, fx.wallMs());
+            repos.setOrderStatus(model, fx, order_id, order.status, next, fx.wallMs());
         },
 
         .pin_rehashed => |result| {
@@ -2349,7 +2355,7 @@ fn placeOrder(model: *Model, fx: *Effects) void {
         model.error_text = "Could not make the request key - try again";
         return;
     };
-    repos.saveOrder(fx, order, lines[0..count], request_key);
+    repos.saveOrder(model, fx, order, lines[0..count], request_key);
 }
 
 /// The request key: this device's token, a dash, and the attempt's id.
