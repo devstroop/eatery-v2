@@ -214,47 +214,138 @@ pub fn deviceRole(model: *const Model) protocol.DeviceRole {
 /// Pull every peer's ops above this device's cursor. The cursor is a
 /// vector, so one peer cannot hide another's history behind a clock
 /// that happens to be higher.
+///
+/// The poll is the fallback and the convergence path. The event stream
+/// makes the common case immediate, but it never replaces this: a
+/// dropped stream costs one poll interval, not an op.
 pub fn poll(model: *Model, fx: *Effects) void {
-    for (model.peers[0..model.peer_count], 0..) |peer, index| {
-        if (peer.host_len == 0 or peer.tcp == 0) continue;
-        var url_buffer: [client.max_url_bytes]u8 = undefined;
-        const url = client.formatOps(
-            &url_buffer,
+    for (model.peers[0..model.peer_count], 0..) |*peer, index| {
+        pollPeer(model, fx, peer, index, false);
+    }
+    openEventStreams(model, fx);
+}
+
+fn pollPeer(
+    model: *Model,
+    fx: *Effects,
+    peer: *model_mod.Peer,
+    index: usize,
+    from_event: bool,
+) void {
+    if (peer.host_len == 0 or peer.tcp == 0) return;
+
+    // One pull per peer at a time. The fetch key is fixed, so a second
+    // pull would be rejected; an event that arrives during the pull is
+    // remembered and the answer schedules one more pull instead.
+    if (peer.sync_key != 0) {
+        if (from_event) peer.sync_pending = true;
+        return;
+    }
+
+    var url_buffer: [client.max_url_bytes]u8 = undefined;
+    const url = client.formatOps(
+        &url_buffer,
+        peer.address(),
+        peer.tcp,
+        &model.sync_cursor,
+    ) catch return;
+    peer.sync_key = sync_fetch_key_base + index;
+    fx.fetch(.{
+        .key = peer.sync_key,
+        .url = url,
+        .timeout_ms = 2_000,
+        .on_response = Effects.responseMsg(.peer),
+    });
+
+    // Only the owner publishes reference data, and only the other apps
+    // need it. The admin keeps its own menu; a peer asks the admin for
+    // what it is missing.
+    if (model_mod.app_kind != .admin and peer.role == .admin) {
+        var reference_buffer: [client.max_url_bytes]u8 = undefined;
+        const reference_url = client.formatReference(
+            &reference_buffer,
             peer.address(),
             peer.tcp,
-            &model.sync_cursor,
-        ) catch continue;
+            model.reference_version,
+        ) catch return;
         fx.fetch(.{
-            .key = sync_fetch_key_base + index,
-            .url = url,
-            .timeout_ms = 2_000,
-            .on_response = Effects.responseMsg(.peer),
+            .key = reference_fetch_key_base + index,
+            .url = reference_url,
+            .timeout_ms = 5_000,
+            .on_response = Effects.responseMsg(.reference),
         });
-
-        // Only the owner publishes reference data, and only the other
-        // apps need it. The admin keeps its own menu; a peer asks the
-        // admin for what it is missing.
-        if (model_mod.app_kind != .admin and peer.role == .admin) {
-            var reference_buffer: [client.max_url_bytes]u8 = undefined;
-            const reference_url = client.formatReference(
-                &reference_buffer,
-                peer.address(),
-                peer.tcp,
-                model.reference_version,
-            ) catch continue;
-            fx.fetch(.{
-                .key = reference_fetch_key_base + index,
-                .url = reference_url,
-                .timeout_ms = 5_000,
-                .on_response = Effects.responseMsg(.reference),
-            });
-        }
     }
+}
+
+/// Open one held-open event stream per peer that does not have one.
+///
+/// The key is allocated once and stored on the peer, so the line and the
+/// terminal can name the stream without trusting the peer's position in
+/// the list. A stream ends on its timeout (or a dropped connection); the
+/// next poll opens a fresh one.
+fn openEventStreams(model: *Model, fx: *Effects) void {
+    for (model.peers[0..model.peer_count]) |*peer| {
+        if (peer.host_len == 0 or peer.tcp == 0) continue;
+        if (peer.event_key != 0) continue;
+
+        var url_buffer: [client.max_url_bytes]u8 = undefined;
+        const url = client.formatEvents(&url_buffer, peer.address(), peer.tcp) catch continue;
+
+        if (model.event_key_next == 0) model.event_key_next = event_fetch_key_base;
+        const key = model.event_key_next;
+        model.event_key_next +%= 1;
+        peer.event_key = key;
+
+        fx.fetch(.{
+            .key = key,
+            .url = url,
+            .timeout_ms = event_stream_timeout_ms,
+            .response = .stream,
+            .on_line = Effects.lineMsg(.net_event),
+            .on_response = Effects.responseMsg(.event_done),
+        });
+    }
+}
+
+/// A line from a peer's event stream. It says the op log moved; it does
+/// not carry the op. Pull the peer now, through the same cursor path the
+/// timer uses, so a missed line is only a delay.
+pub fn onEventLine(model: *Model, fx: *Effects, line: native_sdk.EffectLine) void {
+    model.net_events +%= 1;
+    for (model.peers[0..model.peer_count], 0..) |*peer, index| {
+        if (peer.event_key != line.key) continue;
+        pollPeer(model, fx, peer, index, true);
+        return;
+    }
+}
+
+/// A peer's event stream ended. Clear the key so the next poll reopens
+/// it; a failed stream is covered by that same poll, not by a retry loop.
+pub fn onEventDone(model: *Model, response: native_sdk.EffectResponse) void {
+    if (model.findPeerByEventKey(response.key)) |peer| peer.event_key = 0;
+
+    // A timeout is this app's own recycle point, and a clean 200 is the
+    // server saying goodbye; neither is a failure. Everything else is
+    // counted so the fallback's work is visible.
+    const planned = response.outcome == .timed_out or response.outcome == .cancelled;
+    const clean = response.outcome == .ok and response.status == 200;
+    if (!planned and !clean) model.net_stream_drops +%= 1;
+}
+
+/// Tell every held-open stream that the op log moved. Called after a
+/// local op commits; the net thread writes the line.
+pub fn notify() void {
+    shared.server_state.notify();
 }
 
 /// The fetch keys sit above the database keys and below the channel.
 pub const sync_fetch_key_base: u64 = 9200;
 pub const reference_fetch_key_base: u64 = 9300;
+pub const event_fetch_key_base: u64 = 9400;
+
+/// How long one event stream is allowed to live. The terminal recycles
+/// it; the poll is the fallback while it is down.
+pub const event_stream_timeout_ms: u32 = 60_000;
 
 fn post(context: *anyopaque, bytes: []const u8) bool {
     _ = context;
@@ -300,18 +391,37 @@ pub fn onChannel(model: *Model, fx: *Effects, event: native_sdk.EffectChannelEve
 /// so the seam is visible, and an ops body is decoded and applied one
 /// op at a time.
 pub fn onResponse(model: *Model, fx: *Effects, response: native_sdk.EffectResponse) void {
+    // The pull this answer belongs to is finished. An event that
+    // arrived while it was in flight is waiting for exactly this
+    // moment: the cursor is now as far as this answer can take it, so
+    // one more pull sees anything the answer missed.
+    const pending = model.findPeerBySyncKey(response.key);
+    if (pending) |peer| peer.sync_key = 0;
+
     model.peer_outcome = @tagName(response.outcome);
     model.peer_status = response.status;
     const len = @min(response.body.len, model.peer_body_buf.len);
     @memcpy(model.peer_body_buf[0..len], response.body[0..len]);
     model.peer_body_len = len;
 
-    if (response.outcome != .ok or response.status != 200) return;
     // The hello card and the POST acknowledgement are JSON objects,
     // not ops. Only a body that carries op records is applied.
-    if (std.mem.indexOf(u8, response.body, "\"entity_table\"") == null) return;
+    if (response.outcome == .ok and response.status == 200 and
+        std.mem.indexOf(u8, response.body, "\"entity_table\"") != null)
+    {
+        _ = applyOpLines(model, fx, response.body);
+    }
 
-    _ = applyOpLines(model, fx, response.body);
+    if (pending) |peer| {
+        if (peer.sync_pending) {
+            peer.sync_pending = false;
+            for (model.peers[0..model.peer_count], 0..) |*candidate, index| {
+                if (candidate != peer) continue;
+                pollPeer(model, fx, candidate, index, true);
+                break;
+            }
+        }
+    }
 }
 
 /// Decode and apply every op in an NDJSON body. One op at a time, with

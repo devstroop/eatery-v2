@@ -1,7 +1,6 @@
 # Phase 9 — Three apps over TCP/IP
 
-> **Status:** In progress. Slices 9.1–9.5 and 9.8 are merged; the
-> per-employee salt (9.0), the push stream (9.6), late-join
+> **Status:** In progress. Slices 9.0–9.6 and 9.8 are merged; late-join
 > bootstrap/compaction (9.7) and packaging (9.9) remain.
 > **Decision:** [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md)
 > (Accepted 2026-10-24); the design is
@@ -65,10 +64,13 @@ the mDNS, the WebSocket and the host election.
 | Apply | No path that applies an incoming op |
 | Discovery | No beacon, no peer list, no manual address |
 | Reference data | No push, no version |
-| Push | No event stream |
 | Bootstrap | No snapshot, no replay |
 | Security | No peer authentication |
 | Tests | No two-device test of any kind |
+
+The push stream (9.6) is done: `/v1/events` is held open, and the
+five-second poll remains the fallback. The rows above are the remaining
+gaps.
 
 ## The slices
 
@@ -261,10 +263,12 @@ beats a fabricated one.
 
 Two limits are deliberate and written down rather than papered over:
 
-- **One connection at a time.** The listener reads a request, waits for
-  the answer, writes it and closes before accepting the next. That is
-  enough for three devices exchanging short requests; `/v1/events` (9.6)
-  holds a connection open, and that needs a thread per connection.
+- **Short requests are one at a time; event streams are not.** The
+  listener reads a short request, waits for the answer, writes it and
+  closes before accepting the next. `/v1/events` is the exception: it is
+  held open on its own thread (9.6), so the listener keeps accepting
+  while the stream is up. The event thread only writes bytes; it never
+  touches the model or the database.
 - **The device id is the installation token**, stable for the life of the
   process and not across restarts. 9.3 replaces it with the `device` row.
 
@@ -316,14 +320,39 @@ received when the admin app is away.
 **Done when:** a catalogue edit in the admin app reaches the service and
 kiosk apps, and a peer that misses it gets it on reconnect.
 
-### 9.6 — Push (3 days)
+### 9.6 — Push (3 days) — **DONE**
 
-`GET /v1/events`, held open by the server, read by the client with
+`GET /v1/events` is held open by the server, read by the client with
 `fx.fetch` in `.stream` mode. The kitchen board updates when the order
 is placed, not on the next poll.
 
+**As built.** A `Shared.event_seq` counter is the only state the stream
+carries. A thread per connection watches it every 20ms and writes
+`{"seq":N}\n` in a chunked NDJSON response, plus a 15s heartbeat. The
+line is a notification, not an op: the receiver pulls `/v1/ops` from
+the cursor it holds, so a missed line costs latency, not correctness.
+The client keeps one stream per peer (`event_key`), and a line triggers
+an immediate pull. If a pull is already in flight, `sync_pending` makes
+the answer schedule exactly one follow-up; a stream that ends or times
+out clears its key and the five-second poll reopens it. A successful
+local order, payment or status write calls `notify()`, and so does a
+successful remote `sync_applied`, which also reloads the board.
+
+**Evidence.** The real-socket test holds `/v1/events` open while a
+normal `/v1/hello` request is served, and measures the wake from
+`notify()` to the next chunk at **21ms** in the local run (the test
+asserts under 250ms). The admin suite drives the client with the fake
+executor: opening the stream, a line pulling the peer's ops, the
+pending-pull race, a failed stream counting and reopening, and a clean
+close not counting. The real SDK `.stream` fetch test reads the chunked
+NDJSON from a live `ros-core` server, so the wire and the line message
+are proven together. `scripts/verify-all.sh` is green: admin 143/143,
+kiosk 7/7, net-spike 13/13, service 8/8, ros-core 37/37.
+
 **Done when:** an order placed on the service app appears on the kiosk
-app's board without a poll tick in between.
+app's board without a poll tick in between. The event path is the
+normal path; the five-second poll remains the fallback and the
+convergence guarantee.
 
 ### 9.7 — Bootstrap, compaction and the three-device proof (6 days)
 

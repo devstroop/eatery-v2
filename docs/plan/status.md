@@ -5,7 +5,8 @@
 > service and kiosk mount their role's subsets of the same core.
 > **Last verified:** 2026-10-24, by source review and the split suites.
 > `scripts/verify-all.sh` is green for ros-core, admin, kiosk, net-spike
-> and service; the admin suite is 138/138 and the service suite 8/8.
+> and service; the suites are admin 143/143, kiosk 7/7, net-spike 13/13,
+> service 8/8 and ros-core 37/37.
 > `native build` produces ReleaseFast binaries.
 > The money and back-office tracks are merged. The three apps share
 > `packages/ros-core`; the session and setup screens are copied into
@@ -29,7 +30,7 @@
 | Read queries | 16 named constants | `packages/ros-core/src/data/repos.zig` (one named constant each, and one place that says the app is loading) |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, employee PIN, employee removal, customer, category, tax slab, discount, modifier group, dish station, stock count, payment, op log, reference version | `repos.zig` |
 | Effect keys | 62, each used once | `packages/ros-core/src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | admin 138/138, service 8/8; every target green | `apps/*/src/tests*.zig`, `scripts/verify-all.sh` |
+| Headless tests | admin 143/143, kiosk 7/7, net-spike 13/13, service 8/8, ros-core 37/37; every target green | `apps/*/src/tests*.zig`, `packages/*`, `scripts/verify-all.sh` |
 | Database integration tests | 95, green | `apps/admin/src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
@@ -58,10 +59,11 @@
 | Payments | Partial | Cash/card/UPI mode, confirmation and one payment write; a payment is taken once, and an order can still be closed without one |
 | Reports / compliance | Partial | The owner's read of the day exists: the takings, the orders, the tax, the discounts, and the way the money was paid. The X report, the Z report and the day close are the reports track's |
 | Printing | Scaffolded | Tables and README-only sidecar; no code |
-| Sync | Implemented core | Op log in the same transaction, per-device Lamport clock and vector cursor, beacon or manual peers, reference snapshot. The event stream (#110), late join/compaction (#111) and order identity across devices (#87) remain |
+| Sync | Implemented core | Op log in the same transaction, per-device Lamport clock and vector cursor, beacon or manual peers, reference snapshot. The push stream (#110) is implemented: a held-open `/v1/events` line wakes the peer's pull, with the five-second poll as the fallback. Late join/compaction (#111) and order identity across devices (#87) remain |
+| Push / events | Implemented | `/v1/events` held open, chunked NDJSON, one thread per stream, 20ms wake, 15s heartbeat; one stream per peer, line-triggered pull, pending-pull follow-up, terminal reopen; 5s poll fallback |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | The split suites are green via `scripts/verify-all.sh` (admin 138/138, service 8/8); no sale smoke through the UI (#42) |
+| Testing | Partial | The split suites are green via `scripts/verify-all.sh` (admin 143/143, kiosk 7/7, net-spike 13/13, service 8/8, ros-core 37/37); no sale smoke through the UI (#42) |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -79,6 +81,9 @@
    and the installation salt; the operator signs in with the PIN they
    chose. The service and kiosk copy the menu and the people from the
    admin's reference document.
+8. An order placed on the service app reaches the kiosk board on the
+   event line, without waiting for the five-second poll; the poll is
+   still the fallback when the stream is down.
 
 The POS order write is committed and read back by the integration test
 (`placing an order writes one op row and a durable clock`); the earlier
@@ -260,6 +265,12 @@ the suites themselves, and `scripts/verify-all.sh` runs all of them.
 | A failure belongs to the screen that asked, not to the pane | Shell |
 | Every session screen renders, inside the widget budget | Markup |
 | A fresh installation shows the walk-through, not the quick setup | Setup |
+| The event stream stays open, and a normal request still gets through | Wire |
+| A peer's event stream opens, and a line pulls its ops | Wire |
+| An event during a pull schedules one more pull | Wire |
+| A failed event stream is counted, and the poll reopens it | Wire |
+| The SDK's real stream fetch reads the held-open NDJSON server | Wire |
+| An applied op reloads the board without an explicit query | Sync |
 
 Not covered: every decoder except the generic page reader and the
 company decoder, timer, error arms, the sidecars, and a sale through the

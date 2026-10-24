@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const outbox_mod = @import("outbox.zig");
+const protocol = @import("protocol.zig");
 
 pub const Outbox = outbox_mod.Outbox;
 pub const max_frame_bytes = outbox_mod.max_frame_bytes;
@@ -25,6 +26,28 @@ pub const max_request_bytes = 16 * 1024;
 /// How long the thread waits for the app to answer before giving up on a
 /// connection.
 pub const answer_timeout_ms: u32 = 5_000;
+
+/// How many event streams one server will hold open at once. Three apps
+/// need at most a handful; the cap keeps a peer that reconnects in a
+/// loop from growing threads without bound.
+pub const max_event_streams: u32 = 8;
+
+/// How often the event thread looks at the shared sequence, and how
+/// often it says something on an otherwise quiet stream. The heartbeat
+/// is also how a dead client is noticed: a write to a closed socket
+/// fails, and the thread exits.
+const event_poll_ms: u32 = 20;
+const event_heartbeat_ms: u32 = 15_000;
+
+/// The response head for a held-open NDJSON stream. Chunked framing is
+/// what lets the body stay open without a `Content-Length`; the SDK's
+/// fetch already understands it.
+const event_stream_head =
+    "HTTP/1.1 200 OK\r\n" ++
+    "Content-Type: application/x-ndjson\r\n" ++
+    "Transfer-Encoding: chunked\r\n" ++
+    "Cache-Control: no-cache\r\n" ++
+    "Connection: keep-alive\r\n\r\n";
 
 pub const Method = enum {
     get,
@@ -185,15 +208,26 @@ pub const Shared = struct {
     app_ready: std.atomic.Value(bool) = .init(false),
     /// Connections accepted, for the record.
     accepted: std.atomic.Value(u32) = .init(0),
+    /// The op log moved. The event threads watch this counter and write
+    /// a line when it changes; they do not carry state themselves.
+    event_seq: std.atomic.Value(u64) = .init(0),
+    /// The event threads currently holding a socket open.
+    event_streams: std.atomic.Value(u32) = .init(0),
+
+    /// Wake every held-open event stream. This is a notification, not
+    /// the op: a missed line costs the receiver one poll, never an op.
+    pub fn notify(self: *Shared) void {
+        _ = self.event_seq.fetchAdd(1, .release);
+    }
 };
 
 /// Run the listener until `Shared.stop` is set.
 ///
-/// Connections are handled **one at a time**: the thread reads a request,
+/// Short requests are handled one at a time: the thread reads a request,
 /// waits for the answer, writes it and closes before accepting the next.
-/// That is enough for three devices exchanging short requests, and it is
-/// the honest limit of this slice. A long-lived `/v1/events` stream needs
-/// a connection per thread, which is 9.6's problem.
+/// `GET /v1/events` is the exception: it is held open, so it gets its own
+/// thread and the listener keeps accepting. That is the whole reason the
+/// event stream is a separate path rather than another answer.
 pub fn run(io: std.Io, config: Config, shared: *Shared) void {
     var address = std.Io.net.IpAddress.parseIp4(config.bind_host, config.port) catch {
         if (config.verbose) std.debug.print("net: {s} did not parse\n", .{config.bind_host});
@@ -240,14 +274,40 @@ pub fn run(io: std.Io, config: Config, shared: *Shared) void {
             std.Io.sleep(io, std.Io.Duration.fromMilliseconds(5), .awake) catch break;
             continue;
         };
-        defer stream.close(io);
-        if (shared.stop.load(.acquire)) break;
+        if (shared.stop.load(.acquire)) {
+            stream.close(io);
+            break;
+        }
+
+        // The event thread takes ownership of the socket on the one
+        // branch that hands it over; every other branch closes it here.
+        var close_stream = true;
+        defer {
+            if (close_stream) stream.close(io);
+        }
 
         conn +%= 1;
         shared.outbox.clear(conn);
         _ = shared.accepted.fetchAdd(1, .monotonic);
 
         const bytes = readRequest(io, &stream, &request) orelse continue;
+
+        const split = splitBody(bytes);
+        const parsed = Request.parse(split.head) orelse continue;
+        if (parsed.method == .get and std.mem.eql(u8, parsed.path, protocol.endpoints.events)) {
+            if (shared.event_streams.load(.acquire) >= max_event_streams) {
+                refuseEventStream(io, &stream);
+                continue;
+            }
+            _ = shared.event_streams.fetchAdd(1, .acq_rel);
+            const thread = std.Thread.spawn(.{}, streamEvents, .{ io, stream, shared }) catch {
+                _ = shared.event_streams.fetchSub(1, .acq_rel);
+                continue;
+            };
+            _ = thread; // the thread closes the socket and decrements the count
+            close_stream = false;
+            continue;
+        }
 
         const message = Control.formatRequest(&posted, conn, bytes) catch continue;
         if (!config.poster.post(config.poster.context, message)) {
@@ -277,6 +337,83 @@ pub fn run(io: std.Io, config: Config, shared: *Shared) void {
             if (config.verbose) std.debug.print("net: no answer within the timeout\n", .{});
         }
     }
+}
+
+/// Hold one `/v1/events` connection open and write a line whenever the
+/// shared sequence moves.
+///
+/// The line is deliberately just a notification: `{"seq":N}` says the op
+/// log moved, not what it now contains. The receiver pulls the ops from
+/// the cursor it holds, so a line that never arrives costs latency and
+/// never correctness. Coalescing follows from that: if ten ops land
+/// before this thread wakes, it writes the newest sequence once.
+fn streamEvents(io: std.Io, stream: std.Io.net.Stream, shared: *Shared) void {
+    defer _ = shared.event_streams.fetchSub(1, .acq_rel);
+    defer stream.close(io);
+
+    var write_buffer: [4096]u8 = undefined;
+    var writer = stream.writer(io, &write_buffer);
+    writer.interface.writeAll(event_stream_head) catch return;
+    writer.interface.flush() catch return;
+
+    // The first line makes a connection that arrives after an op useful:
+    // the receiver polls immediately instead of waiting for the next
+    // change.
+    var last = shared.event_seq.load(.acquire);
+    writeEventChunk(&writer, last) catch return;
+
+    var idle_ms: u32 = 0;
+    while (!shared.stop.load(.acquire)) {
+        const seq = shared.event_seq.load(.acquire);
+        if (seq != last) {
+            writeEventChunk(&writer, seq) catch return;
+            last = seq;
+            idle_ms = 0;
+        } else {
+            idle_ms += event_poll_ms;
+            if (idle_ms >= event_heartbeat_ms) {
+                writeChunk(&writer, "{\"heartbeat\":true}\n") catch return;
+                idle_ms = 0;
+            }
+        }
+        std.Io.sleep(io, std.Io.Duration.fromMilliseconds(event_poll_ms), .awake) catch return;
+    }
+
+    // A chunked body ends with a zero-length chunk. The client sees a
+    // normal close and the poll path takes over immediately.
+    writer.interface.writeAll("0\r\n\r\n") catch {};
+    writer.interface.flush() catch {};
+}
+
+fn writeEventChunk(writer: anytype, seq: u64) !void {
+    var line_buffer: [64]u8 = undefined;
+    const line = try protocol.formatEvent(&line_buffer, seq);
+    try writeChunk(writer, line);
+}
+
+fn writeChunk(writer: anytype, line: []const u8) !void {
+    var size_buffer: [24]u8 = undefined;
+    const size = try std.fmt.bufPrint(&size_buffer, "{x}\r\n", .{line.len});
+    try writer.interface.writeAll(size);
+    try writer.interface.writeAll(line);
+    try writer.interface.writeAll("\r\n");
+    try writer.interface.flush();
+}
+
+fn refuseEventStream(io: std.Io, stream: *std.Io.net.Stream) void {
+    var response_buffer: [512]u8 = undefined;
+    const body = "{\"error\":\"too many event streams\"}\n";
+    const text = formatResponse(
+        &response_buffer,
+        503,
+        "Service Unavailable",
+        "application/json",
+        body,
+    ) catch return;
+    var write_buffer: [1024]u8 = undefined;
+    var writer = stream.writer(io, &write_buffer);
+    writer.interface.writeAll(text) catch return;
+    writer.interface.flush() catch {};
 }
 
 /// Read a request: the head, plus the body `Content-Length` announces.
@@ -336,9 +473,19 @@ pub fn wake(io: std.Io, port: u16) void {
 }
 
 /// Ask the thread to stop, and make its blocking `accept` return.
+///
+/// Event streams are detached because they outlive the request loop, so
+/// this waits for them to notice the flag and close. The wait is bounded:
+/// a client that has stopped reading must not keep the app from quitting.
 pub fn stop(io: std.Io, shared: *Shared) void {
     shared.stop.store(true, .release);
     wake(io, shared.port.load(.acquire));
+
+    var waited_ms: u32 = 0;
+    while (shared.event_streams.load(.acquire) != 0 and waited_ms < 1_000) {
+        std.Io.sleep(io, std.Io.Duration.fromMilliseconds(2), .awake) catch break;
+        waited_ms += 2;
+    }
 }
 
 // ------------------------------------------------------------------ tests
@@ -467,6 +614,46 @@ fn httpRequest(io: std.Io, port: u16, method: []const u8, target: []const u8, bo
     return out[0..total];
 }
 
+fn readEventHeaders(reader: *std.Io.Reader) !void {
+    while (true) {
+        const line = try reader.takeDelimiterExclusive('\n');
+        reader.toss(1);
+        if (std.mem.trimEnd(u8, line, "\r").len == 0) return;
+    }
+}
+
+/// Read one chunked-body chunk. A zero-length chunk is the terminal and
+/// returns an empty slice.
+fn readEventChunk(reader: *std.Io.Reader, out: []u8) ![]const u8 {
+    const size_line = try reader.takeDelimiterExclusive('\n');
+    reader.toss(1);
+    const size = try std.fmt.parseInt(usize, std.mem.trimEnd(u8, size_line, "\r"), 16);
+    if (size == 0) return out[0..0];
+    if (size > out.len) return error.ChunkTooLarge;
+
+    var total: usize = 0;
+    while (total < size) {
+        const read = try reader.readSliceShort(out[total..size]);
+        if (read == 0) return error.EndOfStream;
+        total += read;
+    }
+
+    // The chunk's trailing CRLF.
+    _ = try reader.takeDelimiterExclusive('\n');
+    reader.toss(1);
+    return out[0..size];
+}
+
+fn eventSeq(line: []const u8) ?u64 {
+    const key = "\"seq\":";
+    const at = std.mem.indexOf(u8, line, key) orelse return null;
+    const start = at + key.len;
+    var end = start;
+    while (end < line.len and std.ascii.isDigit(line[end])) : (end += 1) {}
+    if (end == start) return null;
+    return std.fmt.parseInt(u64, line[start..end], 10) catch null;
+}
+
 test "a real socket: a request goes in and an answer comes out" {
     const io = std.testing.io;
     var shared: Shared = .{};
@@ -517,4 +704,60 @@ test "two instances exchange an op over a real socket" {
     const pulled = try httpRequest(io, a_shared.port.load(.acquire), "GET", "/v1/ops?since=", "", &response);
     try std.testing.expect(std.mem.indexOf(u8, pulled, "\"id\":\"dev-a:10:1\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, pulled, "\"logical_clock\":10") != null);
+}
+
+test "the event stream is held open, and a normal request still gets through" {
+    const io = std.testing.io;
+    var shared: Shared = .{};
+    var peer: TestPeer = undefined;
+    const thread = try startPeer(io, &shared, &peer, "");
+    defer {
+        stop(io, &shared);
+        thread.join();
+    }
+
+    const port = shared.port.load(.acquire);
+    var address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", port);
+    const stream = try std.Io.net.IpAddress.connect(&address, io, .{
+        .mode = .stream,
+        .protocol = .tcp,
+    });
+    defer stream.close(io);
+
+    var write_buffer: [1024]u8 = undefined;
+    var writer = stream.writer(io, &write_buffer);
+    try writer.interface.writeAll("GET /v1/events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+    try writer.interface.flush();
+
+    var read_buffer: [4096]u8 = undefined;
+    var reader = stream.reader(io, &read_buffer);
+    try readEventHeaders(&reader.interface);
+
+    var line_buffer: [256]u8 = undefined;
+    const first = try readEventChunk(&reader.interface, &line_buffer);
+    const first_seq = eventSeq(first) orelse return error.MissingSequence;
+
+    // The listener is still accepting while the stream is open. This is
+    // the property the single-connection loop could not offer.
+    var response: [2048]u8 = undefined;
+    const hello = try httpRequest(io, port, "GET", "/v1/hello", "", &response);
+    try std.testing.expect(std.mem.indexOf(u8, hello, "200 OK") != null);
+    try std.testing.expectEqual(@as(u32, 1), peer.requests);
+
+    // The app says the op log moved; the held-open stream writes the
+    // new sequence without a request from the client. The event thread
+    // looks every 20ms; the bound below leaves room for scheduling but
+    // still proves the wake is not waiting for a five-second poll.
+    const wake_start = std.Io.Clock.awake.now(io);
+    shared.notify();
+    const second = try readEventChunk(&reader.interface, &line_buffer);
+    const wake_elapsed = wake_start.durationTo(std.Io.Clock.awake.now(io));
+    try std.testing.expect(wake_elapsed.toMilliseconds() < 250);
+    const second_seq = eventSeq(second) orelse return error.MissingSequence;
+    try std.testing.expect(second_seq > first_seq);
+
+    // The event request was not posted to the app; it is the stream
+    // path, not an answer.
+    try std.testing.expectEqual(@as(u32, 1), peer.requests);
+    try std.testing.expectEqual(@as(u32, 1), shared.event_streams.load(.acquire));
 }

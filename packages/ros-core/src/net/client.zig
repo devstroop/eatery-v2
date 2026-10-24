@@ -54,6 +54,19 @@ pub fn formatReference(buffer: []u8, host: []const u8, port: u16, after: u64) ![
     );
 }
 
+/// `http://<host>:<port>/v1/events`
+///
+/// The fetch is a `.stream`: the response is held open and each line is
+/// delivered as it arrives. It carries no cursor, because it carries no
+/// state.
+pub fn formatEvents(buffer: []u8, host: []const u8, port: u16) ![]const u8 {
+    return std.fmt.bufPrint(
+        buffer,
+        "http://{s}:{d}{s}",
+        .{ host, port, protocol.endpoints.events },
+    );
+}
+
 /// Parse an NDJSON body into operations. A blank line is skipped, and a
 /// malformed line is an error: a peer that sends half a record must be
 /// told, not half-applied.
@@ -87,6 +100,10 @@ test "the URLs name the endpoint and carry the whole vector cursor" {
     try std.testing.expectEqualStrings(
         "http://10.0.0.4:45871/v1/ops?since=dev-1:1042,dev-3:87",
         try formatOps(&buffer, "10.0.0.4", 45871, &cursor),
+    );
+    try std.testing.expectEqualStrings(
+        "http://10.0.0.4:45871/v1/events",
+        try formatEvents(&buffer, "10.0.0.4", 45871),
     );
 }
 

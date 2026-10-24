@@ -407,6 +407,11 @@ pub const Msg = union(enum) {
     net: native_sdk.EffectChannelEvent,
     /// A peer's answer to a fetch this app made.
     peer: native_sdk.EffectResponse,
+    /// One line from a peer's held-open event stream. The line is a
+    /// notification, not state: it means "pull now".
+    net_event: native_sdk.EffectLine,
+    /// A peer's event stream ended. The poll path reopens it.
+    event_done: native_sdk.EffectResponse,
     /// A peer's op was applied to the database.
     sync_applied: native_sdk.EffectDbResult,
     /// A peer's reference snapshot.
@@ -491,6 +496,8 @@ pub const Msg = union(enum) {
     pub const view_unbound = .{
         "net",
         "peer",
+        "net_event",
+        "event_done",
         "sync_applied",
         "reference",
         "reference_bumped",

@@ -71,6 +71,13 @@ pub const Hello = struct {
     }
 };
 
+/// One event-stream notification: the op log moved to `seq`. The line
+/// is a hint, not state - the receiver pulls the ops from the cursor it
+/// holds - so a lost line costs latency, never an op.
+pub fn formatEvent(buffer: []u8, seq: u64) ![]const u8 {
+    return std.fmt.bufPrint(buffer, "{{\"seq\":{d}}}\n", .{seq});
+}
+
 /// Write the hello card as one JSON line.
 pub fn encodeHello(writer: *std.Io.Writer, hello: Hello) !void {
     try std.json.Stringify.value(.{
@@ -162,6 +169,11 @@ test "the hello card round-trips, and the beacon and the endpoint agree" {
     try std.testing.expectEqualStrings("192.168.1.42", decoded.host);
     try std.testing.expectEqual(@as(u16, 45892), decoded.tcp);
     try std.testing.expect(decoded.compatible());
+}
+
+test "an event line names the sequence and ends with a newline" {
+    var buffer: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("{\"seq\":42}\n", try formatEvent(&buffer, 42));
 }
 
 test "a hello card from another protocol version is not compatible" {
