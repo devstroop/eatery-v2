@@ -62,7 +62,7 @@ accounting date (#77); the status page and the suites are the evidence.
 |---|---|---|---|---|
 | [0](phase-0-toolchain.md) | Toolchain & skeleton | 2 d | Partial | No (scripts and CI exist; no clean-machine proof) |
 | [1](phase-1-foundation.md) | Model, navigation, theme, shell | 4 d | Partial | No (the shell is there; no responsive layout mode) |
-| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (94 database tests exist; the read paths are not all written) |
+| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (95 database tests exist; the read paths are not all written) |
 | [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (the order writes, reads back, taxes and discounts; no modifiers) |
 | [4](phase-4-kds-display-waiter.md) | KDS, display, waiter | 6 d | Partial | No (all three render, the waiter joins a table's order and can take a payment; the boards still poll) |
 | [5](phase-5-admin-surfaces.md) | Admin surfaces | 10 d | Partial | No (the settings, catalogue, people, payments and the owner's report exist; the X/Z reports and day close do not) |
