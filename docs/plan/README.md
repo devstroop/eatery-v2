@@ -50,11 +50,11 @@ Full matrix: [`status.md`](status.md).
 | **M3 — Fabric** | 7, 9 | Three apps converge; receipts and KOTs print |
 | **M4 — Release** | 8 | Signed package, migrated data, CI sale smoke |
 
-M1 is the only milestone that can be demoed to a restaurant. Do not start
-M3 before M1 is honest. The role check (B-002) and the salt race (B-003)
-were closed on 2026-10-21; what still blocks M1 is the money: tax,
-discount and payment are not implemented (B-014), the order identifier
-scheme collides (B-006), and the setup gaps remain (G-001).
+M1 is the only milestone that can be demoed to a restaurant. Its role
+check, salt race, tax, discount, payment, order identity and setup gaps
+are closed. What remains in the money track is the tender enum and "on
+account" (#86), charge lines (#79), the day close (#78) and the
+accounting date (#77); the status page and the suites are the evidence.
 
 ## Phase board
 
@@ -62,14 +62,14 @@ scheme collides (B-006), and the setup gaps remain (G-001).
 |---|---|---|---|---|
 | [0](phase-0-toolchain.md) | Toolchain & skeleton | 2 d | Partial | No (scripts and CI exist; no clean-machine proof) |
 | [1](phase-1-foundation.md) | Model, navigation, theme, shell | 4 d | Partial | No (the shell is there; no responsive layout mode) |
-| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (47 in-memory database tests exist; the read paths are not all written) |
-| [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (the order writes and reads back; no modifiers, no tax, no discount) |
-| [4](phase-4-kds-display-waiter.md) | KDS, display, waiter | 6 d | Partial | No (all three render and the waiter joins a table's order; the waiter cannot pay) |
-| [5](phase-5-admin-surfaces.md) | Admin surfaces | 10 d | Partial | No (the settings screens, the catalogue and the people forms exist; reports do not) |
+| [2](phase-2-schema-and-repositories.md) | Schema & repositories | 8 d | Partial | No (94 database tests exist; the read paths are not all written) |
+| [3](phase-3-pos-slice.md) | POS vertical slice | 7 d | Partial | No (the order writes, reads back, taxes and discounts; no modifiers) |
+| [4](phase-4-kds-display-waiter.md) | KDS, display, waiter | 6 d | Partial | No (all three render, the waiter joins a table's order and can take a payment; the boards still poll) |
+| [5](phase-5-admin-surfaces.md) | Admin surfaces | 10 d | Partial | No (the settings, catalogue, people, payments and the owner's report exist; the X/Z reports and day close do not) |
 | [6](phase-6-sync-sidecar.md) | Sync sidecar | 10 d | Superseded by phase 9 | No |
 | [7](phase-7-printing-hardware.md) | Printing & hardware | 8 d | Scaffolded | No |
 | [8](phase-8-packaging-cutover.md) | Packaging & cutover | 5 d | Planned | No |
-| [9](phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP | 42 d | Partial (9.1 done, the shells exist; the fabric does not) | No |
+| [9](phase-9-three-apps-and-ipc.md) | Three apps over TCP/IP | 42 d | In progress (9.1–9.5 and 9.8 done: split, wire, op log, discovery, reference and shells; 9.0's per-employee salt, 9.6 push, 9.7 bootstrap/compaction and 9.9 packaging remain) | No |
 
 Estimates are engineer-days for one developer familiar with Zig but new
 to the Native SDK, carried from the port plan. They do not include the

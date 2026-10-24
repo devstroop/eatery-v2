@@ -14,12 +14,12 @@ This project follows a lightweight MADR-style format.
 | [0001](0001-native-sdk-zig-rewrite.md) | Rewrite on the Native SDK in Zig | Accepted |
 | [0002](0002-pure-model-msg-update.md) | Pure Model / Msg / update core | Accepted |
 | [0003](0003-no-router-screen-enum-and-stack.md) | No router; screen enum and stack | Accepted |
-| [0004](0004-four-roles-one-binary.md) | Four roles in one binary | Accepted |
+| [0004](0004-four-roles-one-binary.md) | Four roles in one binary | Superseded by ADR-0017 |
 | [0005](0005-engine-owned-sqlite-strict-schema.md) | Engine-owned SQLite and a STRICT schema | Accepted |
 | [0006](0006-integer-money-epoch-ms.md) | Integer minor-unit money and epoch-ms time | Accepted |
 | [0007](0007-pin-hashing.md) | Salted SHA-256 PIN hashing | Superseded by ADR-0016 |
 | [0008](0008-sidecar-for-printing.md) | A sidecar owns printing and BLE | Proposed |
-| [0009](0009-oplog-sync-with-transport-sidecar.md) | Op-log sync with the transport in a sidecar | Proposed |
+| [0009](0009-oplog-sync-with-transport-sidecar.md) | Op-log sync with the transport in a sidecar | Revised by ADR-0017 |
 | [0010](0010-markup-only-no-custom-paint.md) | Markup only; no custom paint or Lottie | Accepted |
 | [0011](0011-desktop-first-defer-mobile.md) | Desktop first; defer mobile | Proposed |
 | [0012](0012-csv-first-interchange.md) | CSV first for import/export | Proposed |
@@ -27,12 +27,12 @@ This project follows a lightweight MADR-style format.
 | [0014](0014-order-identity.md) | The order identity: a sequence, an id and a request key | Accepted |
 | [0015](0015-session-scoped-navigation.md) | A session owns its state and its history | Accepted |
 | [0016](0016-what-a-pin-is.md) | What a PIN is in this app | Accepted, decision 3 superseded by ADR-0018 |
-| [0017](0017-three-apps-over-tcp-ip.md) | Three apps, one core, TCP/IP between them | Proposed |
+| [0017](0017-three-apps-over-tcp-ip.md) | Three apps, one core, TCP/IP between them | Accepted |
 | [0018](0018-the-pin-hash-is-the-employees.md) | The PIN hash is the employee's | Accepted |
 
-ADR-0017 proposes to supersede ADR-0004 and to revise ADR-0009. Both
-are still **Proposed**, so neither has been agreed in either version -
-a proposal to supersede is not a supersession.
+ADR-0017 was accepted on 2026-10-24. It supersedes ADR-0004 (four
+roles in one binary) and revises ADR-0009 (the op-log sidecar); the op
+log stays, and the apps carry the transport themselves.
 
 ## Drafts
 
@@ -46,6 +46,7 @@ canonical set. See [`drafts/README.md`](drafts/README.md).
 |---|---|
 | **Proposed** | Written down, not agreed. Code may not exist. Needs an owner. |
 | **Accepted** | Agreed and reflected in the code or the target design. |
+| **Revised** | Still in force, with named changes made by a later ADR. |
 | **Provisional** | In use, but known to be insufficient. Expected to be superseded. |
 | **Superseded** | Replaced by a later ADR; keep for history. |
 | **Rejected** | Considered and not chosen. |

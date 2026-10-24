@@ -1,12 +1,16 @@
 # ADR-0017: Three apps, one core, TCP/IP between them
 
-> **Status:** Proposed - needs an owner and a go/no-go
+> **Status:** Accepted - implemented 2026-10-24
 > **Date:** 2026-10-21
 > **Deciders:** Devstroop maintainers, product
 > **Related:** [`0004-four-roles-one-binary.md`](0004-four-roles-one-binary.md)
 > (superseded), [`0009-oplog-sync-with-transport-sidecar.md`](0009-oplog-sync-with-transport-sidecar.md)
 > (revised), [`architecture/12`](../architecture/12-three-apps-and-ipc.md),
 > [`plan/phase-9`](../plan/phase-9-three-apps-and-ipc.md)
+>
+> **Implementation:** The three apps, the TCP/IP wire, the op log,
+> peer discovery and reference data are merged. Late-join compaction,
+> the event stream and packaging remain open in phase 9.
 
 ## Context
 

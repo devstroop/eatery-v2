@@ -1,8 +1,11 @@
 # Phase 9 — Three apps over TCP/IP
 
-> **Status:** Planned. The decision is
-> [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md) (Proposed); the
-> design is [`architecture/12`](../architecture/12-three-apps-and-ipc.md).
+> **Status:** In progress. Slices 9.1–9.5 and 9.8 are merged; the
+> per-employee salt (9.0), the push stream (9.6), late-join
+> bootstrap/compaction (9.7) and packaging (9.9) remain.
+> **Decision:** [ADR-0017](../decisions/0017-three-apps-over-tcp-ip.md)
+> (Accepted 2026-10-24); the design is
+> [`architecture/12`](../architecture/12-three-apps-and-ipc.md).
 > **Estimate:** 42 engineer-days
 > **Depends on:** Phase 3 (the POS slice), Phase 5 (the admin
 > surfaces), ADR-0017 accepted, **and the PIN salt settled**

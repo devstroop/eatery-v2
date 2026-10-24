@@ -496,7 +496,7 @@ runs a service without a developer in the room.
 | Signing | A signed and notarised macOS build; a Windows signing story if Windows is in the release |
 | Migrations | A decision on v1 data: either a migration from a v1 database file, or an explicit "fresh install only" decision recorded in the release notes |
 | CI | A workflow that runs `native check`, `native test` and an automation smoke on every change |
-| Scripts | `scripts/setup.sh`, `scripts/env.sh`, `scripts/verify.sh`, `scripts/build.sh`, `scripts/dev.sh` — the five the README already advertises |
+| Scripts | `scripts/setup.sh`, `scripts/env.sh`, `scripts/verify-all.sh`, `scripts/build.sh`, `scripts/dev.sh`, plus `scripts/check-copies.sh` and `scripts/net-diag.sh` |
 | Documentation | The operator guide: install, first-run setup, daily use, backup |
 | Support | A `db_inspector` that can dump the schema and the data for a diagnosis, and a diagnostic log the app can export |
 
@@ -512,7 +512,7 @@ runs a service without a developer in the room.
 - [ ] A v1 database either migrates into Restaurant OS without loss of orders,
       payments or employees, or the release notes say plainly that Restaurant OS
       starts empty.
-- [ ] `scripts/verify.sh` runs `native check` and `native test` for every
+- [ ] `scripts/verify-all.sh` runs `native check` and `native test` for every
       app and exits non-zero on failure.
 - [ ] The v1 app and the Restaurant OS app have been run side by side through one
       service, and the orders agree.

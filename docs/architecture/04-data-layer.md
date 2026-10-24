@@ -86,11 +86,11 @@ into the model rather than borrowed from the page.
 Writes are `fx.dbExec` with one or more statements. The engine runs them
 atomically.
 
-> **As-built warning (2026-10-20):** the order insert described here omits
-> the required `orders.updated_at`, so it fails with a `NOT NULL`
-> constraint. The table/customer ids are also written as `0` rather than
-> `NULL`. See [B-001](../review/bugs.md#b-001--order-insert-omits-ordersupdated_at)
-> and [B-005](../review/bugs.md#b-005--order-foreign-keys-are-written-as-0).
+> **Fixed in the current tree:** the order insert writes
+> `orders.updated_at`, and missing table/customer ids are written as
+> `NULL`. The original defects are recorded as
+> [B-001](../review/archive/bugs.md#b-001--order-insert-omits-ordersupdated_at)
+> and [B-005](../review/archive/bugs.md#b-005--order-foreign-keys-are-written-as-0).
 
 ### Place an order
 

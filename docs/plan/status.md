@@ -1,16 +1,16 @@
 # As-built status
 
 > **Status:** Snapshot. Regenerate by reading the source, not by trusting
-> this page.
-> **Last verified:** 2026-10-22, by source review plus the toolchain on
-> `PATH`. `native check` passes, `native test` runs 110/110 and
-> `native build` produces a ReleaseFast binary.
-> The money track is merged to `main`; the back-office track is on
-> `feat/back-office` and open as PR #101. The screens the roadmap's
-> phase two names are built: the walk-through, the company's record,
-> the PIN reset, the payments, the report, the stock, the dishes, the
-> control centre, the database inspector, the customer form, the
-> modifier group form, and the removal of an employee who has left.
+> this page. The detailed counts below describe the admin app; the
+> service and kiosk mount their role's subsets of the same core.
+> **Last verified:** 2026-10-24, by source review and the split suites.
+> `scripts/verify-all.sh` is green for ros-core, admin, kiosk, net-spike
+> and service; the admin suite is 137/137 and the service suite 8/8.
+> `native build` produces ReleaseFast binaries.
+> The money and back-office tracks are merged. The three apps share
+> `packages/ros-core`; the session and setup screens are copied into
+> each app by the package split. The screens the roadmap's phase two
+> names are built.
 > See the [full audit](../review/archive/2026-10-20-audit.md).
 > **Screen-by-screen table:** [`architecture/03`](../architecture/03-navigation-and-rbac.md#the-45-screens).
 
@@ -18,19 +18,19 @@
 
 | Measure | Value | Evidence |
 |---|---|---|
-| `Screen` variants | 53 | `src/core/navigation.zig` |
-| Screen templates | 53 | `src/screens/*.native` (ten area files) |
-| Templates mounted in the shell | 53 - 46 on the screen ordinal, seven session screens on their own condition | `src/app.native` |
-| Screens that render at all | 53 | every mounted template builds; a test asserts it |
-| Templates with a render test | 53 | `src/tests.zig` (the screen-coverage test builds each one, and finds a landmark of its own) |
-| `Msg` variants | 190 | `src/core/msg.zig` |
-| Tables | 44 | `src/schema/*.sql` |
-| Migrations | 15 | `migrations.lock.json` version 15 |
-| Read queries | 28 | `src/data/repos.zig` (one named constant each, and one place that says the app is loading) |
-| Write paths | setup, order + lines, status + history, config, currency, product, employee, employee PIN, employee removal, customer, category, tax slab, discount, modifier group, dish station, stock count, payment | `repos.zig` |
-| Effect keys | 56, each used once | `src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | 119 authored (120 reported with the generated one), green | `src/tests.zig`, `src/tests_data.zig` |
-| Database integration tests | 83, green | `src/tests_data.zig` |
+| `Screen` variants | 53 | `packages/ros-core/src/core/navigation.zig` |
+| Screen templates | 53 in the admin app | `apps/admin/src/screens/*.native` (ten area files); the service and kiosk copies carry their subsets |
+| Templates mounted in the shell | 53 in the admin (46 on the screen ordinal, seven session screens on their own condition); the service and kiosk mount their role's subset | `apps/{admin,service,kiosk}/src/app.native` |
+| Screens that render at all | 53 in the admin | every mounted template builds; a test asserts it |
+| Templates with a render test | 53 in the admin | `apps/admin/src/tests.zig` (the screen-coverage test builds each one, and finds a landmark of its own) |
+| `Msg` variants | 201 | `packages/ros-core/src/core/msg.zig` |
+| Tables | 44 | `apps/admin/src/schema/*.sql` |
+| Migrations | 15 | `apps/admin/migrations.lock.json` version 15 |
+| Read queries | 16 named constants | `packages/ros-core/src/data/repos.zig` (one named constant each, and one place that says the app is loading) |
+| Write paths | setup, order + lines, status + history, config, currency, product, employee, employee PIN, employee removal, customer, category, tax slab, discount, modifier group, dish station, stock count, payment, op log, reference version | `repos.zig` |
+| Effect keys | 62, each used once | `packages/ros-core/src/data/repos.zig`; a test asserts the uniqueness |
+| Headless tests | admin 137/137, service 8/8; every target green | `apps/*/src/tests*.zig`, `scripts/verify-all.sh` |
+| Database integration tests | 94, green | `apps/admin/src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -41,27 +41,27 @@
 |---|---|---|
 | Build and manifest | Partial | `app.json`, scripts and CI exist; no clean-machine proof; the smoke is shallow |
 | App model | Implemented | Model, Msg, update, boot, effects keys |
-| Role picker and login | Partial | Salted SHA-256, kiosk sign-in and first-run setup exist; the sign-in now checks the employee's stored role (B-002) and waits for the database to confirm the salt (B-003); the PIN is still a fast digest with no lockout (B-027) |
-| RBAC and navigation | Implemented core | 45 screens, 4 roles, one guard, a session-scoped stack ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
-| Screen coverage | Implemented | every screen in the enum is mounted, renders, and has a landmark of its own; the seven session screens are mounted on their own condition, the other forty-six on their ordinal gate |
+| Role picker and login | Partial | bcrypt PIN hashes, kiosk sign-in and the admin's first-run setup exist; the sign-in checks the employee's stored role (B-002) and waits for the database to confirm the salt (B-003). A service or kiosk waits for the admin's reference data instead of setting up. The PIN field is still typed in the clear (B-027, #96) |
+| RBAC and navigation | Implemented core | 53 screens, 4 roles, one guard, a session-scoped stack ([ADR-0015](../decisions/0015-session-scoped-navigation.md)) |
+| Screen coverage | Implemented | 53 screens in the admin app; every one is mounted, renders, and has a landmark of its own. The seven session screens are mounted on their own condition, the other forty-six on their ordinal gate. The service and kiosk mount their role's subset |
 | Theming | Implemented | Light/dark semantic tokens; every text pair is asserted against WCAG AA |
 | Shell layout | Partial | Fixed rail + content; no responsive mode. The shell says "Loading..." while a read is on its way, and a failed read replaces the screen with the reason and a way to try again |
-| Dashboard | Implemented | Counts, recent orders, shortcuts; money is hard-coded to 2 decimals (B-013) |
-| POS | Partial | Menu, filter, cart, order types and discounts work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; the tax is worked out line by line from each product's slab. No modifiers, and the currency's decimals are still two |
-| Orders | Partial | Lists non-voided orders including completed; status advance is not conditional (B-008/B-012) |
+| Dashboard | Implemented | Counts, recent orders, shortcuts; amounts use the company's currency decimals |
+| POS | Partial | Menu, filter, cart, order types and discounts work; the order write succeeds; a sale happens once, the number is a sequence and a retry is the same sale; the tax is worked out line by line from each product's slab. No modifiers; the price parser is still two-decimal (#66) |
+| Orders | Partial | Lists non-voided orders including completed; status advance is conditional (D19); the header badge still disagrees with the list (D5, #7) |
 | Kitchen board | Implemented | Tickets, summary, wait time, advance |
 | Floor board | Partial | The table board shows what is true about each table; a guest cannot be moved to another table |
 | Customers | Partial | The list, the count, the load and the form all work - a customer can be written and edited. A customer still cannot be attached to an order, so the loyalty points are only ever earned by hand |
 | Employees | Partial | The list and the form work; a PIN can be reset by a manager, and an employee who has left can be removed - the row stays, so the orders they took still name them, and the last admin cannot be removed |
 | Catalog admin | Partial | The catalogue list, the product form, the categories, the tax slabs, the discounts and the modifier groups all work. The CHOICES inside a modifier group, and which dishes a group applies to, do not |
-| Settings / setup | Partial | The first run is the walk-through: the company's record, then the owner and their PIN, written in one transaction with the starter menu, the salt and six tables. The quick setup stays for an owner who wants to start serving sooner |
+| Settings / setup | Partial | The admin's first run is the walk-through: the company's record, then the owner and their PIN, written in one transaction with the starter menu, the salt and six tables. The quick setup stays for an owner who wants to start serving sooner. A service or kiosk that starts first waits for the admin's reference data and cannot set up a second restaurant |
 | Payments | Partial | Cash/card/UPI mode, confirmation and one payment write; a payment is taken once, and an order can still be closed without one |
 | Reports / compliance | Partial | The owner's read of the day exists: the takings, the orders, the tax, the discounts, and the way the money was paid. The X report, the Z report and the day close are the reports track's |
 | Printing | Scaffolded | Tables and README-only sidecar; no code |
-| Sync | Scaffolded | Tables and README-only sidecar; no op writes |
+| Sync | Implemented core | Op log in the same transaction, per-device Lamport clock and vector cursor, beacon or manual peers, reference snapshot. The event stream (#110), late join/compaction (#111) and order identity across devices (#87) remain |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | 120 tests pass (36 markup and model, 83 against the database, one generated); no sale smoke through the UI |
+| Testing | Partial | The split suites are green via `scripts/verify-all.sh` (admin 137/137, service 8/8); no sale smoke through the UI (#42) |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
@@ -75,34 +75,39 @@
    an open order on the table.
 5. Choose Display → the customer board shows the order cards.
 6. Title-bar **Theme** toggles light/dark.
-7. Setup creates a starter menu, six tables, the operator and the
-   installation salt; the operator signs in with the PIN they chose.
+7. The admin's setup creates a starter menu, six tables, the operator
+   and the installation salt; the operator signs in with the PIN they
+   chose. The service and kiosk copy the menu and the people from the
+   admin's reference document.
 
-The POS places an order in the **working tree**; the committed `HEAD`
-still omits `orders.updated_at` (B-001). The integration test reads the
-order back and advances it. Until the fix and test are committed, do not
-cite the committed build as able to sell.
+The POS order write is committed and read back by the integration test
+(`placing an order writes one op row and a durable clock`); the earlier
+B-001/B-005 failures are history.
 
 ## Flows that do not work
 
-1. ~~**Fresh install.**~~ FIXED: the app opens on the setup screen when
-   the database has no company, and the setup writes the company, the
-   operator, the installation salt, a 13-dish starter menu and six
-   tables in one transaction. The operator can then sign in with the PIN
-   they chose.
-2. **Place order (committed HEAD).** The insert fails before reaching the
-   database: `orders.updated_at` is required and never written (B-001).
-   The working tree fixes it and writes `NULL` for absent table/customer
-   ids (B-005); the fix is not committed.
+1. ~~**Fresh install.**~~ FIXED for the admin: the admin app opens on
+   the setup screen when the database has no company, and its setup
+   writes the company, the operator, the installation salt, a 13-dish
+   starter menu and six tables in one transaction. A service or kiosk
+   that starts first waits for the admin's reference data.
+2. ~~**Place order (committed HEAD).**~~ FIXED: the insert writes
+   `orders.updated_at` and writes `NULL` for absent table/customer ids
+   (B-001, B-005); the integration test reads the order back.
 3. **Sign-in with the wrong role.** FIXED: the sign-in query is scoped to
    the session's role and the returned row is checked against it, so a
    waiter's PIN no longer opens an admin session (B-002).
 4. **Sign-in before the salt is confirmed.** FIXED: the sign-in waits
    until the database has confirmed the salt, and the setup writes the
    salt with the operator's hash (B-003).
-5. **Payment edge cases.** A payment screen exists, but it can be taken twice (B-035) and “Another order” is unhandled (B-033).
+5. **Payment edge cases.** FIXED: the payment write is idempotent (B-035).
+   Closing a ticket without a payment is still possible (D23), and
+   "Another order" is unhandled (B-033).
 6. **Printing.** No receipt, no KOT.
-7. **Sync.** No second device sees the first.
+7. ~~**Sync.** No second device sees the first.~~ FIXED: a second device
+   pulls the ops above its vector cursor, and the reference document
+   gives it the menu, people and tables. A late joiner still replays the
+   whole log (#111).
 8. ~~**Customers.** The list renders, but the data is never loaded.~~ FIXED: the
    customers load, and the owner can write one.
 9. **A customer on an order.** The column is there and the order's
@@ -128,7 +133,7 @@ a docs change.
 |---|---|---|---|
 | D1 | ~~Provisional salt installed before the database confirms it; a failed save was marked confirmed~~ | `src/core/update.zig` (`submit_login`, `createSalt`, `config_loaded`) | FIXED: the salt is a four-state lifecycle (`unknown`, `installing`, `verifying`, `confirmed`), the sign-in waits for `confirmed`, and the setup writes the salt with the operator's hash (B-003) |
 | D2 | ~~Order `id` = wall ms, `order_no` = wall seconds~~ | `src/core/update.zig` (`placeOrder`, `nextOrderId`), `src/data/repos.zig` (`saveOrder`) | FIXED: the number is a sequence the database assigns, the id keeps a per-device floor, and a request key makes a retry the same sale (B-006, [ADR-0014](../decisions/0014-order-identity.md)) |
-| D3 | `loadAll` omits `loadCustomers` | `src/data/repos.zig` (`loadAll`) | Customer data never appears (B-015) |
+| D3 | ~~`loadAll` omits `loadCustomers`~~ | `packages/ros-core/src/data/repos.zig` (`loadAll`) | FIXED: `loadAll` calls `loadCustomers`; the list and the form load (B-015) |
 | D4 | Shell gates are hard-coded ordinals | `src/app.native` | A test now pins the gated ordinals against the enum, so inserting a screen fails the suite instead of remapping the UI (B-023) |
 | D5 | `orders` header badge says "open" but uses `order_count` (non-voided, including completed) | `src/screens/screen-orders.native` | Misleading count (B-012) |
 | D6 | `auth.equal` is tested but unused by the login path | `src/data/auth.zig` | Constant-time compare is not actually protecting login (B-027) |
@@ -138,16 +143,16 @@ a docs change.
 | D10 | CI smoke asserts only a non-blank canvas | `.github/workflows/ci.yml` | A blank or broken shell can still pass (G-018) |
 | D11 | No `build.zig` / `build.zig.zon` in the app | app root | Fine while managed; blocks linking a C library until `native eject` |
 | D12 | ~~`view_unbound` lists `pending_screen`, which is not a field~~ | `src/core/model.zig` | FIXED: the stale entry is gone and the salt state is listed |
-| D13 | Order insert omitted `orders.updated_at`, which is `NOT NULL` with no default | `src/data/repos.zig` (`saveOrder`), `src/schema/0005_orders.sql` | Every order write failed (B-001); fixed in the working tree, not committed |
+| D13 | ~~Order insert omitted `orders.updated_at`, which is `NOT NULL` with no default~~ | `packages/ros-core/src/data/repos.zig` (`saveOrder`), `apps/admin/src/schema/0005_orders.sql` | FIXED: the insert writes `updated_at`; the integration test reads the order back (B-001) |
 | D14 | ~~Login query ignores `employee.role`; the chosen role decides the session~~ | `src/core/update.zig` (`login_checked`), `src/data/repos.zig` (`login_sql`) | FIXED: the query asks for the session's role and the returned row is checked against it (B-002) |
-| D15 | Order table/customer ids were written as `0`, not `NULL` | `src/core/update.zig` (`placeOrder`) | Failed with FKs on; fixed in the working tree (B-005) |
+| D15 | ~~Order table/customer ids were written as `0`, not `NULL`~~ | `packages/ros-core/src/core/update.zig` (`placeOrder`) | FIXED: absent ids are written as `NULL` (B-005) |
 | D16 | ~~`decodeCompany` kept slices into page drain memory~~ | `src/data/repos.zig` (`decodeCompany`) | FIXED: every decoder copies text into the model's bump buffer, and a regression test overwrites the page after decoding to prove it (B-004) |
 | D17 | ~~PIN is a fast SHA-256 over four digits, with no lockout or masking~~ | `src/data/auth.zig`, `src/screens/screen-login.native` | FIXED: bcrypt at 2^10 rounds, six digits, and the till stops after five wrong PINs. The PIN field is still typed in the clear: the SDK has no masked text field (B-027, [ADR-0016](../decisions/0016-what-a-pin-is.md)) |
-| D18 | Setup exists but has gaps (currency symbol field, no disabled submit) | `src/screens/screen-setup.native`, `src/core/update.zig` | A fresh install can start, but setup is not trustworthy (G-001) |
+| D18 | ~~Setup exists but has gaps (currency symbol field, no disabled submit)~~ | `apps/admin/src/screens/screen-session.native`, `packages/ros-core/src/core/update.zig` | FIXED: the setup carries the currency symbol and refuses an incomplete form; the admin owns the first run |
 | D19 | ~~Status advance is not conditional; history can duplicate~~ | `src/core/update.zig` (`advance_order`), `src/data/repos.zig` (`setOrderStatus`) | FIXED: the move happens only from the status the order is in, and the history is written only when it did (B-008) |
 | D20 | Four screens bound counts the model does not have (`customer_count`, `reservation_count`, `supplier_count`, `purchase_order_count`) | `src/screens/screen-customers.native`, `screen-reservations.native`, `screen-suppliers.native`, `screen-purchase-orders.native` | FIXED: those rail destinations could never render at all. The counts are model methods now |
 | D21 | Three effect keys were used by two effects each (20, 21, 22) | `src/data/repos.zig` (the key table) | FIXED: a second live effect with the same key is REFUSED, so a company save could refuse an order write. Every key is used once, and a test says so |
-| D22 | ~~The amounts are shown with two decimals whatever the currency is~~ | `apps/admin/src/core/model.zig` (`currency_divisor`), `apps/admin/src/screens/*.native` | FIXED: the company carries its currency's decimals, the divisor comes from the model, and no amount divides by a hundred in the markup (B-013) |
+| D22 | ~~The amounts are shown with two decimals whatever the currency is~~ | `packages/ros-core/src/core/model.zig` (`currency_divisor`), `apps/{admin,service,kiosk}/src/screens/*.native` | FIXED: the company carries its currency's decimals, the divisor comes from the model, and no amount divides by a hundred in the markup (B-013) |
 | D23 | An order can be closed without a payment | `src/core/update.zig` (`nextStatus`) | The kitchen can advance a ticket straight to closed and the money is never taken (B-014) |
 | D24 | ~~Back from home exposed the login screen; the stack froze at depth 32; cart/search/filters survived sign-out and role change~~ | `src/core/update.zig` (`resetSession`, `go`), `src/core/navigation.zig` (`Stack.push`) | FIXED: one session reset path, session gates are roots, pushing the current screen is a no-op and a full stack drops its oldest entry ([ADR-0015](../decisions/0015-session-scoped-navigation.md); B-009, B-010, B-011) |
 | D25 | The PIN salt is per installation, not per employee | `src/data/auth.zig` | A database that is cracked gives up every PIN, not one ([ADR-0016](../decisions/0016-what-a-pin-is.md)) |
@@ -176,9 +181,9 @@ a request key makes a retry the same sale
 The money track has since closed the amount: the tax is worked out line
 by line from each product's own slab, a discount is spread across the
 lines and the tax follows it, a payment is taken once, and every
-transition is conditional. What is left of the money is the currency's
-decimals (D22), an order that can close without a payment (D23), and
-the PIN's strength (B-027). The full order is in the
+transition is conditional. What is left of the money is the price
+parser and rounding (#66), an order that can close without a payment
+(D23), and the PIN's strength (B-027). The full order is in the
 [audit](../review/archive/2026-10-20-audit.md).
 
 The compile-time `makeSalt` mismatch and the invisible-error-banner gap
@@ -186,6 +191,9 @@ were fixed earlier; they are no longer current defects. This status page
 now defers detailed evidence to the [review set](../review/README.md).
 
 ## Test inventory
+
+The inventory below is the pre-split core; the authoritative counts are
+the suites themselves, and `scripts/verify-all.sh` runs all of them.
 
 | Test | Area |
 |---|---|
