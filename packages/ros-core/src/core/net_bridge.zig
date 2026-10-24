@@ -360,7 +360,14 @@ pub fn onReferenceResponse(model: *Model, fx: *Effects, response: native_sdk.Eff
     if (snapshot.version <= model.reference_applying) return;
 
     model.reference_applying = snapshot.version;
-    repos.applyReference(model, fx, snapshot, arena, fx.wallMs());
+    if (!repos.applyReference(model, fx, snapshot, arena, fx.wallMs())) {
+        // The document could not be staged as one transaction (the
+        // arena or the statement array filled). Clear the in-flight
+        // version so the next poll tries again instead of waiting for a
+        // result that will never arrive.
+        model.reference_applying = 0;
+        model.sync_rejected += 1;
+    }
 }
 
 // --------------------------------------------------------------- answers
