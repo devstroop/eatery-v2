@@ -5,9 +5,7 @@ A restaurant operating system, written in Zig on the
 waiter service and the kitchen and customer boards**, in three apps over
 one shared package.
 
-This is a ground-up rewrite of Eatery v1 (the Flutter app that lived in
-`../eatery`). v1 taught us a lot about what a restaurant actually needs and
-where it went wrong; Restaurant OS keeps the product and rebuilds the machinery on a
+Restaurant OS keeps the product and rebuilds the machinery on a
 native GPU canvas, an engine-owned SQLite store and a typed effect channel.
 
 ```sh
