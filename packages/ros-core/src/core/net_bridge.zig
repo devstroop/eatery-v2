@@ -29,6 +29,8 @@ const msg_mod = @import("msg.zig");
 const protocol = @import("../net/protocol.zig");
 const record = @import("../net/record.zig");
 const server = @import("../net/server.zig");
+const discovery = @import("../net/discovery.zig");
+const client = @import("../net/client.zig");
 const repos = @import("../data/repos.zig");
 
 const Model = model_mod.Model;
@@ -47,7 +49,26 @@ var shared = struct {
     server_state: server.Shared = .{},
     bind_host: [64]u8 = undefined,
     bind_host_len: usize = 0,
+    device: [64]u8 = undefined,
+    device_len: usize = 0,
+    role: protocol.DeviceRole = .admin,
+    beacon_stop: std.atomic.Value(bool) = .init(false),
 }{};
+
+/// The threads `start` owns. The beacon and receiver are optional: a
+/// machine that cannot open the discovery sockets still serves and
+/// pulls over the manual address.
+pub const Threads = struct {
+    listener: std.Thread,
+    beacon: ?std.Thread = null,
+    receiver: ?std.Thread = null,
+
+    pub fn join(self: Threads) void {
+        self.listener.join();
+        if (self.beacon) |thread| thread.join();
+        if (self.receiver) |thread| thread.join();
+    }
+};
 
 /// Open the channel and tell the thread it may post.
 ///
@@ -61,14 +82,25 @@ pub fn open(fx: *Effects) void {
     shared.server_state.app_ready.store(true, .release);
 }
 
-/// Start the listener thread. `main` calls this: it is the one place
-/// with an `Io`.
-pub fn start(io: std.Io, bind_host: []const u8, port: u16) !std.Thread {
+/// Start the listener, the beacon sender and the beacon receiver.
+/// `main` calls this: it is the one place with an `Io`.
+pub fn start(
+    io: std.Io,
+    bind_host: []const u8,
+    port: u16,
+    device: []const u8,
+    role: protocol.DeviceRole,
+) !Threads {
     const len = @min(bind_host.len, shared.bind_host.len);
     @memcpy(shared.bind_host[0..len], bind_host[0..len]);
     shared.bind_host_len = len;
 
-    return std.Thread.spawn(.{}, server.run, .{
+    const device_len = @min(device.len, shared.device.len);
+    @memcpy(shared.device[0..device_len], device[0..device_len]);
+    shared.device_len = device_len;
+    shared.role = role;
+
+    const listener = try std.Thread.spawn(.{}, server.run, .{
         io,
         server.Config{
             .bind_host = shared.bind_host[0..len],
@@ -77,12 +109,131 @@ pub fn start(io: std.Io, bind_host: []const u8, port: u16) !std.Thread {
         },
         &shared.server_state,
     });
+
+    return .{
+        .listener = listener,
+        .beacon = std.Thread.spawn(.{}, beaconLoop, .{io}) catch null,
+        .receiver = std.Thread.spawn(.{}, receiverLoop, .{io}) catch null,
+    };
 }
 
-/// Stop the listener and wake it out of `accept`. Call before joining.
+/// Stop the listener and the beacon threads, and wake the listener out
+/// of `accept`. Call before joining.
 pub fn stop(io: std.Io) void {
+    shared.beacon_stop.store(true, .release);
     server.stop(io, &shared.server_state);
 }
+
+/// Broadcast this device's hello card every five seconds. The card is
+/// rebuilt each time because the listener's port is not known until it
+/// binds, and the model's address can change before then.
+fn beaconLoop(io: std.Io) void {
+    var sender = discovery.openSender(io) catch return;
+    defer sender.close(io);
+
+    // Wait for the listener to report the port it actually bound.
+    var waited_ms: u32 = 0;
+    while (!shared.beacon_stop.load(.acquire) and
+        shared.server_state.port.load(.acquire) == 0 and waited_ms < 5_000)
+    {
+        std.Io.sleep(io, std.Io.Duration.fromMilliseconds(50), .awake) catch return;
+        waited_ms += 50;
+    }
+    if (shared.server_state.port.load(.acquire) == 0) return;
+
+    while (!shared.beacon_stop.load(.acquire)) {
+        const hello: protocol.Hello = .{
+            .device = shared.device[0..shared.device_len],
+            .role = shared.role,
+            .host = shared.bind_host[0..shared.bind_host_len],
+            .tcp = shared.server_state.port.load(.acquire),
+            .app_version = app_version,
+        };
+        discovery.sendBeacon(io, &sender, hello) catch {};
+
+        var slept_ms: u32 = 0;
+        while (!shared.beacon_stop.load(.acquire) and slept_ms < 5_000) {
+            std.Io.sleep(io, std.Io.Duration.fromMilliseconds(100), .awake) catch return;
+            slept_ms += 100;
+        }
+    }
+}
+
+/// Listen for beacons and post each one to the loop thread. A machine
+/// whose port is already taken by another app still works: discovery is
+/// a convenience, and the manual address is the other path.
+fn receiverLoop(io: std.Io) void {
+    var socket = discovery.openReceiver(io, protocol.beacon_port) catch return;
+    defer socket.close(io);
+
+    var buffer: [discovery.max_beacon_bytes]u8 = undefined;
+    while (!shared.beacon_stop.load(.acquire)) {
+        var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena_state.deinit();
+
+        const heard = discovery.receiveBeacon(
+            arena_state.allocator(),
+            io,
+            &socket,
+            &buffer,
+            1_000,
+        ) catch continue;
+        const hello = heard orelse continue;
+
+        var json_buffer: [discovery.max_beacon_bytes]u8 = undefined;
+        var writer = std.Io.Writer.fixed(&json_buffer);
+        protocol.encodeHello(&writer, hello) catch continue;
+        var control_buffer: [discovery.max_beacon_bytes + 32]u8 = undefined;
+        const control = server.Control.formatBeacon(&control_buffer, writer.buffered()) catch continue;
+        _ = post(@ptrCast(&shared), control);
+    }
+}
+
+/// Add a manually configured peer. `text` is `host:port`; a malformed
+/// value is ignored, because a typo is not a reason to refuse to boot.
+pub fn parseManualPeer(model: *Model, text: []const u8) void {
+    const colon = std.mem.lastIndexOfScalar(u8, text, ':') orelse return;
+    const host = std.mem.trim(u8, text[0..colon], " ");
+    const port = std.fmt.parseInt(u16, std.mem.trim(u8, text[colon + 1 ..], " "), 10) catch return;
+    if (host.len == 0) return;
+    model.observeManualPeer(host, port, 0);
+}
+
+/// The role the beacon carries. It is the device's vocabulary, not the
+/// signed-in employee's.
+pub fn deviceRole(model: *const Model) protocol.DeviceRole {
+    return switch (model.role) {
+        .admin => .admin,
+        .waiter => .waiter,
+        .kds => .kds,
+        .display => .display,
+    };
+}
+
+/// Pull every peer's ops above this device's cursor. The cursor is a
+/// vector, so one peer cannot hide another's history behind a clock
+/// that happens to be higher.
+pub fn poll(model: *Model, fx: *Effects) void {
+    for (model.peers[0..model.peer_count], 0..) |peer, index| {
+        if (peer.host_len == 0 or peer.tcp == 0) continue;
+        var url_buffer: [client.max_url_bytes]u8 = undefined;
+        const url = client.formatOps(
+            &url_buffer,
+            peer.address(),
+            peer.tcp,
+            &model.sync_cursor,
+        ) catch continue;
+        fx.fetch(.{
+            .key = sync_fetch_key_base + index,
+            .url = url,
+            .timeout_ms = 2_000,
+            .on_response = Effects.responseMsg(.peer),
+        });
+    }
+}
+
+/// The fetch keys sit above the database keys and below the channel.
+pub const sync_fetch_key_base: u64 = 9200;
 
 fn post(context: *anyopaque, bytes: []const u8) bool {
     _ = context;
@@ -110,6 +261,13 @@ pub fn onChannel(model: *Model, fx: *Effects, event: native_sdk.EffectChannelEve
                 .request => |request| {
                     model.net_requests +%= 1;
                     answer(model, fx, request.conn, request.bytes);
+                },
+                .beacon => |json| {
+                    var arena_buffer: [4096]u8 = undefined;
+                    var fba = std.heap.FixedBufferAllocator.init(&arena_buffer);
+                    const hello = protocol.decodeHello(fba.allocator(), json) catch return;
+                    if (!hello.compatible()) return;
+                    model.observePeer(hello, model.now_ms);
                 },
             }
         },

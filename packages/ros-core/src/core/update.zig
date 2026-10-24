@@ -2044,6 +2044,15 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .tick => |timer| {
             if (timer.outcome != .fired) return;
             model.now_ms = fx.wallMs();
+
+            // A peer that has gone quiet is gone; a manual address is
+            // not. Then pull what is new. Five seconds is the beacon
+            // interval, so a pull sees a peer the next beacon refreshed.
+            model.prunePeers(model.now_ms - 15_000);
+            if (model.now_ms >= model.sync_poll_at_ms) {
+                model.sync_poll_at_ms = model.now_ms + 5_000;
+                net_bridge.poll(model, fx);
+            }
         },
     }
 }

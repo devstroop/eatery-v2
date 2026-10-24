@@ -131,10 +131,19 @@ pub fn main(init: std.process.Init) !void {
         const text = init.environ_map.get("ROS_NET_PORT") orelse break :blk 0;
         break :blk std.fmt.parseInt(u16, text, 10) catch 0;
     };
-    const net_thread = try net_bridge.start(init.io, bind_host, bind_port);
+    if (init.environ_map.get("ROS_PEER")) |peer_text| {
+        net_bridge.parseManualPeer(&app_state.model, peer_text);
+    }
+    const net_threads = try net_bridge.start(
+        init.io,
+        bind_host,
+        bind_port,
+        app_state.model.device_token_buf[0..app_state.model.device_token_len],
+        net_bridge.deviceRole(&app_state.model),
+    );
     defer {
         net_bridge.stop(init.io);
-        net_thread.join();
+        net_threads.join();
     }
 
     try runner.runWithOptions(app_state.app(), .{
