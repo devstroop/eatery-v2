@@ -3047,13 +3047,13 @@ pub fn applyReference(
     snapshot: reference.Snapshot,
     allocator: std.mem.Allocator,
     at: i64,
-) void {
+) bool {
     _ = model;
     var statements: [512]native_sdk.EffectDbStatement = undefined;
     var count: usize = 0;
 
     if (snapshot.company) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 11) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 11) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .text = row.name };
         params[2] = .{ .text = row.currency_code };
@@ -3065,30 +3065,30 @@ pub fn applyReference(
         params[8] = .{ .text = row.email };
         params[9] = .{ .text = row.tax_number };
         params[10] = .{ .integer = row.created_at };
-        if (!appendReferenceStatement(&statements, &count, reference_company_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_company_sql, params)) return false;
     }
 
     for (snapshot.categories) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .text = row.name };
         params[2] = .{ .integer = row.sort_order };
         params[3] = .{ .integer = row.active };
-        if (!appendReferenceStatement(&statements, &count, reference_category_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_category_sql, params)) return false;
     }
 
     for (snapshot.tax_slabs) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 5) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 5) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .text = row.name };
         params[2] = .{ .integer = row.rate_bps };
         params[3] = .{ .integer = row.inclusive };
         params[4] = .{ .integer = row.active };
-        if (!appendReferenceStatement(&statements, &count, reference_tax_slab_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_tax_slab_sql, params)) return false;
     }
 
     for (snapshot.employees) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 8) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 8) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .text = row.name };
         params[2] = .{ .integer = row.role };
@@ -3097,11 +3097,11 @@ pub fn applyReference(
         params[5] = .{ .text = row.email };
         params[6] = .{ .integer = row.active };
         params[7] = .{ .integer = row.created_at };
-        if (!appendReferenceStatement(&statements, &count, reference_employee_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_employee_sql, params)) return false;
     }
 
     for (snapshot.products) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 15) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 15) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .integer = row.category_id };
         params[2] = .{ .text = row.name };
@@ -3117,20 +3117,20 @@ pub fn applyReference(
         params[12] = .{ .integer = row.sort_order };
         params[13] = .{ .integer = row.created_at };
         params[14] = .{ .integer = row.updated_at };
-        if (!appendReferenceStatement(&statements, &count, reference_product_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_product_sql, params)) return false;
     }
 
     for (snapshot.table_categories) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .text = row.name };
         params[2] = .{ .integer = row.sort_order };
         params[3] = .{ .integer = row.active };
-        if (!appendReferenceStatement(&statements, &count, reference_table_category_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_table_category_sql, params)) return false;
     }
 
     for (snapshot.tables) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 9) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 9) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .integer = row.category_id };
         params[2] = .{ .text = row.name };
@@ -3140,38 +3140,39 @@ pub fn applyReference(
         params[6] = .{ .integer = row.width_cells };
         params[7] = .{ .integer = row.height_cells };
         params[8] = .{ .integer = row.active };
-        if (!appendReferenceStatement(&statements, &count, reference_table_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_table_sql, params)) return false;
     }
 
     for (snapshot.stations) |row| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return false;
         params[0] = .{ .integer = row.id };
         params[1] = .{ .text = row.name };
         params[2] = .{ .integer = row.sort_order };
         params[3] = .{ .integer = row.active };
-        if (!appendReferenceStatement(&statements, &count, reference_station_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_station_sql, params)) return false;
     }
 
     // The salt belongs to the hashes in the document: a PIN copied from
     // the admin verifies on the peer because both use this one.
     if (snapshot.pin_salt) |salt| {
-        const params = allocator.alloc(native_sdk.EffectDbValue, 2) catch return;
+        const params = allocator.alloc(native_sdk.EffectDbValue, 2) catch return false;
         params[0] = .{ .text = salt };
         params[1] = .{ .integer = at };
-        if (!appendReferenceStatement(&statements, &count, reference_salt_sql, params)) return;
+        if (!appendReferenceStatement(&statements, &count, reference_salt_sql, params)) return false;
     }
 
-    const version_text = std.fmt.allocPrint(allocator, "{d}", .{snapshot.version}) catch return;
-    const version_params = allocator.alloc(native_sdk.EffectDbValue, 2) catch return;
+    const version_text = std.fmt.allocPrint(allocator, "{d}", .{snapshot.version}) catch return false;
+    const version_params = allocator.alloc(native_sdk.EffectDbValue, 2) catch return false;
     version_params[0] = .{ .text = version_text };
     version_params[1] = .{ .integer = at };
-    if (!appendReferenceStatement(&statements, &count, reference_version_upsert_sql, version_params)) return;
+    if (!appendReferenceStatement(&statements, &count, reference_version_upsert_sql, version_params)) return false;
 
     fx.dbExec(.{
         .key = key_reference_apply,
         .statements = statements[0..count],
         .on_result = Effects.dbMsg(.reference_applied),
     });
+    return true;
 }
 
 fn appendReferenceStatement(

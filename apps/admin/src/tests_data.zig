@@ -28,6 +28,7 @@ const main = @import("main.zig");
 const core = @import("ros_core").model;
 const msg_mod = @import("ros_core").msg;
 const nav = @import("ros_core").navigation;
+const reference = @import("ros_core").net.reference;
 const rbac = @import("ros_core").rbac;
 const repos = @import("ros_core").repos;
 const auth = @import("ros_core").auth;
@@ -3575,4 +3576,47 @@ test "a peer applies a newer reference document and ignores a stale one" {
     repos.loadProducts(&harness.model, harness.fx);
     harness.drain();
     try testing.expectEqualStrings("Paneer 2.0", harness.model.find_product(1).?.name);
+}
+
+test "a reference too large to stage is retried, not wedged" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // The apply path stages every row in a 512-statement array. Build a
+    // document one row over that limit; the staging fails before a
+    // transaction is queued, so the peer must clear the in-flight
+    // version and count a rejection instead of waiting forever.
+    var body: std.ArrayList(u8) = .empty;
+    defer body.deinit(testing.allocator);
+    try body.appendSlice(testing.allocator, "{\"version\":10,\"categories\":[");
+    var i: usize = 0;
+    while (i < 513) : (i += 1) {
+        if (i > 0) try body.append(testing.allocator, ',');
+        const row = try std.fmt.allocPrint(testing.allocator,
+            "{{\"id\":{d},\"name\":\"c{d}\",\"sort_order\":0,\"active\":1}}",
+            .{ i + 1, i + 1 });
+        defer testing.allocator.free(row);
+        try body.appendSlice(testing.allocator, row);
+    }
+    try body.appendSlice(testing.allocator, "]}");
+
+    // The document parses; the failure is in staging it, not in JSON.
+    var parse_buffer: [128 * 1024]u8 = undefined;
+    var parse_arena = std.heap.FixedBufferAllocator.init(&parse_buffer);
+    const parsed = try reference.parse(parse_arena.allocator(), body.items);
+    try testing.expectEqual(@as(usize, 513), parsed.categories.len);
+
+    harness.send(Msg{ .reference = .{ .key = 9302, .outcome = .ok, .status = 200, .body = body.items } });
+    try testing.expectEqual(@as(u64, 0), harness.model.reference_applying);
+    try testing.expectEqual(@as(u32, 1), harness.model.sync_rejected);
+
+    // The failed document did not wedge the peer: a small newer one
+    // still applies on the next poll.
+    harness.send(Msg{ .reference = .{
+        .key = 9303,
+        .outcome = .ok,
+        .status = 200,
+        .body = "{\"version\":11,\"categories\":[{\"id\":1,\"name\":\"Retry\",\"sort_order\":0,\"active\":1}]}",
+    } });
+    try testing.expectEqual(@as(u64, 11), harness.model.reference_version);
 }

@@ -5,7 +5,7 @@
 > service and kiosk mount their role's subsets of the same core.
 > **Last verified:** 2026-10-24, by source review and the split suites.
 > `scripts/verify-all.sh` is green for ros-core, admin, kiosk, net-spike
-> and service; the admin suite is 137/137 and the service suite 8/8.
+> and service; the admin suite is 138/138 and the service suite 8/8.
 > `native build` produces ReleaseFast binaries.
 > The money and back-office tracks are merged. The three apps share
 > `packages/ros-core`; the session and setup screens are copied into
@@ -29,8 +29,8 @@
 | Read queries | 16 named constants | `packages/ros-core/src/data/repos.zig` (one named constant each, and one place that says the app is loading) |
 | Write paths | setup, order + lines, status + history, config, currency, product, employee, employee PIN, employee removal, customer, category, tax slab, discount, modifier group, dish station, stock count, payment, op log, reference version | `repos.zig` |
 | Effect keys | 62, each used once | `packages/ros-core/src/data/repos.zig`; a test asserts the uniqueness |
-| Headless tests | admin 137/137, service 8/8; every target green | `apps/*/src/tests*.zig`, `scripts/verify-all.sh` |
-| Database integration tests | 94, green | `apps/admin/src/tests_data.zig` |
+| Headless tests | admin 138/138, service 8/8; every target green | `apps/*/src/tests*.zig`, `scripts/verify-all.sh` |
+| Database integration tests | 95, green | `apps/admin/src/tests_data.zig` |
 | Sidecar binaries | 0 | `tools/*` contain READMEs only |
 | CI workflows | 1 (verify + smoke) | `.github/workflows/ci.yml` |
 | Reusable component templates | 0 | `src/components/` empty |
@@ -61,7 +61,7 @@
 | Sync | Implemented core | Op log in the same transaction, per-device Lamport clock and vector cursor, beacon or manual peers, reference snapshot. The event stream (#110), late join/compaction (#111) and order identity across devices (#87) remain |
 | Display board | Partial | The board renders and shows the order cards |
 | Waiter shell | Partial | The floor, the menu, the cart and the order list render |
-| Testing | Partial | The split suites are green via `scripts/verify-all.sh` (admin 137/137, service 8/8); no sale smoke through the UI (#42) |
+| Testing | Partial | The split suites are green via `scripts/verify-all.sh` (admin 138/138, service 8/8); no sale smoke through the UI (#42) |
 | Packaging | Planned | No packaging/signing workflow; no signed build |
 
 ## Flows that work
