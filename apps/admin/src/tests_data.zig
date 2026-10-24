@@ -3500,3 +3500,79 @@ test "a manual peer survives the prune and a quiet peer does not" {
     try testing.expectEqual(@as(usize, 2), harness.model.peer_count);
     try testing.expectEqual(@as(u16, 45899), harness.model.peers[1].tcp);
 }
+
+test "the admin publishes a versioned document and a bump rebuilds it" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    repos.loadReferenceSnapshot(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(u64, 1), harness.model.reference_version);
+    try testing.expect(harness.model.reference_snapshot_len > 0);
+    const first = harness.model.reference_snapshot_buf.bytes[0..harness.model.reference_snapshot_len];
+    try testing.expect(std.mem.indexOf(u8, first, "\"version\":1") != null);
+    try testing.expect(std.mem.indexOf(u8, first, "Paneer Tikka") != null);
+
+    harness.fx.dbExec(.{
+        .key = 902,
+        .statements = &.{.{ .sql = "UPDATE product SET name = 'Paneer 2.0' WHERE id = 1;" }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    repos.bumpReferenceVersion(harness.fx);
+    harness.drain();
+    try testing.expectEqual(@as(u64, 2), harness.model.reference_version);
+    const second = harness.model.reference_snapshot_buf.bytes[0..harness.model.reference_snapshot_len];
+    try testing.expect(std.mem.indexOf(u8, second, "Paneer 2.0") != null);
+}
+
+test "a peer applies a newer reference document and ignores a stale one" {
+    var harness = try seeded(testing.allocator);
+    defer harness.deinit();
+
+    // A real installation has a salt; the document carries the same one
+    // so the employee hash verifies on the peer.
+    harness.fx.dbExec(.{
+        .key = 903,
+        .statements = &.{.{
+            .sql = "INSERT INTO app_config (key, value, updated_at) VALUES ('pin_salt', ?1, ?2);",
+            .params = &.{ .{ .text = test_salt }, .{ .integer = 1_700_000_000_000 } },
+        }},
+        .on_result = Effects.dbMsg(.company_loaded),
+    });
+    harness.drain();
+
+    const newer =
+        \\{"version":9,
+        \\ "employees":[{"id":7,"name":"Anita","role":0,"pin_hash":"newhash",
+        \\  "phone":"","email":"","active":1,"created_at":1}],
+        \\ "products":[{"id":1,"category_id":1,"name":"Paneer 2.0","price_minor":24500,
+        \\  "product_type":0,"food_type":1,"tax_slab_id":0,"stock_qty":null,
+        \\  "track_stock":0,"description":"","image_path":"","active":1,
+        \\  "sort_order":0,"created_at":1,"updated_at":1}],
+        \\ "pin_salt":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+    ;
+    harness.send(Msg{ .reference = .{ .key = 9300, .outcome = .ok, .status = 200, .body = newer } });
+    try testing.expectEqual(@as(u64, 9), harness.model.reference_version);
+
+    repos.loadProducts(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("Paneer 2.0", harness.model.find_product(1).?.name);
+
+    // The admin was away and came back with an older document: the
+    // menu stays as the newer one left it.
+    const stale =
+        \\{"version":8,
+        \\ "products":[{"id":1,"category_id":1,"name":"Stale Paneer","price_minor":100,
+        \\  "product_type":0,"food_type":1,"tax_slab_id":0,"stock_qty":null,
+        \\  "track_stock":0,"description":"","image_path":"","active":1,
+        \\  "sort_order":0,"created_at":1,"updated_at":1}]}
+    ;
+    harness.send(Msg{ .reference = .{ .key = 9301, .outcome = .ok, .status = 200, .body = stale } });
+    try testing.expectEqual(@as(u64, 9), harness.model.reference_version);
+
+    repos.loadProducts(&harness.model, harness.fx);
+    harness.drain();
+    try testing.expectEqualStrings("Paneer 2.0", harness.model.find_product(1).?.name);
+}

@@ -20,8 +20,11 @@
 
 const std = @import("std");
 
-/// How many bytes one answer may carry.
-pub const max_frame_bytes = 8192;
+/// How many bytes one answer may carry. A reference snapshot is the
+/// largest body (`GET /v1/reference`); the cap leaves room for a
+/// restaurant's menu, people and tables in one frame. `Slot.len` is a
+/// `u16`, so this must stay under 64 KiB.
+pub const max_frame_bytes = 32 * 1024;
 
 /// How many connections may have a slot at once.
 pub const max_conns = 8;

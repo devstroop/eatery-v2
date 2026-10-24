@@ -19,6 +19,7 @@ const model_mod = @import("../core/model.zig");
 const domain = @import("../domain/models.zig");
 const nav = @import("../core/navigation.zig");
 const record = @import("../net/record.zig");
+const reference = @import("../net/reference.zig");
 const cursor_mod = @import("../net/cursor.zig");
 pub const page = @import("page.zig");
 const starter = @import("starter.zig");
@@ -95,6 +96,10 @@ pub const key_devices = 49;
 pub const key_sync_state = 50;
 pub const key_sync_apply = 58;
 pub const key_sync_cursor = 59;
+pub const key_reference_bump = 60;
+pub const key_reference_snapshot = 61;
+pub const key_reference_version = 62;
+pub const key_reference_apply = 63;
 
 // ------------------------------------------------------------ queries
 
@@ -2950,3 +2955,303 @@ fn enumFromInt(comptime T: type, value: i64) T {
     const narrowed = std.math.cast(info.tag_type, value) orelse return @field(T, info.fields[0].name);
     return std.enums.fromInt(T, narrowed) orelse @field(T, info.fields[0].name);
 }
+
+// ------------------------------------------------------- reference data
+//
+// The admin is the only writer. It publishes one versioned document and
+// a peer applies it whole, so there is never a second opinion about the
+// menu. The version lives in `app_config`: a counter needs no table of
+// its own and no migration, and the salt already lives there.
+
+const reference_snapshot_sql =
+    \\SELECT
+    \\  COALESCE((SELECT CAST(value AS INTEGER) FROM app_config WHERE key = 'reference_version'), 1) AS version,
+    \\  json_object(
+    \\    'version', COALESCE((SELECT CAST(value AS INTEGER) FROM app_config WHERE key = 'reference_version'), 1),
+    \\    'company', (SELECT json_object(
+    \\      'id', id, 'name', name, 'currency_code', currency_code,
+    \\      'currency_symbol', currency_symbol, 'tax_inclusive', tax_inclusive,
+    \\      'currency_decimals', currency_decimals, 'address', address,
+    \\      'phone', phone, 'email', email, 'tax_number', tax_number,
+    \\      'created_at', created_at) FROM company LIMIT 1),
+    \\    'categories', (SELECT json_group_array(json_object(
+    \\      'id', id, 'name', name, 'sort_order', sort_order, 'active', active))
+    \\      FROM product_category),
+    \\    'tax_slabs', (SELECT json_group_array(json_object(
+    \\      'id', id, 'name', name, 'rate_bps', rate_bps,
+    \\      'inclusive', inclusive, 'active', active)) FROM tax_slab),
+    \\    'employees', (SELECT json_group_array(json_object(
+    \\      'id', id, 'name', name, 'role', role, 'pin_hash', pin_hash,
+    \\      'phone', phone, 'email', email, 'active', active,
+    \\      'created_at', created_at)) FROM employee),
+    \\    'products', (SELECT json_group_array(json_object(
+    \\      'id', id, 'category_id', category_id, 'name', name,
+    \\      'price_minor', price_minor, 'product_type', product_type,
+    \\      'food_type', food_type, 'tax_slab_id', tax_slab_id,
+    \\      'stock_qty', stock_qty, 'track_stock', track_stock,
+    \\      'description', description, 'image_path', image_path,
+    \\      'active', active, 'sort_order', sort_order,
+    \\      'created_at', created_at, 'updated_at', updated_at)) FROM product),
+    \\    'table_categories', (SELECT json_group_array(json_object(
+    \\      'id', id, 'name', name, 'sort_order', sort_order, 'active', active))
+    \\      FROM dining_table_category),
+    \\    'tables', (SELECT json_group_array(json_object(
+    \\      'id', id, 'category_id', category_id, 'name', name,
+    \\      'status', status, 'seats', seats, 'pos_x', pos_x, 'pos_y', pos_y,
+    \\      'width_cells', width_cells, 'height_cells', height_cells,
+    \\      'active', active)) FROM dining_table),
+    \\    'stations', (SELECT json_group_array(json_object(
+    \\      'id', id, 'name', name, 'sort_order', sort_order, 'active', active))
+    \\      FROM kds_station),
+    \\    'pin_salt', (SELECT value FROM app_config WHERE key = 'pin_salt' LIMIT 1)
+    \\  ) AS snapshot;
+;
+
+const reference_version_sql =
+    \\SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM app_config WHERE key = 'reference_version'), 0) AS version;
+;
+
+const bump_reference_sql =
+    \\INSERT INTO app_config (key, value, updated_at) VALUES ('reference_version', '2', 0)
+    \\ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1, updated_at = 0;
+;
+
+/// Build the admin's document and cache it for `GET /v1/reference`.
+pub fn loadReferenceSnapshot(model: *Model, fx: *Effects) void {
+    query(model, fx, key_reference_snapshot, reference_snapshot_sql, &.{}, Effects.dbMsg(.reference_loaded));
+}
+
+/// Read the last version this device applied. The admin's base is one;
+/// a peer starts at zero, so its first ask receives the whole document.
+pub fn loadReferenceVersion(model: *Model, fx: *Effects) void {
+    query(model, fx, key_reference_version, reference_version_sql, &.{}, Effects.dbMsg(.reference_version_loaded));
+}
+
+/// Move the admin's version. Every reference write calls this, and the
+/// resulting `.reference_bumped` rebuilds the document.
+pub fn bumpReferenceVersion(fx: *Effects) void {
+    fx.dbExec(.{
+        .key = key_reference_bump,
+        .statements = &.{.{ .sql = bump_reference_sql }},
+        .on_result = Effects.dbMsg(.reference_bumped),
+    });
+}
+
+/// Apply a peer's document in one transaction. The rows are upserted in
+/// foreign-key order, the peer's live table status survives, and the
+/// version moves last - so a failure leaves both the data and the
+/// cursor where they were.
+pub fn applyReference(
+    model: *Model,
+    fx: *Effects,
+    snapshot: reference.Snapshot,
+    allocator: std.mem.Allocator,
+    at: i64,
+) void {
+    _ = model;
+    var statements: [512]native_sdk.EffectDbStatement = undefined;
+    var count: usize = 0;
+
+    if (snapshot.company) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 11) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .text = row.name };
+        params[2] = .{ .text = row.currency_code };
+        params[3] = .{ .text = row.currency_symbol };
+        params[4] = .{ .integer = row.tax_inclusive };
+        params[5] = .{ .integer = row.currency_decimals };
+        params[6] = .{ .text = row.address };
+        params[7] = .{ .text = row.phone };
+        params[8] = .{ .text = row.email };
+        params[9] = .{ .text = row.tax_number };
+        params[10] = .{ .integer = row.created_at };
+        if (!appendReferenceStatement(&statements, &count, reference_company_sql, params)) return;
+    }
+
+    for (snapshot.categories) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .text = row.name };
+        params[2] = .{ .integer = row.sort_order };
+        params[3] = .{ .integer = row.active };
+        if (!appendReferenceStatement(&statements, &count, reference_category_sql, params)) return;
+    }
+
+    for (snapshot.tax_slabs) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 5) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .text = row.name };
+        params[2] = .{ .integer = row.rate_bps };
+        params[3] = .{ .integer = row.inclusive };
+        params[4] = .{ .integer = row.active };
+        if (!appendReferenceStatement(&statements, &count, reference_tax_slab_sql, params)) return;
+    }
+
+    for (snapshot.employees) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 8) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .text = row.name };
+        params[2] = .{ .integer = row.role };
+        params[3] = .{ .text = row.pin_hash };
+        params[4] = .{ .text = row.phone };
+        params[5] = .{ .text = row.email };
+        params[6] = .{ .integer = row.active };
+        params[7] = .{ .integer = row.created_at };
+        if (!appendReferenceStatement(&statements, &count, reference_employee_sql, params)) return;
+    }
+
+    for (snapshot.products) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 15) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .integer = row.category_id };
+        params[2] = .{ .text = row.name };
+        params[3] = .{ .integer = row.price_minor };
+        params[4] = .{ .integer = row.product_type };
+        params[5] = .{ .integer = row.food_type };
+        params[6] = .{ .integer = row.tax_slab_id };
+        params[7] = if (row.stock_qty) |qty| .{ .integer = qty } else .null_value;
+        params[8] = .{ .integer = row.track_stock };
+        params[9] = .{ .text = row.description };
+        params[10] = .{ .text = row.image_path };
+        params[11] = .{ .integer = row.active };
+        params[12] = .{ .integer = row.sort_order };
+        params[13] = .{ .integer = row.created_at };
+        params[14] = .{ .integer = row.updated_at };
+        if (!appendReferenceStatement(&statements, &count, reference_product_sql, params)) return;
+    }
+
+    for (snapshot.table_categories) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .text = row.name };
+        params[2] = .{ .integer = row.sort_order };
+        params[3] = .{ .integer = row.active };
+        if (!appendReferenceStatement(&statements, &count, reference_table_category_sql, params)) return;
+    }
+
+    for (snapshot.tables) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 9) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .integer = row.category_id };
+        params[2] = .{ .text = row.name };
+        params[3] = .{ .integer = row.seats };
+        params[4] = .{ .integer = row.pos_x };
+        params[5] = .{ .integer = row.pos_y };
+        params[6] = .{ .integer = row.width_cells };
+        params[7] = .{ .integer = row.height_cells };
+        params[8] = .{ .integer = row.active };
+        if (!appendReferenceStatement(&statements, &count, reference_table_sql, params)) return;
+    }
+
+    for (snapshot.stations) |row| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 4) catch return;
+        params[0] = .{ .integer = row.id };
+        params[1] = .{ .text = row.name };
+        params[2] = .{ .integer = row.sort_order };
+        params[3] = .{ .integer = row.active };
+        if (!appendReferenceStatement(&statements, &count, reference_station_sql, params)) return;
+    }
+
+    // The salt belongs to the hashes in the document: a PIN copied from
+    // the admin verifies on the peer because both use this one.
+    if (snapshot.pin_salt) |salt| {
+        const params = allocator.alloc(native_sdk.EffectDbValue, 2) catch return;
+        params[0] = .{ .text = salt };
+        params[1] = .{ .integer = at };
+        if (!appendReferenceStatement(&statements, &count, reference_salt_sql, params)) return;
+    }
+
+    const version_text = std.fmt.allocPrint(allocator, "{d}", .{snapshot.version}) catch return;
+    const version_params = allocator.alloc(native_sdk.EffectDbValue, 2) catch return;
+    version_params[0] = .{ .text = version_text };
+    version_params[1] = .{ .integer = at };
+    if (!appendReferenceStatement(&statements, &count, reference_version_upsert_sql, version_params)) return;
+
+    fx.dbExec(.{
+        .key = key_reference_apply,
+        .statements = statements[0..count],
+        .on_result = Effects.dbMsg(.reference_applied),
+    });
+}
+
+fn appendReferenceStatement(
+    statements: []native_sdk.EffectDbStatement,
+    count: *usize,
+    sql: []const u8,
+    params: []const native_sdk.EffectDbValue,
+) bool {
+    if (count.* >= statements.len) return false;
+    statements[count.*] = .{ .sql = sql, .params = params };
+    count.* += 1;
+    return true;
+}
+
+const reference_company_sql =
+    \\INSERT INTO company (id, name, currency_code, currency_symbol, tax_inclusive,
+    \\  currency_decimals, address, phone, email, tax_number, created_at)
+    \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+    \\ON CONFLICT(id) DO UPDATE SET name = ?2, currency_code = ?3,
+    \\  currency_symbol = ?4, tax_inclusive = ?5, currency_decimals = ?6,
+    \\  address = ?7, phone = ?8, email = ?9, tax_number = ?10;
+;
+
+const reference_category_sql =
+    \\INSERT INTO product_category (id, name, sort_order, active)
+    \\VALUES (?1, ?2, ?3, ?4)
+    \\ON CONFLICT(id) DO UPDATE SET name = ?2, sort_order = ?3, active = ?4;
+;
+
+const reference_tax_slab_sql =
+    \\INSERT INTO tax_slab (id, name, rate_bps, inclusive, active)
+    \\VALUES (?1, ?2, ?3, ?4, ?5)
+    \\ON CONFLICT(id) DO UPDATE SET name = ?2, rate_bps = ?3,
+    \\  inclusive = ?4, active = ?5;
+;
+
+const reference_employee_sql =
+    \\INSERT INTO employee (id, name, role, pin_hash, phone, email, active, created_at)
+    \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    \\ON CONFLICT(id) DO UPDATE SET name = ?2, role = ?3, pin_hash = ?4,
+    \\  phone = ?5, email = ?6, active = ?7;
+;
+
+const reference_product_sql =
+    \\INSERT INTO product (id, category_id, name, price_minor, product_type,
+    \\  food_type, tax_slab_id, stock_qty, track_stock, description, image_path,
+    \\  active, sort_order, created_at, updated_at)
+    \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+    \\ON CONFLICT(id) DO UPDATE SET category_id = ?2, name = ?3,
+    \\  price_minor = ?4, product_type = ?5, food_type = ?6, tax_slab_id = ?7,
+    \\  stock_qty = ?8, track_stock = ?9, description = ?10, image_path = ?11,
+    \\  active = ?12, sort_order = ?13, updated_at = ?15;
+;
+
+const reference_table_category_sql =
+    \\INSERT INTO dining_table_category (id, name, sort_order, active)
+    \\VALUES (?1, ?2, ?3, ?4)
+    \\ON CONFLICT(id) DO UPDATE SET name = ?2, sort_order = ?3, active = ?4;
+;
+
+const reference_table_sql =
+    \\INSERT INTO dining_table (id, category_id, name, status, seats, pos_x,
+    \\  pos_y, width_cells, height_cells, active)
+    \\VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9)
+    \\ON CONFLICT(id) DO UPDATE SET category_id = ?2, name = ?3, seats = ?4,
+    \\  pos_x = ?5, pos_y = ?6, width_cells = ?7, height_cells = ?8, active = ?9;
+;
+
+const reference_station_sql =
+    \\INSERT INTO kds_station (id, name, sort_order, active)
+    \\VALUES (?1, ?2, ?3, ?4)
+    \\ON CONFLICT(id) DO UPDATE SET name = ?2, sort_order = ?3, active = ?4;
+;
+
+const reference_salt_sql =
+    \\INSERT INTO app_config (key, value, updated_at) VALUES ('pin_salt', ?1, ?2)
+    \\ON CONFLICT(key) DO UPDATE SET value = ?1, updated_at = ?2;
+;
+
+const reference_version_upsert_sql =
+    \\INSERT INTO app_config (key, value, updated_at) VALUES ('reference_version', ?1, ?2)
+    \\ON CONFLICT(key) DO UPDATE SET value = ?1, updated_at = ?2;
+;

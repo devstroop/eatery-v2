@@ -409,6 +409,16 @@ pub const Msg = union(enum) {
     peer: native_sdk.EffectResponse,
     /// A peer's op was applied to the database.
     sync_applied: native_sdk.EffectDbResult,
+    /// A peer's reference snapshot.
+    reference: native_sdk.EffectResponse,
+    /// The reference version moved, so the admin rebuilds the document.
+    reference_bumped: native_sdk.EffectDbResult,
+    /// The admin's snapshot is ready to serve.
+    reference_loaded: native_sdk.EffectDbResult,
+    /// The peer's last applied reference version.
+    reference_version_loaded: native_sdk.EffectDbResult,
+    /// A reference snapshot was applied to the peer's database.
+    reference_applied: native_sdk.EffectDbResult,
 
     // -------------------------------------------------------------- data
 
@@ -482,6 +492,11 @@ pub const Msg = union(enum) {
         "net",
         "peer",
         "sync_applied",
+        "reference",
+        "reference_bumped",
+        "reference_loaded",
+        "reference_version_loaded",
+        "reference_applied",
         "login_checked",
         "products_loaded",
         "categories_loaded",

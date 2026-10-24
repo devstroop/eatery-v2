@@ -45,6 +45,15 @@ pub fn formatOps(buffer: []u8, host: []const u8, port: u16, cursor: *const curso
     );
 }
 
+/// `http://<host>:<port>/v1/reference?after=<version>`
+pub fn formatReference(buffer: []u8, host: []const u8, port: u16, after: u64) ![]const u8 {
+    return std.fmt.bufPrint(
+        buffer,
+        "http://{s}:{d}{s}?after={d}",
+        .{ host, port, protocol.endpoints.reference, after },
+    );
+}
+
 /// Parse an NDJSON body into operations. A blank line is skipped, and a
 /// malformed line is an error: a peer that sends half a record must be
 /// told, not half-applied.
@@ -78,6 +87,18 @@ test "the URLs name the endpoint and carry the whole vector cursor" {
     try std.testing.expectEqualStrings(
         "http://10.0.0.4:45871/v1/ops?since=dev-1:1042,dev-3:87",
         try formatOps(&buffer, "10.0.0.4", 45871, &cursor),
+    );
+}
+
+test "a reference URL asks after the version the peer holds" {
+    var buffer: [max_url_bytes]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "http://10.0.0.4:45871/v1/reference?after=0",
+        try formatReference(&buffer, "10.0.0.4", 45871, 0),
+    );
+    try std.testing.expectEqualStrings(
+        "http://10.0.0.4:45871/v1/reference?after=12",
+        try formatReference(&buffer, "10.0.0.4", 45871, 12),
     );
 }
 
